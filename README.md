@@ -31,3 +31,42 @@ Observacao:
 ```
 
 Isso abre duas janelas automaticamente (backend e frontend), mas a inicializacao e feita por um unico comando.
+
+## Acoes reais com Home Assistant
+
+Configure no `backend/.env`:
+
+- `HOME_ASSISTANT_URL` (ex: `http://192.168.1.10:8123`)
+- `HOME_ASSISTANT_TOKEN` (long-lived access token)
+- `HOME_ASSISTANT_ALLOWED_SERVICES` (padrao: `light.turn_on,light.turn_off`)
+- `ACTION_CONFIRMATION_TTL_SECONDS` (padrao: `60`)
+- `HOME_ASSISTANT_TIMEOUT_SECONDS` (padrao: `5`)
+- `HOME_ASSISTANT_RETRY_COUNT` (padrao: `2`)
+
+Exemplos de `entity_id`:
+
+- `light.sala`
+- `light.quarto`
+- `light.escritorio`
+
+Comandos de voz suportados (MVP):
+
+- \"Ligue a luz da sala\"
+- \"Desligue a luz do quarto\"
+- \"Defina o brilho da luz da sala para 120\"
+
+## Modelo de seguranca
+
+- Toda acao passa por policy gate no backend.
+- Acoes sensiveis exigem confirmacao explicita (two-step).
+- `call_service` e interno e respeita allowlist de servicos.
+- O token de confirmacao expira e e valido so para o mesmo participante/sala.
+
+## Troubleshooting rapido
+
+- `Token de confirmacao invalido ou expirado`:
+  gere nova confirmacao pedindo a acao novamente.
+- `Home Assistant nao configurado`:
+  valide `HOME_ASSISTANT_URL` e `HOME_ASSISTANT_TOKEN`.
+- `Servico nao permitido`:
+  adicione o servico na `HOME_ASSISTANT_ALLOWED_SERVICES` se realmente necessario.
