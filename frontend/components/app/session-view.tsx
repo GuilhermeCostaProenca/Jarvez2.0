@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  useChat,
   useRemoteParticipants,
   useSessionContext,
   useSessionMessages,
@@ -16,9 +17,11 @@ import {
 } from '@/components/agents-ui/agent-control-bar';
 import { TileLayout } from '@/components/app/tile-layout';
 import { Button } from '@/components/ui/button';
+import { useAgentActionEvents } from '@/hooks/useAgentActionEvents';
 import { cn } from '@/lib/shadcn/utils';
 import type { ParticipantIdentity, ReconnectState } from '@/lib/types/realtime';
 import { Shimmer } from '../ai-elements/shimmer';
+import { ActionConfirmationPrompt } from './action-confirmation-prompt';
 
 const MotionBottom = motion.create('div');
 const MotionMessage = motion.create(Shimmer);
@@ -200,10 +203,13 @@ export const SessionView = ({
   ...props
 }: React.ComponentProps<'section'> & SessionViewProps) => {
   const session = useSessionContext();
+  const { send } = useChat();
   const { messages } = useSessionMessages(session);
   const [chatOpen, setChatOpen] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const vantaEffectRef = useRef<VantaEffect | null>(null);
+  const { events, pendingConfirmation, isConfirming, confirmPendingAction, cancelPendingAction } =
+    useAgentActionEvents();
 
   const participants = useRemoteParticipants();
   const agentParticipant = participants.find((p) => !p.isLocal);
@@ -264,6 +270,15 @@ export const SessionView = ({
     } catch (error) {
       console.warn('Erro ao desconectar sessao:', error);
     }
+  };
+
+  const handleConfirmAction = async () => {
+    await confirmPendingAction();
+  };
+
+  const handleCancelAction = () => {
+    cancelPendingAction();
+    void send('Cancelar acao pendente.');
   };
 
   return (
@@ -333,6 +348,43 @@ export const SessionView = ({
             >
               Reconectar
             </Button>
+          </div>
+        )}
+
+        <ActionConfirmationPrompt
+          pendingConfirmation={pendingConfirmation}
+          isConfirming={isConfirming}
+          onConfirm={handleConfirmAction}
+          onCancel={handleCancelAction}
+        />
+
+        {events.length > 0 && (
+          <div className="mx-auto mb-3 w-full max-w-2xl rounded-lg border border-white/20 bg-black/40 px-3 py-2 text-xs text-white/90">
+            <p className="mb-2 font-semibold text-white">Acoes recentes</p>
+            <div className="space-y-1">
+              {events.slice(0, 3).map((event) => (
+                <div key={event.callId} className="flex items-center justify-between gap-2">
+                  <span className="truncate">
+                    <span
+                      className={cn(
+                        'mr-2 font-semibold',
+                        event.status === 'completed' && 'text-emerald-300',
+                        event.status === 'failed' && 'text-rose-300',
+                        event.status === 'confirmation_required' && 'text-amber-300'
+                      )}
+                    >
+                      {event.status === 'completed' && 'SUCESSO'}
+                      {event.status === 'failed' && 'FALHA'}
+                      {event.status === 'confirmation_required' && 'CONFIRMAR'}
+                    </span>
+                    {event.message ?? event.actionName}
+                  </span>
+                  <span className="shrink-0 text-[11px] text-white/60">
+                    {new Date(event.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
