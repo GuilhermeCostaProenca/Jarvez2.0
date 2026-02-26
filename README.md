@@ -17,6 +17,10 @@ Projeto unificado do Jarvez com:
 - `backend/.env`
 - `frontend/.env.local`
 
+No `backend/.env`, personalize:
+- `JARVEZ_USER_ID` (id de memoria no Mem0)
+- `JARVEZ_USER_NAME` (nome usado no contexto do agente)
+
 3. Inicie o projeto:
 
 ```powershell
@@ -24,4 +28,3 @@ Projeto unificado do Jarvez com:
 ```
 
 Isso abre duas janelas automaticamente (backend e frontend), mas a inicializacao e feita por um unico comando.
-
