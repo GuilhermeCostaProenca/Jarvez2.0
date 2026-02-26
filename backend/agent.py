@@ -5,10 +5,12 @@ import secrets
 
 from dotenv import load_dotenv
 from livekit import agents
-from livekit.agents import Agent, AgentSession, ChatContext, RoomInputOptions
+from livekit.agents import Agent, AgentSession, ChatContext, RoomInputOptions, function_tool
+from livekit.agents.voice.events import RunContext
 from livekit.plugins import google, noise_cancellation
 from mem0 import AsyncMemoryClient
 
+from actions import ActionContext, action_spec_to_raw_schema, dispatch_action, get_exposed_actions
 from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
 
 load_dotenv()
@@ -19,7 +21,7 @@ DEFAULT_USER_NAME = os.getenv('JARVEZ_USER_NAME', 'Usuario')
 
 
 class Assistant(Agent):
-    def __init__(self, chat_ctx: ChatContext | None = None):
+    def __init__(self, chat_ctx: ChatContext | None = None, tools: list[object] | None = None):
         super().__init__(
             instructions=AGENT_INSTRUCTION,
             llm=google.beta.realtime.RealtimeModel(
@@ -27,6 +29,7 @@ class Assistant(Agent):
                 temperature=0.6,
             ),
             chat_ctx=chat_ctx,
+            tools=tools,
         )
 
 
@@ -41,6 +44,32 @@ def resolve_user_identity(ctx: agents.JobContext) -> tuple[str, str]:
     room_name = getattr(getattr(ctx.job, 'room', None), 'name', 'room')
     fallback_identity = f"anon-{room_name}-{secrets.token_hex(3)}"
     return fallback_identity, participant_name or DEFAULT_USER_NAME
+
+
+def build_action_tools(
+    *,
+    job_id: str,
+    room_name: str,
+    participant_identity: str,
+) -> list[object]:
+    tools: list[object] = []
+
+    for spec in get_exposed_actions():
+
+        async def _tool(raw_arguments: dict[str, object], ctx: RunContext, _action_name: str = spec.name):
+            params: dict[str, object] = raw_arguments if isinstance(raw_arguments, dict) else {}
+            action_ctx = ActionContext(
+                job_id=job_id,
+                room=room_name,
+                participant_identity=participant_identity,
+                session=ctx.session,
+            )
+            result = await dispatch_action(_action_name, params, action_ctx)
+            return result.to_json()
+
+        tools.append(function_tool(_tool, raw_schema=action_spec_to_raw_schema(spec)))
+
+    return tools
 
 
 async def entrypoint(ctx: agents.JobContext):
@@ -106,7 +135,10 @@ async def entrypoint(ctx: agents.JobContext):
     await ctx.connect()
 
     session = AgentSession()
-    agent = Assistant(chat_ctx=initial_ctx)
+    room_name = getattr(ctx.room, 'name', 'room')
+    job_id = getattr(ctx.job, 'id', '')
+    action_tools = build_action_tools(job_id=job_id, room_name=room_name, participant_identity=user_id)
+    agent = Assistant(chat_ctx=initial_ctx, tools=action_tools)
 
     await session.start(
         room=ctx.room,
