@@ -10,9 +10,9 @@ import { StartAudioButton } from '@/components/agents-ui/start-audio-button';
 import { ViewController } from '@/components/app/view-controller';
 import { Toaster } from '@/components/ui/sonner';
 import { useAgentErrors } from '@/hooks/useAgentErrors';
+import { useAutoReconnect } from '@/hooks/useAutoReconnect';
 import { useDebugMode } from '@/hooks/useDebug';
 import { getSandboxTokenSource } from '@/lib/utils';
-import { useAutoReconnect } from '@/hooks/useAutoReconnect';
 
 const IN_DEVELOPMENT = process.env.NODE_ENV !== 'production';
 
@@ -39,14 +39,13 @@ export function App({ appConfig }: AppProps) {
     appConfig.agentName ? { agentName: appConfig.agentName } : undefined
   );
 
-  // Hook de Auto-Reconexão
-  useAutoReconnect(session);
+  const reconnectState = useAutoReconnect(session);
 
   return (
     <AgentSessionProvider session={session}>
       <AppSetup />
       <main className="grid h-svh grid-cols-1 place-content-center">
-        <ViewController appConfig={appConfig} />
+        <ViewController appConfig={appConfig} reconnectState={reconnectState} />
       </main>
       <StartAudioButton label="Start Audio" />
       <Toaster

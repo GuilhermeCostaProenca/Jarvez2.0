@@ -1,11 +1,12 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useState, useEffect } from 'react';
 import { useSessionContext } from '@livekit/components-react';
 import type { AppConfig } from '@/app-config';
 import { SessionView } from '@/components/app/session-view';
 import { WelcomeView } from '@/components/app/welcome-view';
+import type { ReconnectState } from '@/lib/types/realtime';
 
 const MotionWelcomeView = motion.create(WelcomeView);
 const MotionSessionView = motion.create(SessionView);
@@ -30,20 +31,20 @@ const VIEW_MOTION_PROPS = {
 
 interface ViewControllerProps {
   appConfig: AppConfig;
+  reconnectState: ReconnectState;
 }
 
-export function ViewController({ appConfig }: ViewControllerProps) {
+export function ViewController({ appConfig, reconnectState }: ViewControllerProps) {
   const { isConnected, start } = useSessionContext();
   const [isActive, setIsActive] = useState(false);
 
-  // Ativa a sessão quando a conexão é estabelecida ou quando start é chamado
   useEffect(() => {
     if (isConnected) setIsActive(true);
   }, [isConnected]);
 
-  const handleStart = async (opts?: any) => {
+  const handleStart = async () => {
     setIsActive(true);
-    await start(opts);
+    await start();
   };
 
   const handleDisconnect = () => {
@@ -52,7 +53,6 @@ export function ViewController({ appConfig }: ViewControllerProps) {
 
   return (
     <AnimatePresence mode="wait">
-      {/* Welcome view */}
       {!isActive && !isConnected && (
         <MotionWelcomeView
           key="welcome"
@@ -61,12 +61,13 @@ export function ViewController({ appConfig }: ViewControllerProps) {
           onStartCall={handleStart}
         />
       )}
-      {/* Session view */}
+
       {(isActive || isConnected) && (
         <MotionSessionView
           key="session-view"
           {...VIEW_MOTION_PROPS}
           appConfig={appConfig}
+          reconnectState={reconnectState}
           onManualDisconnect={handleDisconnect}
         />
       )}

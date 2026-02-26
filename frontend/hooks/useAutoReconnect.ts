@@ -1,44 +1,101 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { RoomEvent } from 'livekit-client';
+import type { ConnectionState, ReconnectState, RoomSessionState } from '@/lib/types/realtime';
 
-export function useAutoReconnect(session: any) {
-    const { room, connect } = session;
-    const timerRef = useRef<NodeJS.Timeout | null>(null);
+const MAX_ATTEMPTS = 5;
+const BASE_DELAY_MS = 1000;
+const MAX_DELAY_MS = 10000;
 
-    useEffect(() => {
-        if (!room) return;
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-        const handleDisconnected = async () => {
-            console.log('🔌 Conexão perdida. Tentando reconectar em 2s...');
+export function useAutoReconnect(session: RoomSessionState): ReconnectState {
+  const { room, start, isConnected } = session;
 
-            if (timerRef.current) clearTimeout(timerRef.current);
+  const [attempt, setAttempt] = useState(0);
+  const [connectionState, setConnectionState] = useState<ConnectionState>(
+    isConnected ? 'connected' : 'disconnected'
+  );
 
-            timerRef.current = setTimeout(async () => {
-                try {
-                    console.log('🔄 Iniciando reconexão automática...');
-                    // @ts-ignore: connect fn might not be in type def but exists in runtime
-                    if (typeof connect === 'function') {
-                        await connect();
-                        console.log('✅ Reconectado com sucesso!');
-                    } else {
-                        console.warn('⚠️ Função connect não encontrada na sessão.');
-                        location.reload(); // Fallback bravo: reload na página
-                    }
-                } catch (error) {
-                    console.error('❌ Falha ao reconectar:', error);
-                    // Se falhar, o evento de disconnect pode não disparar de novo se já estiver desconectado.
-                    // Em um sistema robusto, poderíamos ter um loop de retry aqui, 
-                    // mas o useSession muitas vezes reseta o estado.
-                    // Por enquanto, uma tentativa simples resolve resets do backend.
-                }
-            }, 2000);
-        };
+  const reconnectingRef = useRef(false);
+  const mountedRef = useRef(true);
 
-        room.on(RoomEvent.Disconnected, handleDisconnected);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-        return () => {
-            room.off(RoomEvent.Disconnected, handleDisconnected);
-            if (timerRef.current) clearTimeout(timerRef.current);
-        };
-    }, [room, connect]);
+  const reconnectNow = useCallback(async () => {
+    if (reconnectingRef.current) return;
+
+    reconnectingRef.current = true;
+    if (mountedRef.current) {
+      setConnectionState('reconnecting');
+      setAttempt(0);
+    }
+
+    for (let currentAttempt = 1; currentAttempt <= MAX_ATTEMPTS; currentAttempt++) {
+      if (mountedRef.current) {
+        setAttempt(currentAttempt);
+      }
+
+      try {
+        await start();
+        if (mountedRef.current) {
+          setConnectionState('connected');
+          setAttempt(0);
+        }
+        reconnectingRef.current = false;
+        return;
+      } catch (error) {
+        if (currentAttempt === MAX_ATTEMPTS) {
+          if (mountedRef.current) {
+            setConnectionState('disconnected');
+          }
+          reconnectingRef.current = false;
+          return;
+        }
+
+        const delay = Math.min(BASE_DELAY_MS * 2 ** (currentAttempt - 1), MAX_DELAY_MS);
+        await sleep(delay);
+        console.warn(`Reconnect attempt ${currentAttempt} failed:`, error);
+      }
+    }
+
+    reconnectingRef.current = false;
+  }, [start]);
+
+  useEffect(() => {
+    if (isConnected) {
+      setConnectionState('connected');
+      setAttempt(0);
+      reconnectingRef.current = false;
+    }
+  }, [isConnected]);
+
+  useEffect(() => {
+    if (!room) return;
+
+    const handleDisconnected = () => {
+      if (mountedRef.current) {
+        setConnectionState('disconnected');
+      }
+      void reconnectNow();
+    };
+
+    room.on(RoomEvent.Disconnected, handleDisconnected);
+    return () => {
+      room.off(RoomEvent.Disconnected, handleDisconnected);
+    };
+  }, [room, reconnectNow]);
+
+  return {
+    connectionState,
+    attempt,
+    maxAttempts: MAX_ATTEMPTS,
+    isReconnecting: connectionState === 'reconnecting',
+    reconnectNow,
+  };
 }

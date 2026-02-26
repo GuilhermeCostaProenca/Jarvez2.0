@@ -3,24 +3,24 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  useRemoteParticipants,
   useSessionContext,
   useSessionMessages,
   useTrackVolume,
   useVoiceAssistant,
-  useRemoteParticipants,
 } from '@livekit/components-react';
-import { Track } from 'livekit-client';
 import type { AppConfig } from '@/app-config';
 import {
   AgentControlBar,
   type AgentControlBarControls,
 } from '@/components/agents-ui/agent-control-bar';
 import { TileLayout } from '@/components/app/tile-layout';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/shadcn/utils';
+import type { ParticipantIdentity, ReconnectState } from '@/lib/types/realtime';
 import { Shimmer } from '../ai-elements/shimmer';
 
 const MotionBottom = motion.create('div');
-
 const MotionMessage = motion.create(Shimmer);
 
 const BOTTOM_VIEW_MOTION_PROPS = {
@@ -68,32 +68,30 @@ const SHIMMER_MOTION_PROPS = {
   exit: 'hidden',
 };
 
-interface FadeProps {
-  top?: boolean;
-  bottom?: boolean;
-  className?: string;
-}
-
-export function Fade({ top = false, bottom = false, className }: FadeProps) {
-  return (
-    <div
-      className={cn(
-        'from-background pointer-events-none h-4 bg-linear-to-b to-transparent',
-        top && 'bg-linear-to-b',
-        bottom && 'bg-linear-to-t',
-        className
-      )}
-    />
-  );
-}
-
 interface SessionViewProps {
   appConfig: AppConfig;
+  reconnectState: ReconnectState;
   onManualDisconnect?: () => void;
 }
 
-// --- Sub-componente para controle de performance da Orb ---
-const VantaController = ({ vantaRef }: { vantaRef: React.MutableRefObject<any> }) => {
+interface VantaEffect {
+  options: { chaos: number };
+  setOptions: (options: { chaos: number }) => void;
+  destroy: () => void;
+}
+
+interface VantaScriptWindow extends Window {
+  p5?: unknown;
+  VANTA?: {
+    TRUNK?: (options: Record<string, unknown>) => VantaEffect;
+  };
+}
+
+const VantaController = ({
+  vantaRef,
+}: {
+  vantaRef: React.MutableRefObject<VantaEffect | null>;
+}) => {
   const { audioTrack } = useVoiceAssistant();
   const volume = useTrackVolume(audioTrack);
 
@@ -101,7 +99,6 @@ const VantaController = ({ vantaRef }: { vantaRef: React.MutableRefObject<any> }
     const effect = vantaRef.current;
     if (!effect) return;
 
-    // Atualizar Chaos conforme Volume (Reatividade à voz)
     const baseChaos = 3.0;
     const voiceChaos = volume * 7.0;
     const finalChaos = baseChaos + voiceChaos;
@@ -114,42 +111,50 @@ const VantaController = ({ vantaRef }: { vantaRef: React.MutableRefObject<any> }
   return null;
 };
 
-// --- Componente Modular da Orb com seu próprio ciclo de vida ---
-const VantaOrb = ({ isConnected, color, vantaRef }: { isConnected: boolean, color: number, vantaRef: React.MutableRefObject<any> }) => {
+const VantaOrb = ({
+  isConnected,
+  color,
+  vantaRef,
+}: {
+  isConnected: boolean;
+  color: number;
+  vantaRef: React.MutableRefObject<VantaEffect | null>;
+}) => {
   const localRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let vantaEffect: any = null;
+    let vantaEffect: VantaEffect | null = null;
     let attempts = 0;
     let initTimer: NodeJS.Timeout;
 
     const tryInitVanta = () => {
       const el = localRef.current;
-      const win = window as any;
+      const win = window as VantaScriptWindow;
       const hasVanta = !!win.VANTA?.TRUNK;
       const hasP5 = !!win.p5;
 
       if (el && hasVanta && hasP5) {
         try {
-          // A cor agora vem via prop
-          vantaEffect = win.VANTA.TRUNK({
-            el: el,
-            p5: win.p5,
-            mouseControls: false,
-            touchControls: false,
-            gyroControls: false,
-            minHeight: 200.0,
-            minWidth: 200.0,
-            scale: 1.0,
-            scaleMobile: 1.0,
-            color: color,
-            backgroundColor: 0x000000,
-            spacing: 0.0,
-            chaos: 3.0,
-          });
+          vantaEffect =
+            win.VANTA?.TRUNK?.({
+              el,
+              p5: win.p5,
+              mouseControls: false,
+              touchControls: false,
+              gyroControls: false,
+              minHeight: 200.0,
+              minWidth: 200.0,
+              scale: 1.0,
+              scaleMobile: 1.0,
+              color,
+              backgroundColor: 0x000000,
+              spacing: 0.0,
+              chaos: 3.0,
+            }) ?? null;
+
           vantaRef.current = vantaEffect;
-        } catch (e) {
-          console.error('Vanta Orb Init Error:', e);
+        } catch (error) {
+          console.error('Vanta Orb Init Error:', error);
           attempts++;
           if (attempts < 10) initTimer = setTimeout(tryInitVanta, 500);
         }
@@ -169,15 +174,17 @@ const VantaOrb = ({ isConnected, color, vantaRef }: { isConnected: boolean, colo
             vantaRef.current = null;
           }
           vantaEffect.destroy();
-        } catch (e) { }
+        } catch (error) {
+          console.error('Vanta Orb destroy error:', error);
+        }
       }
     };
-  }, [isConnected]);
+  }, [isConnected, color, vantaRef]);
 
   return (
     <div
       ref={localRef}
-      className="w-[1000px] h-[1000px]"
+      className="h-[1000px] w-[1000px]"
       style={{
         transform: 'scale(0.5) translateY(-15%)',
         transformOrigin: 'center center',
@@ -188,6 +195,7 @@ const VantaOrb = ({ isConnected, color, vantaRef }: { isConnected: boolean, colo
 
 export const SessionView = ({
   appConfig,
+  reconnectState,
   onManualDisconnect,
   ...props
 }: React.ComponentProps<'section'> & SessionViewProps) => {
@@ -195,25 +203,26 @@ export const SessionView = ({
   const { messages } = useSessionMessages(session);
   const [chatOpen, setChatOpen] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const vantaEffectRef = useRef<any>(null);
+  const vantaEffectRef = useRef<VantaEffect | null>(null);
 
-  // Monitora participantes para detectar Persona (Alice/Járvis)
   const participants = useRemoteParticipants();
-  const agentParticipant = participants.find(p => !p.isLocal);
-  const agentPersona = agentParticipant?.attributes?.["agent_persona"] || "jarvis";
+  const agentParticipant = participants.find((p) => !p.isLocal);
+  const agentPersona = (agentParticipant?.attributes?.agent_persona ??
+    'jarvis') as ParticipantIdentity;
 
-  // Definição de Cores
   const PERSONA_COLORS = {
     alice: 0xff69b4,
-    jarvis: 0x1da3b9
+    jarvis: 0x1da3b9,
   };
-  const currentColor = PERSONA_COLORS[agentPersona as keyof typeof PERSONA_COLORS] || PERSONA_COLORS.jarvis;
+  const currentColor =
+    PERSONA_COLORS[agentPersona as keyof typeof PERSONA_COLORS] ?? PERSONA_COLORS.jarvis;
 
   useEffect(() => {
     const loadScript = (src: string): Promise<boolean> => {
       return new Promise((resolve) => {
         if (typeof document === 'undefined') return resolve(false);
         if (document.querySelector(`script[src="${src}"]`)) return resolve(true);
+
         const script = document.createElement('script');
         script.src = src;
         script.async = true;
@@ -227,6 +236,7 @@ export const SessionView = ({
       await loadScript('https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js');
       await loadScript('https://cdn.jsdelivr.net/npm/vanta@0.5.24/dist/vanta.trunk.min.js');
     };
+
     setup();
   }, []);
 
@@ -248,21 +258,19 @@ export const SessionView = ({
 
   const handleDisconnect = () => {
     if (onManualDisconnect) onManualDisconnect();
+
     try {
       if (session.end) session.end();
-    } catch (e) {
-      console.warn("Erro ao desconectar sessão:", e);
+    } catch (error) {
+      console.warn('Erro ao desconectar sessao:', error);
     }
   };
 
   return (
-    <section
-      className="relative flex h-svh w-svw flex-col bg-black overflow-hidden"
-      {...props}
-    >
+    <section className="relative flex h-svh w-svw flex-col overflow-hidden bg-black" {...props}>
       <VantaController vantaRef={vantaEffectRef} />
 
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
           <AnimatePresence mode="wait">
             <motion.div
@@ -270,10 +278,14 @@ export const SessionView = ({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 1.5, ease: "easeInOut" }}
-              className="absolute inset-0 flex items-center justify-center p5-canvas-container"
+              transition={{ duration: 1.5, ease: 'easeInOut' }}
+              className="p5-canvas-container absolute inset-0 flex items-center justify-center"
             >
-              <VantaOrb isConnected={session.isConnected} color={currentColor} vantaRef={vantaEffectRef} />
+              <VantaOrb
+                isConnected={session.isConnected}
+                color={currentColor}
+                vantaRef={vantaEffectRef}
+              />
             </motion.div>
           </AnimatePresence>
         </div>
@@ -283,7 +295,7 @@ export const SessionView = ({
         </div>
       </div>
 
-      <div className="flex-1 pointer-events-none" />
+      <div className="pointer-events-none flex-1" />
 
       <MotionBottom
         {...BOTTOM_VIEW_MOTION_PROPS}
@@ -299,18 +311,37 @@ export const SessionView = ({
                 {...SHIMMER_MOTION_PROPS}
                 className="pointer-events-none mx-auto block w-full max-w-2xl pb-8 text-center text-sm font-semibold"
               >
-                O Jarvis está ouvindo, pode falar...
+                O Jarvis esta ouvindo, pode falar...
               </MotionMessage>
             )}
           </AnimatePresence>
         )}
 
-        <div className="relative mx-auto max-w-2xl pb-3 md:pb-12 bg-transparent">
+        {reconnectState.connectionState !== 'connected' && (
+          <div className="mx-auto mb-3 flex w-full max-w-2xl items-center justify-between rounded-lg border border-white/20 bg-black/40 px-3 py-2 text-xs text-white">
+            <span>
+              {reconnectState.isReconnecting
+                ? `Reconectando... tentativa ${reconnectState.attempt} de ${reconnectState.maxAttempts}`
+                : 'Desconectado. Tente reconectar manualmente.'}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => void reconnectState.reconnectNow()}
+              disabled={reconnectState.isReconnecting}
+            >
+              Reconectar
+            </Button>
+          </div>
+        )}
+
+        <div className="relative mx-auto max-w-2xl bg-transparent pb-3 md:pb-12">
           <AgentControlBar
             variant="livekit"
             controls={controls}
             isChatOpen={chatOpen}
-            isConnected={true}
+            isConnected={session.isConnected}
             onDisconnect={handleDisconnect}
             onIsChatOpenChange={setChatOpen}
           />
