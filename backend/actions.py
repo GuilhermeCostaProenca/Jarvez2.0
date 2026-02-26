@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
+
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +66,8 @@ class ActionSpec:
 
 ACTION_REGISTRY: dict[str, ActionSpec] = {}
 
+DEFAULT_ALLOWED_SERVICES = {"light.turn_on", "light.turn_off"}
+
 
 def register_action(spec: ActionSpec) -> None:
     if spec.name in ACTION_REGISTRY:
@@ -103,6 +108,12 @@ def _validate_against_property(name: str, value: Any, prop_schema: JsonObject) -
         pattern = prop_schema.get("pattern")
         if pattern and not re.fullmatch(pattern, value):
             return f"'{name}' does not match required format"
+        min_length = prop_schema.get("minLength")
+        max_length = prop_schema.get("maxLength")
+        if min_length is not None and len(value) < min_length:
+            return f"'{name}' length must be >= {min_length}"
+        if max_length is not None and len(value) > max_length:
+            return f"'{name}' length must be <= {max_length}"
 
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         minimum = prop_schema.get("minimum")
@@ -167,6 +178,107 @@ def _redact(value: Any, key: str | None = None) -> Any:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _get_allowed_services() -> set[str]:
+    raw_value = os.getenv("HOME_ASSISTANT_ALLOWED_SERVICES", "").strip()
+    if not raw_value:
+        return DEFAULT_ALLOWED_SERVICES.copy()
+
+    parsed = {item.strip().lower() for item in raw_value.split(",") if item.strip()}
+    return parsed or DEFAULT_ALLOWED_SERVICES.copy()
+
+
+def _service_key(domain: str, service: str) -> str:
+    return f"{domain.strip().lower()}.{service.strip().lower()}"
+
+
+def _is_allowed_service(domain: str, service: str) -> bool:
+    return _service_key(domain, service) in _get_allowed_services()
+
+
+def _build_ha_url(base_url: str, domain: str, service: str) -> str:
+    return f"{base_url.rstrip('/')}/api/services/{domain}/{service}"
+
+
+def _parse_retry_count() -> int:
+    raw = os.getenv("HOME_ASSISTANT_RETRY_COUNT", "2").strip()
+    if not raw:
+        return 2
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 2
+
+
+def _parse_timeout() -> float:
+    raw = os.getenv("HOME_ASSISTANT_TIMEOUT_SECONDS", "5").strip()
+    if not raw:
+        return 5.0
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return 5.0
+
+
+def _call_home_assistant(
+    *,
+    domain: str,
+    service: str,
+    service_data: JsonObject,
+) -> ActionResult:
+    base_url = os.getenv("HOME_ASSISTANT_URL", "").strip()
+    token = os.getenv("HOME_ASSISTANT_TOKEN", "").strip()
+    if not base_url or not token:
+        return ActionResult(
+            success=False,
+            message="Home Assistant nao configurado.",
+            error="missing HOME_ASSISTANT_URL or HOME_ASSISTANT_TOKEN",
+        )
+
+    timeout = _parse_timeout()
+    retries = _parse_retry_count()
+    endpoint = _build_ha_url(base_url, domain, service)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    for attempt in range(retries + 1):
+        try:
+            response = requests.post(endpoint, headers=headers, json=service_data, timeout=timeout)
+            if 200 <= response.status_code < 300:
+                payload: Any
+                try:
+                    payload = response.json()
+                except ValueError:
+                    payload = {"raw": response.text}
+                return ActionResult(
+                    success=True,
+                    message=f"Servico executado: {domain}.{service}.",
+                    data={"service_response": payload},
+                )
+
+            if response.status_code >= 500 and attempt < retries:
+                time.sleep(min(0.2 * (2**attempt), 1.5))
+                continue
+
+            return ActionResult(
+                success=False,
+                message=f"Falha ao chamar Home Assistant ({response.status_code}).",
+                error=response.text[:500],
+            )
+        except requests.RequestException as error:
+            if attempt < retries:
+                time.sleep(min(0.2 * (2**attempt), 1.5))
+                continue
+            return ActionResult(
+                success=False,
+                message="Erro de comunicacao com Home Assistant.",
+                error=str(error),
+            )
+
+    return ActionResult(success=False, message="Erro desconhecido ao chamar Home Assistant.", error="unexpected")
 
 
 async def dispatch_action(
@@ -263,29 +375,57 @@ def _log_action_result(
 
 async def _turn_light_on(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     entity_id = str(params["entity_id"])
-    return ActionResult(success=True, message=f"Solicitacao para ligar luz registrada ({entity_id}).")
+    return await _call_service(
+        {
+            "domain": "light",
+            "service": "turn_on",
+            "service_data": {"entity_id": entity_id},
+        },
+        ctx,
+    )
 
 
 async def _turn_light_off(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     entity_id = str(params["entity_id"])
-    return ActionResult(success=True, message=f"Solicitacao para desligar luz registrada ({entity_id}).")
+    return await _call_service(
+        {
+            "domain": "light",
+            "service": "turn_off",
+            "service_data": {"entity_id": entity_id},
+        },
+        ctx,
+    )
 
 
 async def _set_light_brightness(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     entity_id = str(params["entity_id"])
     brightness = int(params["brightness"])
-    return ActionResult(
-        success=True,
-        message=f"Solicitacao de brilho registrada ({entity_id}, brilho={brightness}).",
+    return await _call_service(
+        {
+            "domain": "light",
+            "service": "turn_on",
+            "service_data": {"entity_id": entity_id, "brightness": brightness},
+        },
+        ctx,
     )
 
 
 async def _call_service(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return ActionResult(
-        success=False,
-        message="call_service indisponivel nesta etapa.",
-        error="not implemented",
-    )
+    domain = str(params["domain"]).strip().lower()
+    service = str(params["service"]).strip().lower()
+    service_data = params.get("service_data")
+
+    if not isinstance(service_data, dict):
+        return ActionResult(success=False, message="service_data invalido.", error="service_data must be object")
+
+    if not _is_allowed_service(domain, service):
+        return ActionResult(
+            success=False,
+            message=f"Servico nao permitido: {domain}.{service}.",
+            error="service not in allowlist",
+        )
+
+    return _call_home_assistant(domain=domain, service=service, service_data=service_data)
 
 
 async def _confirm_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
