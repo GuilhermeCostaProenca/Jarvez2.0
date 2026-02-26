@@ -54,6 +54,7 @@ Comandos de voz suportados (MVP):
 - \"Ligue a luz da sala\"
 - \"Desligue a luz do quarto\"
 - \"Defina o brilho da luz da sala para 120\"
+- \"Sim, confirmo\" (para executar a acao sensivel pendente)
 
 ## Modelo de seguranca
 
