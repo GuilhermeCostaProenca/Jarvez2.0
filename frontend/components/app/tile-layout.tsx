@@ -124,7 +124,7 @@ export function TileLayout({ chatOpen }: TileLayoutProps) {
                     delay: animationDelay,
                   }}
                   className={cn(
-                    'bg-transparent aspect-square h-[90px] rounded-md border-none transition-none',
+                    'aspect-square h-[90px] rounded-md border-none bg-transparent transition-none',
                     chatOpen && 'drop-shadow-none'
                   )}
                 >

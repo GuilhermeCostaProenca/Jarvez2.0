@@ -7,8 +7,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/shadcn/utils';
 
 export interface AgentDisconnectButtonProps
-  extends React.ComponentProps<'button'>,
-  VariantProps<typeof buttonVariants> {
+  extends React.ComponentProps<'button'>, VariantProps<typeof buttonVariants> {
   icon?: React.ReactNode;
   children?: React.ReactNode;
 }
@@ -29,7 +28,9 @@ export function AgentDisconnectButton({
   return (
     <Button variant="destructive" size={size} onClick={handleClick} {...props}>
       {icon ?? <PhoneOffIcon />}
-      {children ?? <span className={cn(size?.includes('icon') && 'sr-only')}>ENCERRAR CHAMADA</span>}
+      {children ?? (
+        <span className={cn(size?.includes('icon') && 'sr-only')}>ENCERRAR CHAMADA</span>
+      )}
     </Button>
   );
 }
