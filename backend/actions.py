@@ -4,9 +4,10 @@ import json
 import logging
 import os
 import re
+import secrets
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
 import requests
@@ -25,6 +26,16 @@ SENSITIVE_KEYS = {
     "apikey",
     "key",
 }
+DEFAULT_ALLOWED_SERVICES = {"light.turn_on", "light.turn_off"}
+
+EXPLICIT_CONFIRMATION_RE = re.compile(
+    r"\b(sim|confirmo|pode executar|execute|pode fazer|faca|fa\u00e7a|autorizo|pode)\b",
+    re.IGNORECASE,
+)
+AMBIGUOUS_CONFIRMATION_RE = re.compile(
+    r"\b(talvez|acho que sim|nao sei|n\u00e3o sei|depois|quem sabe|mais ou menos)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(slots=True)
@@ -64,9 +75,19 @@ class ActionSpec:
     expose_to_model: bool = True
 
 
-ACTION_REGISTRY: dict[str, ActionSpec] = {}
+@dataclass(slots=True)
+class PendingConfirmation:
+    token: str
+    action_name: str
+    params: JsonObject
+    participant_identity: str
+    room: str
+    expires_at: datetime
 
-DEFAULT_ALLOWED_SERVICES = {"light.turn_on", "light.turn_off"}
+
+ACTION_REGISTRY: dict[str, ActionSpec] = {}
+PENDING_CONFIRMATIONS: dict[str, PendingConfirmation] = {}
+PARTICIPANT_PENDING_TOKENS: dict[str, str] = {}
 
 
 def register_action(spec: ActionSpec) -> None:
@@ -81,6 +102,14 @@ def get_action(name: str) -> ActionSpec | None:
 
 def get_exposed_actions() -> list[ActionSpec]:
     return [spec for spec in ACTION_REGISTRY.values() if spec.expose_to_model]
+
+
+def action_spec_to_raw_schema(spec: ActionSpec) -> JsonObject:
+    return {
+        "name": spec.name,
+        "description": spec.description,
+        "parameters": spec.params_schema,
+    }
 
 
 def _value_matches_type(value: Any, expected_type: str) -> bool:
@@ -178,6 +207,95 @@ def _redact(value: Any, key: str | None = None) -> Any:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _confirmation_ttl_seconds() -> int:
+    raw = os.getenv("ACTION_CONFIRMATION_TTL_SECONDS", "60").strip()
+    if not raw:
+        return 60
+    try:
+        return max(10, int(raw))
+    except ValueError:
+        return 60
+
+
+def _cleanup_expired_confirmations() -> None:
+    now = datetime.now(timezone.utc)
+    expired_tokens = [token for token, pending in PENDING_CONFIRMATIONS.items() if pending.expires_at <= now]
+    for token in expired_tokens:
+        pending = PENDING_CONFIRMATIONS.pop(token, None)
+        if pending:
+            PARTICIPANT_PENDING_TOKENS.pop(pending.participant_identity, None)
+
+
+def _remaining_seconds(expires_at: datetime) -> int:
+    now = datetime.now(timezone.utc)
+    return max(0, int((expires_at - now).total_seconds()))
+
+
+def _store_confirmation(action_name: str, params: JsonObject, ctx: ActionContext) -> PendingConfirmation:
+    _cleanup_expired_confirmations()
+
+    previous_token = PARTICIPANT_PENDING_TOKENS.get(ctx.participant_identity)
+    if previous_token:
+        PENDING_CONFIRMATIONS.pop(previous_token, None)
+
+    token = secrets.token_urlsafe(18)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=_confirmation_ttl_seconds())
+    pending = PendingConfirmation(
+        token=token,
+        action_name=action_name,
+        params=params,
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        expires_at=expires_at,
+    )
+    PENDING_CONFIRMATIONS[token] = pending
+    PARTICIPANT_PENDING_TOKENS[ctx.participant_identity] = token
+    return pending
+
+
+def _pop_confirmation(token: str) -> PendingConfirmation | None:
+    pending = PENDING_CONFIRMATIONS.pop(token, None)
+    if pending:
+        PARTICIPANT_PENDING_TOKENS.pop(pending.participant_identity, None)
+    return pending
+
+
+def _peek_confirmation(token: str) -> PendingConfirmation | None:
+    _cleanup_expired_confirmations()
+    return PENDING_CONFIRMATIONS.get(token)
+
+
+def _extract_last_user_text(session: Any | None) -> str:
+    if session is None:
+        return ""
+
+    history = getattr(session, "history", None)
+    items = getattr(history, "items", None)
+    if not isinstance(items, list):
+        return ""
+
+    for item in reversed(items):
+        role = getattr(item, "role", None)
+        if role != "user":
+            continue
+
+        content = getattr(item, "content", None)
+        if isinstance(content, list):
+            return " ".join(part for part in content if isinstance(part, str)).strip()
+        if isinstance(content, str):
+            return content.strip()
+
+    return ""
+
+
+def _is_explicit_confirmation(text: str) -> bool:
+    if not text:
+        return False
+    if AMBIGUOUS_CONFIRMATION_RE.search(text):
+        return False
+    return EXPLICIT_CONFIRMATION_RE.search(text) is not None
 
 
 def _get_allowed_services() -> set[str]:
@@ -281,6 +399,25 @@ def _call_home_assistant(
     return ActionResult(success=False, message="Erro desconhecido ao chamar Home Assistant.", error="unexpected")
 
 
+def _policy_gate(name: str, params: JsonObject) -> ActionResult | None:
+    if name == "call_service":
+        domain = params.get("domain")
+        service = params.get("service")
+        if not isinstance(domain, str) or not isinstance(service, str):
+            return ActionResult(
+                success=False,
+                message="Parametros invalidos para call_service.",
+                error="domain and service must be strings",
+            )
+        if not _is_allowed_service(domain, service):
+            return ActionResult(
+                success=False,
+                message=f"Servico nao permitido: {domain}.{service}.",
+                error="service not in allowlist",
+            )
+    return None
+
+
 async def dispatch_action(
     name: str,
     params: JsonObject,
@@ -311,14 +448,30 @@ async def dispatch_action(
         )
         return result
 
+    gate_result = _policy_gate(name, params)
+    if gate_result is not None:
+        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+        _log_action_result(
+            ctx=ctx,
+            action_name=name,
+            params=params,
+            started_at=started_at_iso,
+            elapsed_ms=elapsed_ms,
+            result=gate_result,
+        )
+        return gate_result
+
     if spec.requires_confirmation and not skip_confirmation and name != "confirm_action":
+        pending = _store_confirmation(name, params, ctx)
         result = ActionResult(
             success=False,
             message=f"Confirma executar {name} com os parametros informados?",
             data={
                 "confirmation_required": True,
-                "confirmation_token": "",
-                "expires_in": 0,
+                "confirmation_token": pending.token,
+                "expires_in": _remaining_seconds(pending.expires_at),
+                "action_name": pending.action_name,
+                "params": pending.params,
             },
         )
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
@@ -428,12 +581,37 @@ async def _call_service(params: JsonObject, ctx: ActionContext) -> ActionResult:
     return _call_home_assistant(domain=domain, service=service, service_data=service_data)
 
 
-async def _confirm_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return ActionResult(
-        success=False,
-        message="confirm_action indisponivel nesta etapa.",
-        error="not implemented",
-    )
+async def _confirm_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    token = str(params.get("confirmation_token", "")).strip()
+    if not token:
+        return ActionResult(success=False, message="Token de confirmacao ausente.", error="missing token")
+
+    pending = _peek_confirmation(token)
+    if pending is None:
+        return ActionResult(success=False, message="Token de confirmacao invalido ou expirado.", error="invalid token")
+
+    if pending.participant_identity != ctx.participant_identity:
+        return ActionResult(success=False, message="Token pertence a outro participante.", error="identity mismatch")
+
+    if pending.room != ctx.room:
+        return ActionResult(success=False, message="Token pertence a outra sala.", error="room mismatch")
+
+    last_user_text = _extract_last_user_text(ctx.session)
+    if not _is_explicit_confirmation(last_user_text):
+        return ActionResult(
+            success=False,
+            message="Preciso de confirmacao explicita. Diga claramente 'sim, confirmo' para executar.",
+            data={
+                "confirmation_required": True,
+                "confirmation_token": pending.token,
+                "expires_in": _remaining_seconds(pending.expires_at),
+                "action_name": pending.action_name,
+                "params": pending.params,
+            },
+        )
+
+    _pop_confirmation(token)
+    return await dispatch_action(pending.action_name, pending.params, ctx, skip_confirmation=True)
 
 
 def register_default_actions() -> None:
