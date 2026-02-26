@@ -5,7 +5,6 @@ from livekit.plugins import noise_cancellation, google
 from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
 from mem0 import AsyncMemoryClient
 import logging
-import os
 import json
 
 load_dotenv()
@@ -28,7 +27,6 @@ class Assistant(Agent):
 
 
 async def entrypoint(ctx: agents.JobContext):
-    
     async def shutdown_hook(chat_ctx: ChatContext, mem0: AsyncMemoryClient, memory_str: str):
         logging.info("Shutting down, saving chat context to memory...")
 
@@ -51,9 +49,12 @@ async def entrypoint(ctx: agents.JobContext):
                 })
 
         logging.info(f"Formatted messages to add to memory: {messages_formatted}")
-        # Assuming user_id is consistent
-        await mem0.add(messages_formatted, user_id="PedroLucas")
-        logging.info("Chat context saved to memory.")
+        if messages_formatted:
+            # Keep a fixed id for now; can be replaced with participant identity later.
+            await mem0.add(messages_formatted, user_id="PedroLucas")
+            logging.info("Chat context saved to memory.")
+        else:
+            logging.info("No new messages to persist.")
 
     # Initialize Memory Client
     mem0 = AsyncMemoryClient()
@@ -111,11 +112,14 @@ async def entrypoint(ctx: agents.JobContext):
         room_input_options=RoomInputOptions(
             video_enabled=True,
             noise_cancellation=noise_cancellation.BVC(),
+            # Avoid immediate session teardown on client disconnect.
+            # This mitigates a Windows crash path in underlying webrtc teardown.
+            close_on_disconnect=False,
         ),
     )
 
-    # Use a shutdown callback to capture the context at the end
-    ctx.add_shutdown_callback(lambda: shutdown_hook(session._agent.chat_ctx, mem0, memory_str))
+    # Save conversation context when job is shutting down.
+    ctx.add_shutdown_callback(lambda: shutdown_hook(agent.chat_ctx, mem0, memory_str))
 
     await session.generate_reply(
         instructions=SESSION_INSTRUCTION  + "\nCumprimente o usuário de forma breve e confiante."
@@ -126,4 +130,3 @@ if __name__ == "__main__":
     agents.cli.run_app(
         agents.WorkerOptions(entrypoint_fnc=entrypoint)
     )
-
