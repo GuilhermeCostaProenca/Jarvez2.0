@@ -4,7 +4,7 @@ dotenv: ['.env.local']
 
 tasks:
   post_create:
-    desc: 'Runs after this template is instantiated as a Sandbox or Bootstrap'
+    desc: 'Runs local setup tasks'
     cmds:
       - echo -e "\nYour Next.js voice assistant is ready to go!\n"
       - echo -e "To give it a try, run the following commands:\r\n"
@@ -21,3 +21,4 @@ tasks:
     interactive: true
     cmds:
       - 'pnpm dev'
+

@@ -22,19 +22,19 @@ export interface AppConfig {
 }
 
 export const APP_CONFIG_DEFAULTS: AppConfig = {
-  companyName: 'Jarvis',
-  pageTitle: 'Jarvis - Assistente de Voz',
-  pageDescription: 'Um assistente de voz avançado e inteligente.',
+  companyName: 'Jarvez',
+  pageTitle: 'Jarvez - Assistente de Voz',
+  pageDescription: 'Seu assistente de voz pessoal.',
 
   supportsChatInput: true,
   supportsVideoInput: true,
   supportsScreenShare: true,
   isPreConnectBufferEnabled: true,
 
-  logo: '/lk-logo.svg',
-  accent: '#002cf2',
-  logoDark: '/lk-logo-dark.svg',
-  accentDark: '#1fd5f9',
+  logo: '/jarvez-logo.svg',
+  accent: '#0f766e',
+  logoDark: '/jarvez-logo-dark.svg',
+  accentDark: '#14b8a6',
   startButtonText: 'Iniciar Chamada',
 
   // agent dispatch configuration
