@@ -18,8 +18,11 @@ Projeto unificado do Jarvez com:
 - `frontend/.env.local`
 
 No `backend/.env`, personalize:
-- `JARVEZ_USER_ID` (id de memoria no Mem0)
-- `JARVEZ_USER_NAME` (nome usado no contexto do agente)
+- `JARVEZ_USER_NAME` (nome exibido no contexto do agente)
+
+Observacao:
+- O `user_id` da memoria agora e automatico por participante da sessao (LiveKit identity).
+- Se nao houver identidade disponivel, o backend usa fallback `anon-{room}-{random}`.
 
 3. Inicie o projeto:
 
