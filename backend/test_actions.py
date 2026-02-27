@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from actions import (
+    AUTHENTICATED_SESSIONS,
     ActionContext,
     ActionResult,
     PENDING_CONFIRMATIONS,
@@ -33,6 +34,7 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         PENDING_CONFIRMATIONS.clear()
         PARTICIPANT_PENDING_TOKENS.clear()
+        AUTHENTICATED_SESSIONS.clear()
 
     def test_validate_params_success(self):
         ok, err = validate_params(
@@ -62,11 +64,19 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_brightness_out_of_range(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
-        result = await dispatch_action(
-            "set_light_brightness",
-            {"entity_id": "light.sala", "brightness": 999},
-            ctx,
-        )
+        with patch("actions.os.getenv") as getenv:
+            def _fake_getenv(key, default=""):
+                if key == "JARVEZ_SECURITY_PIN":
+                    return "1234"
+                return default
+
+            getenv.side_effect = _fake_getenv
+            await dispatch_action("authenticate_identity", {"pin": "1234"}, ctx)
+            result = await dispatch_action(
+                "set_light_brightness",
+                {"entity_id": "light.sala", "brightness": 999},
+                ctx,
+            )
         self.assertFalse(result.success)
         self.assertIn("Invalid parameters", result.message)
 
@@ -74,11 +84,14 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
         with patch("actions.os.getenv") as getenv:
             def _fake_getenv(key, default=""):
+                if key == "JARVEZ_SECURITY_PIN":
+                    return "1234"
                 if key == "HOME_ASSISTANT_ALLOWED_SERVICES":
                     return "light.turn_on,light.turn_off"
                 return default
 
             getenv.side_effect = _fake_getenv
+            await dispatch_action("authenticate_identity", {"pin": "1234"}, ctx)
             result = await dispatch_action(
                 "call_service",
                 {
@@ -94,7 +107,15 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_sensitive_action_returns_confirmation_required(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
-        result = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, ctx)
+        with patch("actions.os.getenv") as getenv:
+            def _fake_getenv(key, default=""):
+                if key == "JARVEZ_SECURITY_PIN":
+                    return "1234"
+                return default
+
+            getenv.side_effect = _fake_getenv
+            await dispatch_action("authenticate_identity", {"pin": "1234"}, ctx)
+            result = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, ctx)
         self.assertFalse(result.success)
         self.assertTrue(result.data and result.data.get("confirmation_required"))
         self.assertTrue(result.data and result.data.get("confirmation_token"))
@@ -103,43 +124,85 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
         session = _FakeSession([_FakeMessage("user", "sim, confirmo")])
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a", session=session)
 
-        initial = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, ctx)
-        token = str(initial.data["confirmation_token"])
+        with patch("actions.os.getenv") as getenv:
+            def _fake_getenv(key, default=""):
+                if key == "JARVEZ_SECURITY_PIN":
+                    return "1234"
+                return default
 
-        with patch("actions._call_home_assistant", return_value=ActionResult(True, "ok")):
-            result = await dispatch_action("confirm_action", {"confirmation_token": token}, ctx)
+            getenv.side_effect = _fake_getenv
+            await dispatch_action("authenticate_identity", {"pin": "1234"}, ctx)
+            initial = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, ctx)
+            token = str(initial.data["confirmation_token"])
+
+            with patch("actions._call_home_assistant", return_value=ActionResult(True, "ok")):
+                result = await dispatch_action("confirm_action", {"confirmation_token": token}, ctx)
 
         self.assertTrue(result.success)
         self.assertEqual(result.message, "ok")
 
     async def test_confirm_action_fails_for_other_identity(self):
         owner_ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
-        initial = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, owner_ctx)
-        token = str(initial.data["confirmation_token"])
+        with patch("actions.os.getenv") as getenv:
+            def _fake_getenv(key, default=""):
+                if key == "JARVEZ_SECURITY_PIN":
+                    return "1234"
+                return default
 
-        other_session = _FakeSession([_FakeMessage("user", "sim, confirmo")])
-        other_ctx = ActionContext(
-            job_id="j2",
-            room="room-a",
-            participant_identity="user-b",
-            session=other_session,
-        )
-        result = await dispatch_action("confirm_action", {"confirmation_token": token}, other_ctx)
+            getenv.side_effect = _fake_getenv
+            await dispatch_action("authenticate_identity", {"pin": "1234"}, owner_ctx)
+            initial = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, owner_ctx)
+            token = str(initial.data["confirmation_token"])
+
+            other_session = _FakeSession([_FakeMessage("user", "sim, confirmo")])
+            other_ctx = ActionContext(
+                job_id="j2",
+                room="room-a",
+                participant_identity="user-b",
+                session=other_session,
+            )
+            result = await dispatch_action("confirm_action", {"confirmation_token": token}, other_ctx)
         self.assertFalse(result.success)
-        self.assertIn("outro participante", result.message)
+        self.assertIn("bloqueada", result.message)
 
     async def test_confirm_action_fails_when_expired(self):
         session = _FakeSession([_FakeMessage("user", "sim, confirmo")])
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a", session=session)
 
-        initial = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, ctx)
-        token = str(initial.data["confirmation_token"])
-        pending = PENDING_CONFIRMATIONS[token]
-        pending.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        with patch("actions.os.getenv") as getenv:
+            def _fake_getenv(key, default=""):
+                if key == "JARVEZ_SECURITY_PIN":
+                    return "1234"
+                return default
 
-        result = await dispatch_action("confirm_action", {"confirmation_token": token}, ctx)
+            getenv.side_effect = _fake_getenv
+            await dispatch_action("authenticate_identity", {"pin": "1234"}, ctx)
+            initial = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, ctx)
+            token = str(initial.data["confirmation_token"])
+            pending = PENDING_CONFIRMATIONS[token]
+            pending.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+            result = await dispatch_action("confirm_action", {"confirmation_token": token}, ctx)
         self.assertFalse(result.success)
         self.assertIn("expirado", result.message)
+
+    async def test_authenticate_identity_requires_correct_pin(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        with patch("actions.os.getenv") as getenv:
+            def _fake_getenv(key, default=""):
+                if key == "JARVEZ_SECURITY_PIN":
+                    return "1234"
+                return default
+
+            getenv.side_effect = _fake_getenv
+            result = await dispatch_action("authenticate_identity", {"pin": "1111"}, ctx)
+        self.assertFalse(result.success)
+        self.assertIn("Falha na autenticacao", result.message)
+
+    async def test_auth_gate_blocks_sensitive_action_without_auth(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        result = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, ctx)
+        self.assertFalse(result.success)
+        self.assertTrue(result.data and result.data.get("authentication_required"))
 
     def test_redaction_hides_secret_fields(self):
         redacted = _redact(

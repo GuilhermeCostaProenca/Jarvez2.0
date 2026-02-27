@@ -73,6 +73,7 @@ class ActionSpec:
     requires_confirmation: bool
     handler: ActionHandler
     expose_to_model: bool = True
+    requires_auth: bool = False
 
 
 @dataclass(slots=True)
@@ -85,9 +86,17 @@ class PendingConfirmation:
     expires_at: datetime
 
 
+@dataclass(slots=True)
+class AuthenticatedSession:
+    participant_identity: str
+    room: str
+    expires_at: datetime
+
+
 ACTION_REGISTRY: dict[str, ActionSpec] = {}
 PENDING_CONFIRMATIONS: dict[str, PendingConfirmation] = {}
 PARTICIPANT_PENDING_TOKENS: dict[str, str] = {}
+AUTHENTICATED_SESSIONS: dict[str, AuthenticatedSession] = {}
 
 
 def register_action(spec: ActionSpec) -> None:
@@ -217,6 +226,62 @@ def _confirmation_ttl_seconds() -> int:
         return max(10, int(raw))
     except ValueError:
         return 60
+
+
+def _security_ttl_seconds() -> int:
+    raw = os.getenv("JARVEZ_SECURE_SESSION_TTL_SECONDS", "600").strip()
+    if not raw:
+        return 600
+    try:
+        return max(60, int(raw))
+    except ValueError:
+        return 600
+
+
+def _security_pin() -> str:
+    return os.getenv("JARVEZ_SECURITY_PIN", "").strip()
+
+
+def _security_passphrase() -> str:
+    return os.getenv("JARVEZ_SECURITY_PASSPHRASE", "").strip()
+
+
+def _clear_authentication(identity: str) -> None:
+    AUTHENTICATED_SESSIONS.pop(identity, None)
+
+
+def _set_authenticated(identity: str, room: str) -> None:
+    AUTHENTICATED_SESSIONS[identity] = AuthenticatedSession(
+        participant_identity=identity,
+        room=room,
+        expires_at=datetime.now(timezone.utc) + timedelta(seconds=_security_ttl_seconds()),
+    )
+
+
+def _is_authenticated(identity: str, room: str) -> bool:
+    session = AUTHENTICATED_SESSIONS.get(identity)
+    if session is None:
+        return False
+    if session.room != room:
+        _clear_authentication(identity)
+        return False
+    if session.expires_at <= datetime.now(timezone.utc):
+        _clear_authentication(identity)
+        return False
+    return True
+
+
+def _security_status_payload(identity: str, room: str) -> JsonObject:
+    authenticated = _is_authenticated(identity, room)
+    session = AUTHENTICATED_SESSIONS.get(identity)
+    expires_in = _remaining_seconds(session.expires_at) if session else 0
+    return {
+        "security_status": {
+            "authenticated": authenticated,
+            "identity_bound": bool(identity),
+            "expires_in": expires_in,
+        }
+    }
 
 
 def _cleanup_expired_confirmations() -> None:
@@ -461,6 +526,27 @@ async def dispatch_action(
         )
         return gate_result
 
+    if spec.requires_auth and not _is_authenticated(ctx.participant_identity, ctx.room):
+        result = ActionResult(
+            success=False,
+            message="Sessao privada bloqueada. Confirme sua identidade com PIN para continuar.",
+            data={
+                "authentication_required": True,
+                **_security_status_payload(ctx.participant_identity, ctx.room),
+            },
+            error="not authenticated",
+        )
+        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+        _log_action_result(
+            ctx=ctx,
+            action_name=name,
+            params=params,
+            started_at=started_at_iso,
+            elapsed_ms=elapsed_ms,
+            result=result,
+        )
+        return result
+
     if spec.requires_confirmation and not skip_confirmation and name != "confirm_action":
         pending = _store_confirmation(name, params, ctx)
         result = ActionResult(
@@ -614,9 +700,109 @@ async def _confirm_action(params: JsonObject, ctx: ActionContext) -> ActionResul
     return await dispatch_action(pending.action_name, pending.params, ctx, skip_confirmation=True)
 
 
+async def _authenticate_identity(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    pin = str(params.get("pin", "")).strip()
+    passphrase = str(params.get("passphrase", "")).strip()
+
+    expected_pin = _security_pin()
+    expected_passphrase = _security_passphrase()
+    if not expected_pin:
+        return ActionResult(
+            success=False,
+            message="PIN de seguranca nao configurado no servidor.",
+            error="missing JARVEZ_SECURITY_PIN",
+        )
+
+    pin_valid = secrets.compare_digest(pin, expected_pin)
+    passphrase_required = bool(expected_passphrase)
+    passphrase_valid = (not passphrase_required) or secrets.compare_digest(passphrase, expected_passphrase)
+
+    if not pin_valid or not passphrase_valid:
+        _clear_authentication(ctx.participant_identity)
+        return ActionResult(
+            success=False,
+            message="Falha na autenticacao. Verifique PIN e frase de seguranca.",
+            data={"authentication_required": True, **_security_status_payload(ctx.participant_identity, ctx.room)},
+            error="invalid credentials",
+        )
+
+    _set_authenticated(ctx.participant_identity, ctx.room)
+    return ActionResult(
+        success=True,
+        message="Sessao autenticada. Modo privado liberado.",
+        data=_security_status_payload(ctx.participant_identity, ctx.room),
+    )
+
+
+async def _lock_private_mode(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    _clear_authentication(ctx.participant_identity)
+    return ActionResult(
+        success=True,
+        message="Modo privado bloqueado.",
+        data=_security_status_payload(ctx.participant_identity, ctx.room),
+    )
+
+
+async def _get_security_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    status = _security_status_payload(ctx.participant_identity, ctx.room)
+    if status["security_status"]["authenticated"]:
+        message = "Sessao autenticada."
+    else:
+        message = "Sessao nao autenticada."
+    return ActionResult(success=True, message=message, data=status)
+
+
 def register_default_actions() -> None:
     if ACTION_REGISTRY:
         return
+
+    register_action(
+        ActionSpec(
+            name="get_security_status",
+            description="Retorna o estado de autenticacao da sessao atual.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_get_security_status,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="authenticate_identity",
+            description=(
+                "Autentica o usuario atual usando PIN e, opcionalmente, frase de seguranca para liberar modo privado."
+            ),
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "pin": {"type": "string", "minLength": 4, "maxLength": 32},
+                    "passphrase": {"type": "string", "minLength": 1, "maxLength": 128},
+                },
+                "required": ["pin"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_authenticate_identity,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="lock_private_mode",
+            description="Bloqueia a sessao privada atual e remove autenticacao ativa.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_lock_private_mode,
+        )
+    )
 
     register_action(
         ActionSpec(
@@ -635,6 +821,7 @@ def register_default_actions() -> None:
             },
             requires_confirmation=True,
             handler=_turn_light_on,
+            requires_auth=True,
         )
     )
 
@@ -655,6 +842,7 @@ def register_default_actions() -> None:
             },
             requires_confirmation=True,
             handler=_turn_light_off,
+            requires_auth=True,
         )
     )
 
@@ -680,6 +868,7 @@ def register_default_actions() -> None:
             },
             requires_confirmation=True,
             handler=_set_light_brightness,
+            requires_auth=True,
         )
     )
 
@@ -700,6 +889,7 @@ def register_default_actions() -> None:
             requires_confirmation=True,
             handler=_call_service,
             expose_to_model=False,
+            requires_auth=True,
         )
     )
 
@@ -717,6 +907,7 @@ def register_default_actions() -> None:
             },
             requires_confirmation=False,
             handler=_confirm_action,
+            requires_auth=True,
         )
     )
 

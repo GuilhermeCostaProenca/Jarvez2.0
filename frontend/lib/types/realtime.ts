@@ -22,6 +22,12 @@ export interface ActionResultPayload {
     expires_in?: number;
     action_name?: string;
     params?: Record<string, unknown>;
+    authentication_required?: boolean;
+    security_status?: {
+      authenticated?: boolean;
+      identity_bound?: boolean;
+      expires_in?: number;
+    };
   };
   error?: string;
 }
@@ -37,6 +43,12 @@ export interface PendingActionConfirmation {
 export interface ActionExecutionEvent extends ToolCallEvent {
   callId: string;
   actionName: string;
+}
+
+export interface SecuritySessionState {
+  authenticated: boolean;
+  identityBound: boolean;
+  expiresIn: number;
 }
 
 export interface ReconnectState {
