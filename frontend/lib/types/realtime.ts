@@ -27,7 +27,13 @@ export interface ActionResultPayload {
       authenticated?: boolean;
       identity_bound?: boolean;
       expires_in?: number;
+      auth_method?: 'pin' | 'passphrase' | 'voice' | 'voice+pin' | string;
+      step_up_required?: boolean;
     };
+    auth_method?: 'pin' | 'passphrase' | 'voice' | 'voice+pin' | string;
+    voice_score?: number;
+    step_up_required?: boolean;
+    private_access_granted?: boolean;
   };
   error?: string;
 }
@@ -49,6 +55,9 @@ export interface SecuritySessionState {
   authenticated: boolean;
   identityBound: boolean;
   expiresIn: number;
+  authMethod?: string;
+  stepUpRequired: boolean;
+  voiceScore?: number;
 }
 
 export interface ReconnectState {

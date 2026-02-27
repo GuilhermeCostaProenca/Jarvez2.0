@@ -18,6 +18,7 @@ import {
 import { TileLayout } from '@/components/app/tile-layout';
 import { Button } from '@/components/ui/button';
 import { useAgentActionEvents } from '@/hooks/useAgentActionEvents';
+import { useAwarenessProactive } from '@/hooks/useAwarenessProactive';
 import { cn } from '@/lib/shadcn/utils';
 import type { ParticipantIdentity, ReconnectState } from '@/lib/types/realtime';
 import { Shimmer } from '../ai-elements/shimmer';
@@ -216,6 +217,7 @@ export const SessionView = ({
     confirmPendingAction,
     cancelPendingAction,
   } = useAgentActionEvents();
+  const { contextLabel, silentMode, setSilentMode } = useAwarenessProactive();
 
   const participants = useRemoteParticipants();
   const agentParticipant = participants.find((p) => !p.isLocal);
@@ -360,9 +362,23 @@ export const SessionView = ({
         <div className="mx-auto mb-3 flex w-full max-w-2xl items-center justify-between rounded-lg border border-white/20 bg-black/40 px-3 py-2 text-xs text-white">
           <span>
             {securitySession.authenticated
-              ? `Sessao privada autenticada (${securitySession.expiresIn}s restantes)`
-              : 'Sessao privada bloqueada. Autentique com PIN para liberar conteudo sensivel.'}
+              ? `Sessao privada autenticada via ${securitySession.authMethod ?? 'credencial'} (${securitySession.expiresIn}s restantes)`
+              : securitySession.stepUpRequired
+                ? 'Voz validada com confianca media. Confirme com PIN/frase para liberar conteudo sensivel.'
+                : 'Sessao privada bloqueada. Autentique com PIN/frase para liberar conteudo sensivel.'}
           </span>
+        </div>
+
+        <div className="mx-auto mb-3 flex w-full max-w-2xl items-center justify-between rounded-lg border border-white/20 bg-black/40 px-3 py-2 text-xs text-white">
+          <span>Awareness: {contextLabel}</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => setSilentMode(!silentMode)}
+          >
+            {silentMode ? 'Ativar proativo' : 'Modo silencioso'}
+          </Button>
         </div>
 
         <ActionConfirmationPrompt

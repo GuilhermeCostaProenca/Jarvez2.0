@@ -16,6 +16,7 @@ from actions import (
     ActionContext,
     action_spec_to_raw_schema,
     dispatch_action,
+    get_memory_scope_override,
     get_exposed_actions,
     is_authenticated_session,
 )
@@ -86,7 +87,13 @@ def _detect_scope_for_text(text: str, fallback_scope: str) -> str:
     return fallback_scope
 
 
-def _prepare_memory_batches(chat_ctx: ChatContext, loaded_memory_blobs: set[str]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+def _prepare_memory_batches(
+    chat_ctx: ChatContext,
+    loaded_memory_blobs: set[str],
+    *,
+    participant_identity: str,
+    room: str,
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     public_batch: list[dict[str, str]] = []
     private_batch: list[dict[str, str]] = []
     current_scope = PUBLIC_SCOPE
@@ -103,7 +110,11 @@ def _prepare_memory_batches(chat_ctx: ChatContext, loaded_memory_blobs: set[str]
             continue
 
         if role == 'user':
-            current_scope = _detect_scope_for_text(text, current_scope)
+            override_scope = get_memory_scope_override(participant_identity, room)
+            if override_scope in {PUBLIC_SCOPE, PRIVATE_SCOPE}:
+                current_scope = override_scope
+            else:
+                current_scope = _detect_scope_for_text(text, current_scope)
 
         target = private_batch if current_scope == PRIVATE_SCOPE else public_batch
         target.append({'role': role, 'content': text})
@@ -191,6 +202,8 @@ def build_action_tools(
                 room=room_name,
                 participant_identity=participant_identity,
                 session=ctx.session,
+                memory_client=mem0,
+                user_id=user_id,
             )
             result = await dispatch_action(_action_name, params, action_ctx)
 
@@ -202,6 +215,18 @@ def build_action_tools(
                         result.data = {}
                     result.data['private_memories_loaded'] = len(private_results)
                     result.data['private_memories'] = private_blob
+                    logger.info(
+                        "private_memory_access %s",
+                        json.dumps(
+                            {
+                                "participant_identity": participant_identity,
+                                "room": room_name,
+                                "source": "authenticate_identity",
+                                "count": len(private_results),
+                            },
+                            ensure_ascii=False,
+                        ),
+                    )
 
             return result.to_json()
 
@@ -217,7 +242,12 @@ async def entrypoint(ctx: agents.JobContext):
 
     async def shutdown_hook(chat_ctx: ChatContext, mem0: AsyncMemoryClient):
         logging.info('Shutting down, saving chat context to memory...')
-        public_batch, private_batch = _prepare_memory_batches(chat_ctx, loaded_memory_blobs)
+        public_batch, private_batch = _prepare_memory_batches(
+            chat_ctx,
+            loaded_memory_blobs,
+            participant_identity=user_id,
+            room=getattr(ctx.room, 'name', 'room'),
+        )
 
         if public_batch:
             await mem0.add(public_batch, user_id=_scoped_user_id(user_id, PUBLIC_SCOPE))
@@ -250,6 +280,18 @@ async def entrypoint(ctx: agents.JobContext):
             initial_ctx.add_message(
                 role='assistant',
                 content=f'Memorias privadas liberadas para esta sessao: {private_blob}.',
+            )
+            logger.info(
+                "private_memory_access %s",
+                json.dumps(
+                    {
+                        "participant_identity": user_id,
+                        "room": room_name,
+                        "source": "session_start",
+                        "count": len(private_results),
+                    },
+                    ensure_ascii=False,
+                ),
             )
     elif not public_blob:
         logging.info('No memories found for this user. Starting fresh conversation.')

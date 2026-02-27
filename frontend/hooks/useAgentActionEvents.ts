@@ -56,6 +56,7 @@ export function useAgentActionEvents() {
     authenticated: false,
     identityBound: false,
     expiresIn: 0,
+    stepUpRequired: false,
   });
 
   const pushEvent = useCallback((event: ActionExecutionEvent) => {
@@ -98,11 +99,21 @@ export function useAgentActionEvents() {
             authenticated: Boolean(security.authenticated),
             identityBound: Boolean(security.identity_bound),
             expiresIn: Number(security.expires_in ?? 0),
+            authMethod: typeof security.auth_method === 'string' ? security.auth_method : undefined,
+            stepUpRequired: Boolean(security.step_up_required),
+            voiceScore:
+              typeof actionResult.data?.voice_score === 'number'
+                ? actionResult.data.voice_score
+                : undefined,
           });
         }
 
         if (actionResult.data?.authentication_required) {
-          toast.warning('Sessao privada bloqueada. Diga seu PIN para autenticar.');
+          if (actionResult.data.step_up_required) {
+            toast.warning('Validacao por voz parcial. Confirme com PIN/frase para liberar sessao.');
+          } else {
+            toast.warning('Sessao privada bloqueada. Diga seu PIN/frase para autenticar.');
+          }
         }
 
         const call = calls[index];
