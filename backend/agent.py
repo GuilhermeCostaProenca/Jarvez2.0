@@ -159,8 +159,16 @@ def resolve_user_identity(ctx: agents.JobContext) -> tuple[str, str]:
     if participant_identity:
         return participant_identity, participant_name or DEFAULT_USER_NAME
 
+    remote_participants = getattr(getattr(ctx, 'room', None), 'remote_participants', None)
+    if isinstance(remote_participants, dict):
+        for remote in remote_participants.values():
+            remote_identity = getattr(remote, 'identity', None)
+            remote_name = getattr(remote, 'name', None)
+            if remote_identity:
+                return remote_identity, remote_name or DEFAULT_USER_NAME
+
     room_name = getattr(getattr(ctx.job, 'room', None), 'name', 'room')
-    fallback_identity = f"anon-{room_name}-{secrets.token_hex(3)}"
+    fallback_identity = f"anon-{room_name}"
     return fallback_identity, participant_name or DEFAULT_USER_NAME
 
 
@@ -203,6 +211,7 @@ def build_action_tools(
 
 
 async def entrypoint(ctx: agents.JobContext):
+    await ctx.connect()
     user_id, user_name = resolve_user_identity(ctx)
     loaded_memory_blobs: set[str] = set()
 
@@ -244,8 +253,6 @@ async def entrypoint(ctx: agents.JobContext):
             )
     elif not public_blob:
         logging.info('No memories found for this user. Starting fresh conversation.')
-
-    await ctx.connect()
 
     session = AgentSession()
     room_name = getattr(ctx.room, 'name', 'room')

@@ -707,25 +707,33 @@ async def _confirm_action(params: JsonObject, ctx: ActionContext) -> ActionResul
 async def _authenticate_identity(params: JsonObject, ctx: ActionContext) -> ActionResult:
     pin = str(params.get("pin", "")).strip()
     passphrase = str(params.get("passphrase", "")).strip()
+    if not passphrase:
+        passphrase = str(params.get("security_phrase", "")).strip()
 
     expected_pin = _security_pin()
     expected_passphrase = _security_passphrase()
-    if not expected_pin:
+    if not expected_pin and not expected_passphrase:
         return ActionResult(
             success=False,
-            message="PIN de seguranca nao configurado no servidor.",
-            error="missing JARVEZ_SECURITY_PIN",
+            message="Credenciais de seguranca nao configuradas no servidor.",
+            error="missing JARVEZ_SECURITY_PIN and JARVEZ_SECURITY_PASSPHRASE",
         )
 
-    pin_valid = secrets.compare_digest(pin, expected_pin)
-    passphrase_required = bool(expected_passphrase)
-    passphrase_valid = (not passphrase_required) or secrets.compare_digest(passphrase, expected_passphrase)
+    pin_configured = bool(expected_pin)
+    passphrase_configured = bool(expected_passphrase)
+    pin_valid = pin_configured and bool(pin) and secrets.compare_digest(pin, expected_pin)
+    normalized_passphrase = passphrase.casefold()
+    normalized_expected_passphrase = expected_passphrase.casefold()
+    passphrase_valid = passphrase_configured and bool(passphrase) and secrets.compare_digest(
+        normalized_passphrase, normalized_expected_passphrase
+    )
+    authenticated = pin_valid or passphrase_valid
 
-    if not pin_valid or not passphrase_valid:
+    if not authenticated:
         _clear_authentication(ctx.participant_identity)
         return ActionResult(
             success=False,
-            message="Falha na autenticacao. Verifique PIN e frase de seguranca.",
+            message="Falha na autenticacao. Informe PIN ou frase de seguranca validos.",
             data={"authentication_required": True, **_security_status_payload(ctx.participant_identity, ctx.room)},
             error="invalid credentials",
         )
@@ -785,6 +793,7 @@ def register_default_actions() -> None:
                 "properties": {
                     "pin": {"type": "string", "minLength": 4, "maxLength": 32},
                     "passphrase": {"type": "string", "minLength": 1, "maxLength": 128},
+                    "security_phrase": {"type": "string", "minLength": 1, "maxLength": 128},
                 },
                 "required": ["pin"],
                 "additionalProperties": False,
