@@ -70,6 +70,15 @@ Comandos de voz suportados (MVP):
 - O token de confirmacao expira e e valido so para o mesmo participante/sala.
 - Sem autenticacao, o agente deve manter respostas privadas bloqueadas.
 
+## Memoria com escopo
+
+- A memoria agora e separada em `public` e `private`.
+- Conteudo sensivel e salvo como `private` por padrao.
+- O agente tambem pergunta quando detectar conteudo pessoal:
+  - "Quer que eu trate isso como segredo (privado) ou publico?"
+- Sem autenticacao ativa, apenas memoria `public` e considerada.
+- Apos autenticar, o agente pode carregar memoria `private` da mesma identidade.
+
 ## Troubleshooting rapido
 
 - `Token de confirmacao invalido ou expirado`:

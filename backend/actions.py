@@ -113,6 +113,10 @@ def get_exposed_actions() -> list[ActionSpec]:
     return [spec for spec in ACTION_REGISTRY.values() if spec.expose_to_model]
 
 
+def is_authenticated_session(participant_identity: str, room: str) -> bool:
+    return _is_authenticated(participant_identity, room)
+
+
 def action_spec_to_raw_schema(spec: ActionSpec) -> JsonObject:
     return {
         "name": spec.name,
