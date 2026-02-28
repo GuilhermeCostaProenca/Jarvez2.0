@@ -14,3 +14,10 @@
 .DS_Store
 Thumbs.db
 
+# Generated artifacts and temp work
+backend/data/
+backend/output/
+output/
+tmp/
+.tmp_*
+.tmp_t20_builder_pkg/
