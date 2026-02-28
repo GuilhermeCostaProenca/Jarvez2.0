@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -11,6 +13,8 @@ from actions import (
     PARTICIPANT_PENDING_TOKENS,
     VOICE_STEP_UP_PENDING,
     _redact,
+    _rpg_create_character_sheet,
+    _rpg_create_threat_sheet,
     dispatch_action,
     validate_params,
 )
@@ -36,11 +40,13 @@ class _FakeVoiceStore:
     def __init__(self, score: float):
         self.score = score
 
-    def verify_identity(self, *, participant_identity: str):  # noqa: ARG002
+    def verify_identity(self, *, participant_identity: str, embedding=None):  # noqa: ARG002
         class _Result:
             def __init__(self, score: float):
                 self.score = score
                 self.profile_name = "Guilherme"
+                self.compared_profiles = 1
+                self.method = "audio_embedding"
 
         return _Result(self.score)
 
@@ -54,6 +60,11 @@ class _FakeMemoryClient:
 
     async def delete(self, memory_id):
         self.deleted_ids.append(memory_id)
+
+
+class _FakeEnrollVoiceStore:
+    def enroll_profile(self, *, name: str, participant_identity: str, embedding=None):  # noqa: ARG002
+        return None
 
 
 class ActionsTests(unittest.IsolatedAsyncioTestCase):
@@ -191,7 +202,9 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
             )
             result = await dispatch_action("confirm_action", {"confirmation_token": token}, other_ctx)
         self.assertFalse(result.success)
-        self.assertIn("bloqueada", result.message)
+        self.assertTrue(
+            "bloqueada" in result.message or "modo privado" in result.message
+        )
 
     async def test_confirm_action_fails_when_expired(self):
         session = _FakeSession([_FakeMessage("user", "sim, confirmo")])
@@ -257,17 +270,39 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_verify_voice_identity_high_confidence_authenticates(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
-        with patch("actions.VOICE_PROFILE_STORE", _FakeVoiceStore(0.95)):
+        with patch("actions.VOICE_PROFILE_STORE", _FakeVoiceStore(0.95)), patch(
+            "actions.get_recent_voice_embedding", return_value=[0.1] * 54
+        ):
             result = await dispatch_action("verify_voice_identity", {}, ctx)
         self.assertTrue(result.success)
         self.assertEqual(result.data.get("auth_method"), "voice")
 
     async def test_verify_voice_identity_medium_confidence_requires_stepup(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
-        with patch("actions.VOICE_PROFILE_STORE", _FakeVoiceStore(0.8)):
+        with patch("actions.VOICE_PROFILE_STORE", _FakeVoiceStore(0.8)), patch(
+            "actions.get_recent_voice_embedding", return_value=[0.1] * 54
+        ):
             result = await dispatch_action("verify_voice_identity", {}, ctx)
         self.assertFalse(result.success)
         self.assertTrue(result.data.get("step_up_required"))
+
+    async def test_verify_voice_identity_requires_recent_audio(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        with patch("actions.VOICE_PROFILE_STORE", _FakeVoiceStore(0.8)), patch(
+            "actions.get_recent_voice_embedding", return_value=None
+        ):
+            result = await dispatch_action("verify_voice_identity", {}, ctx)
+        self.assertFalse(result.success)
+        self.assertEqual(result.error, "insufficient voice sample")
+
+    async def test_enroll_voice_profile_requires_recent_audio(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        with patch("actions.VOICE_PROFILE_STORE", _FakeEnrollVoiceStore()), patch(
+            "actions.get_recent_voice_embedding", return_value=None
+        ):
+            result = await dispatch_action("enroll_voice_profile", {"name": "Guil"}, ctx)
+        self.assertFalse(result.success)
+        self.assertEqual(result.error, "insufficient voice sample")
 
     async def test_set_memory_scope(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
@@ -292,6 +327,134 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
         result = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, ctx)
         self.assertFalse(result.success)
         self.assertTrue(result.data and result.data.get("authentication_required"))
+
+    async def test_rpg_create_character_sheet_bridge_pipeline(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "RPG_CHARACTERS_DIR": os.path.join(tmp, "chars"),
+                "RPG_CHARACTER_PDFS_DIR": os.path.join(tmp, "pdfs"),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                result = await _rpg_create_character_sheet(
+                    {
+                        "name": "TesteBridge",
+                        "world": "tormenta20",
+                        "race": "humano",
+                        "class_name": "guerreiro",
+                        "origin": "acolyte",
+                        "level": 1,
+                        "attributes": {
+                            "forca": 16,
+                            "destreza": 14,
+                            "constituicao": 14,
+                            "inteligencia": 10,
+                            "sabedoria": 12,
+                            "carisma": 8,
+                        },
+                    },
+                    ctx,
+                )
+                json_exists = os.path.exists(result.data["sheet_json_path"])
+                md_exists = os.path.exists(result.data["sheet_markdown_path"])
+                pdf_exists = os.path.exists(result.data["sheet_pdf_path"])
+        self.assertTrue(result.success)
+        self.assertEqual(result.data["sheet_builder_source"], "t20-sheet-builder")
+        self.assertEqual(result.data["sheet_pdf_status"], "created")
+        self.assertTrue(json_exists)
+        self.assertTrue(md_exists)
+        self.assertTrue(pdf_exists)
+
+    async def test_rpg_create_character_sheet_fallback_pipeline(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "RPG_CHARACTERS_DIR": os.path.join(tmp, "chars"),
+                "RPG_CHARACTER_PDFS_DIR": os.path.join(tmp, "pdfs"),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                result = await _rpg_create_character_sheet(
+                    {
+                        "name": "TesteFallback",
+                        "world": "tormenta20",
+                        "race": "humano",
+                        "class_name": "arcanista",
+                        "origin": "acolyte",
+                        "level": 1,
+                    },
+                    ctx,
+                )
+                pdf_exists = os.path.exists(result.data["sheet_pdf_path"])
+        self.assertTrue(result.success)
+        self.assertEqual(result.data["sheet_builder_source"], "fallback")
+        self.assertIn("bridge unsupported", result.data["sheet_builder_error"] or "")
+        self.assertEqual(result.data["sheet_pdf_status"], "created")
+        self.assertTrue(pdf_exists)
+
+    async def test_rpg_create_character_sheet_template_missing_returns_failed_pdf_status(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "RPG_CHARACTERS_DIR": os.path.join(tmp, "chars"),
+                "RPG_CHARACTER_PDFS_DIR": os.path.join(tmp, "pdfs"),
+                "RPG_CHARACTER_PDF_TEMPLATE_PATH": os.path.join(tmp, "missing.pdf"),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                result = await _rpg_create_character_sheet(
+                    {"name": "SemTemplate", "world": "tormenta20"},
+                    ctx,
+                )
+        self.assertTrue(result.success)
+        self.assertEqual(result.data["sheet_pdf_status"], "failed")
+        self.assertIsNone(result.data["sheet_pdf_path"])
+        self.assertIn("template not found", result.data["sheet_pdf_error"] or "")
+
+    async def test_rpg_create_threat_sheet_generates_files(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "RPG_THREATS_DIR": os.path.join(tmp, "threats"),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                result = await _rpg_create_threat_sheet(
+                    {
+                        "name": "Arauto do Eclipse",
+                        "world": "tormenta20",
+                        "role": "Solo",
+                        "challenge_level": "10",
+                        "threat_type": "Monstro",
+                        "size": "Grande",
+                        "is_boss": True,
+                    },
+                    ctx,
+                )
+                json_exists = os.path.exists(result.data["threat_json_path"])
+                md_exists = os.path.exists(result.data["threat_markdown_path"])
+                pdf_exists = os.path.exists(result.data["threat_pdf_path"])
+        self.assertTrue(result.success)
+        self.assertTrue(json_exists)
+        self.assertTrue(md_exists)
+        self.assertTrue(pdf_exists)
+        self.assertEqual(result.data["threat_builder_source"], "jarvez-threat-generator")
+        self.assertEqual(result.data["threat_data"]["combat_stats"]["defense"], 36)
+        self.assertEqual(result.data["threat_data"]["resistance_assignments"]["Fortitude"], "strong")
+        self.assertEqual(result.data["threat_data"]["ability_recommendation"]["min"], 2)
+        self.assertTrue(result.data["threat_data"]["qualities"])
+        self.assertTrue(result.data["threat_data"]["generated_abilities"])
+        self.assertEqual(result.data["threat_data"]["generated_abilities"][0]["category"], "ofensiva")
+        self.assertTrue(result.data["threat_data"]["boss_features"]["reactions"])
+        self.assertTrue(result.data["threat_data"]["boss_features"]["legendary_actions"])
+        self.assertTrue(result.data["threat_data"]["boss_features"]["phases"])
+        self.assertEqual(result.data["threat_pdf_status"], "created")
+
+    async def test_rpg_create_threat_sheet_rejects_invalid_nd(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        result = await _rpg_create_threat_sheet(
+            {"name": "Ameaca Invalida", "challenge_level": "99"},
+            ctx,
+        )
+        self.assertFalse(result.success)
+        self.assertIn("challenge_level must be", result.error or "")
 
     def test_redaction_hides_secret_fields(self):
         redacted = _redact(

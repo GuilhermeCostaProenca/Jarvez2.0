@@ -1,0 +1,184 @@
+import { type ActivateableAbilityEffect } from '../Ability';
+import { type TriggeredEffect, type TriggerEvent } from '../Ability/TriggeredEffect';
+import { type Devotion } from '../Devotion/Devotion';
+import type { Equipment } from '../Inventory/Equipment/Equipment';
+import type { Armor } from '../Inventory/Equipment/Weapon/DefensiveWeapon/Armor/Armor';
+import type { MartialWeapon } from '../Inventory/Equipment/Weapon/OffensiveWeapon/MartialWeapon/MartialWeapon';
+import type { SimpleWeapon } from '../Inventory/Equipment/Weapon/OffensiveWeapon/SimpleWeapon/SimpleWeapon';
+import type { ContextualModifierInterface } from '../Modifier/ContextualModifier/ContextualModifierInterface';
+import type { FixedModifierInterface } from '../Modifier/FixedModifier/FixedModifier';
+import { type PerLevelModifierInterface } from '../Modifier/PerLevelModifier/PerLevelModifierInterface';
+import type { OriginInterface } from '../Origin/Origin';
+import type { GeneralPowerInterface } from '../Power/GeneralPower/GeneralPower';
+import { type GrantedPower } from '../Power/GrantedPower/GrantedPower';
+import type { OriginPowerInterface } from '../Power/OriginPower/OriginPower';
+import type { RaceAbilityInterface } from '../Race/RaceAbility';
+import type { RaceInterface } from '../Race/RaceInterface';
+import { type ResistanceName } from '../Resistance/ResistanceName';
+import type { RoleAbilityInterface } from '../Role/RoleAbility';
+import type { RoleInterface } from '../Role/RoleInterface';
+import type { RolePowerInterface } from '../Role/RolePower';
+import { type Size } from '../Size';
+import type { SkillName } from '../Skill/SkillName';
+import type { LearnableSpellType, Spell } from '../Spell/Spell';
+import type { SpellCircle } from '../Spell/SpellCircle';
+import { type SpellSchool } from '../Spell/SpellSchool';
+import { type TranslatableName } from '../Translator';
+import type { Attribute, Attributes } from './Attributes';
+import type { Proficiency } from './Proficiency';
+import type { Vision } from './Vision';
+type ActionHandlersPayloads = {
+    setInitialAttributes: {
+        attributes: Attributes;
+    };
+    chooseRace: {
+        race: RaceInterface;
+    };
+    chooseRole: {
+        role: RoleInterface;
+    };
+    chooseOrigin: {
+        origin: OriginInterface;
+    };
+    trainSkill: {
+        skill: SkillName;
+        source: TranslatableName;
+    };
+    changeVision: {
+        vision: Vision;
+        source: TranslatableName;
+    };
+    applyRaceModifiers: {
+        modifiers: Partial<Attributes>;
+    };
+    applyRaceAbility: {
+        ability: RaceAbilityInterface;
+        source: TranslatableName;
+    };
+    applyRoleAbility: {
+        ability: RoleAbilityInterface;
+        source: TranslatableName;
+    };
+    pickGeneralPower: ({
+        power: GeneralPowerInterface;
+        source: TranslatableName;
+    });
+    pickRolePower: ({
+        power: RolePowerInterface;
+        source: TranslatableName;
+    });
+    pickOriginPower: ({
+        power: OriginPowerInterface;
+        source: TranslatableName;
+    });
+    changeDisplacement: {
+        displacement: number;
+        source: TranslatableName;
+    };
+    addProficiency: {
+        proficiency: Proficiency;
+        source: TranslatableName;
+    };
+    learnCircle: {
+        circle: SpellCircle;
+        type: LearnableSpellType;
+        source: TranslatableName;
+        schools?: Set<SpellSchool>;
+    };
+    learnSpell: {
+        spell: Spell;
+        source: TranslatableName;
+        needsCircle?: boolean;
+        needsSchool?: boolean;
+    };
+    addContextualModifierToSkill: {
+        modifier: ContextualModifierInterface;
+        skill: SkillName;
+    };
+    addFixedModifierToSkill: {
+        modifier: FixedModifierInterface;
+        skill: SkillName;
+    };
+    addFixedModifierToLifePoints: {
+        modifier: FixedModifierInterface;
+    };
+    addFixedModifierToManaPoints: {
+        modifier: FixedModifierInterface;
+    };
+    addPerLevelModifierToLifePoints: {
+        modifier: PerLevelModifierInterface;
+    };
+    addPerLevelModifierToManaPoints: {
+        modifier: PerLevelModifierInterface;
+    };
+    addFixedModifierToDefense: {
+        modifier: FixedModifierInterface;
+    };
+    trainIntelligenceSkills: {
+        skills: SkillName[];
+    };
+    addEquipment: {
+        equipment: Equipment;
+        isEquipped?: boolean;
+        source: TranslatableName;
+    };
+    addInitialEquipment: {
+        role: RoleInterface;
+        simpleWeapon: SimpleWeapon;
+        martialWeapon?: MartialWeapon;
+        armor?: Armor;
+        money: number;
+    };
+    addMoney: {
+        quantity: number;
+        source: TranslatableName;
+    };
+    changeTormentaPowersAttribute: {
+        attribute: Attribute;
+        source: TranslatableName;
+    };
+    decreaseAttribute: {
+        attribute: Attribute;
+        quantity: number;
+        source: TranslatableName;
+    };
+    changeClimbingDisplacement: {
+        climbingDisplacement: number;
+        source: TranslatableName;
+    };
+    changeSize: {
+        size: Size;
+        source: TranslatableName;
+    };
+    becomeDevout: {
+        devotion: Devotion;
+    };
+    pickGrantedPower: {
+        power: GrantedPower;
+        source: TranslatableName;
+    };
+    addResistance: {
+        resistance: ResistanceName;
+        value: number;
+        source: TranslatableName;
+    };
+    registerTriggeredEffect: {
+        effect: TriggeredEffect;
+        events: TriggerEvent[];
+    };
+    registerActivateableEffect: {
+        effect: ActivateableAbilityEffect;
+    };
+    changeGrantPowersCount: {
+        count: number;
+        source: TranslatableName;
+    };
+};
+export type ActionType = keyof ActionHandlersPayloads;
+export type ActionPayload<T extends ActionType> = ActionHandlersPayloads[T];
+export type ActionInterface<T extends ActionType = ActionType> = {
+    type: T;
+    payload: ActionPayload<T>;
+    description: string;
+};
+export {};

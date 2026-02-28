@@ -1,0 +1,20 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.RoleName = void 0;
+var RoleName;
+(function (RoleName) {
+    RoleName["warrior"] = "warrior";
+    RoleName["arcanist"] = "arcanist";
+    RoleName["barbarian"] = "barbarian";
+    RoleName["buccaneer"] = "buccaneer";
+    RoleName["bard"] = "bard";
+    RoleName["ranger"] = "ranger";
+    RoleName["knight"] = "knight";
+    RoleName["cleric"] = "cleric";
+    RoleName["druid"] = "druid";
+    RoleName["inventor"] = "inventor";
+    RoleName["rogue"] = "rogue";
+    RoleName["fighter"] = "fighter";
+    RoleName["noble"] = "noble";
+    RoleName["paladin"] = "paladin";
+})(RoleName || (exports.RoleName = RoleName = {}));

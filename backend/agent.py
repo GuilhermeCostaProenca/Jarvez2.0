@@ -1,16 +1,21 @@
+import asyncio
 import json
 import logging
 import os
 import re
 import secrets
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from livekit import agents
+from livekit import agents, rtc
 from livekit.agents import Agent, AgentSession, ChatContext, RoomInputOptions, function_tool
 from livekit.agents.voice.events import RunContext
+from livekit.rtc._proto.track_pb2 import TrackSource
 from livekit.plugins import google, noise_cancellation
 from mem0 import AsyncMemoryClient
+
+load_dotenv(dotenv_path=Path(__file__).with_name(".env"), override=False)
 
 from actions import (
     ActionContext,
@@ -21,8 +26,8 @@ from actions import (
     is_authenticated_session,
 )
 from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
+from voice_biometrics import capture_voice_frame
 
-load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -183,6 +188,66 @@ def resolve_user_identity(ctx: agents.JobContext) -> tuple[str, str]:
     return fallback_identity, participant_name or DEFAULT_USER_NAME
 
 
+async def _capture_microphone_stream(participant: rtc.RemoteParticipant, participant_identity: str) -> None:
+    stream = rtc.AudioStream.from_participant(
+        participant=participant,
+        track_source=TrackSource.SOURCE_MICROPHONE,
+        sample_rate=16000,
+        num_channels=1,
+        frame_size_ms=20,
+    )
+    try:
+        async for event in stream:
+            capture_voice_frame(participant_identity, event.frame)
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        logger.debug("voice_capture_stream_error participant=%s error=%s", participant_identity, error)
+    finally:
+        try:
+            await stream.aclose()
+        except Exception:
+            pass
+
+
+async def _run_voice_capture_manager(room: rtc.Room) -> None:
+    tasks: dict[str, asyncio.Task[None]] = {}
+    try:
+        while True:
+            remote_participants = getattr(room, "remote_participants", None)
+            current: dict[str, rtc.RemoteParticipant] = (
+                remote_participants if isinstance(remote_participants, dict) else {}
+            )
+
+            for identity, participant in current.items():
+                if identity and identity not in tasks:
+                    tasks[identity] = asyncio.create_task(
+                        _capture_microphone_stream(participant, identity),
+                        name=f"voice_capture_{identity}",
+                    )
+
+            removed = [identity for identity in list(tasks.keys()) if identity not in current]
+            for identity in removed:
+                task = tasks.pop(identity)
+                task.cancel()
+                try:
+                    await task
+                except Exception:
+                    pass
+
+            await asyncio.sleep(1.0)
+    except asyncio.CancelledError:
+        raise
+    finally:
+        for task in tasks.values():
+            task.cancel()
+        for task in tasks.values():
+            try:
+                await task
+            except Exception:
+                pass
+
+
 def build_action_tools(
     *,
     job_id: str,
@@ -324,11 +389,28 @@ async def entrypoint(ctx: agents.JobContext):
         ),
     )
 
+    voice_capture_task = asyncio.create_task(_run_voice_capture_manager(ctx.room), name="voice_capture_manager")
+
+    async def _cancel_voice_capture():
+        voice_capture_task.cancel()
+        try:
+            await voice_capture_task
+        except Exception:
+            pass
+
     ctx.add_shutdown_callback(lambda: shutdown_hook(agent.chat_ctx, mem0))
+    ctx.add_shutdown_callback(_cancel_voice_capture)
     await session.generate_reply(
         instructions=SESSION_INSTRUCTION + '\nCumprimente o usuario de forma breve e confiante.'
     )
 
 
 if __name__ == '__main__':
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+    agents.cli.run_app(
+        agents.WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            ws_url=os.getenv("LIVEKIT_URL"),
+            api_key=os.getenv("LIVEKIT_API_KEY"),
+            api_secret=os.getenv("LIVEKIT_API_SECRET"),
+        )
+    )

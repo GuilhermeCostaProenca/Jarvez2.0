@@ -5,3 +5,7 @@ python-dotenv
 requests
 mem0ai
 cryptography
+numpy
+edge-tts
+pypdf
+reportlab

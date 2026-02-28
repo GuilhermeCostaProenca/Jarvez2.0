@@ -1,0 +1,16 @@
+export declare enum RoleName {
+    warrior = "warrior",
+    arcanist = "arcanist",
+    barbarian = "barbarian",
+    buccaneer = "buccaneer",
+    bard = "bard",
+    ranger = "ranger",
+    knight = "knight",
+    cleric = "cleric",
+    druid = "druid",
+    inventor = "inventor",
+    rogue = "rogue",
+    fighter = "fighter",
+    noble = "noble",
+    paladin = "paladin"
+}
