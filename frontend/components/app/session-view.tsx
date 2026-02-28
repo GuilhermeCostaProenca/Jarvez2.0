@@ -1,6 +1,13 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import {
+  BookOpenText,
+  Disc3,
+  MessageCircleMore,
+  PanelRightClose,
+  PanelRightOpen,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   useChat,
@@ -207,10 +214,10 @@ export const SessionView = ({
   const { send } = useChat();
   const { messages } = useSessionMessages(session);
   const [chatOpen, setChatOpen] = useState(false);
+  const [integrationsMenuOpen, setIntegrationsMenuOpen] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const vantaEffectRef = useRef<VantaEffect | null>(null);
   const {
-    events,
     pendingConfirmation,
     isConfirming,
     securitySession,
@@ -227,9 +234,23 @@ export const SessionView = ({
   const PERSONA_COLORS = {
     alice: 0xff69b4,
     jarvis: 0x1da3b9,
+    default: 0x1da3b9,
+    faria_lima: 0xa0a0a0,
+    mona: 0xff4da6,
+    rpg: 0x7a3eea,
   };
+  const modeColorHex = securitySession.personaColorHex;
+  const modeColor =
+    modeColorHex && /^#?[0-9a-fA-F]{6}$/.test(modeColorHex)
+      ? Number.parseInt(modeColorHex.replace('#', ''), 16)
+      : undefined;
+  const modeFallbackColor =
+    PERSONA_COLORS[(securitySession.personaMode ?? 'default') as keyof typeof PERSONA_COLORS];
   const currentColor =
-    PERSONA_COLORS[agentPersona as keyof typeof PERSONA_COLORS] ?? PERSONA_COLORS.jarvis;
+    modeColor ??
+    modeFallbackColor ??
+    PERSONA_COLORS[agentPersona as keyof typeof PERSONA_COLORS] ??
+    PERSONA_COLORS.jarvis;
 
   useEffect(() => {
     const loadScript = (src: string): Promise<boolean> => {
@@ -288,7 +309,6 @@ export const SessionView = ({
     cancelPendingAction();
     void send('Cancelar acao pendente.');
   };
-
   return (
     <section className="relative flex h-svh w-svw flex-col overflow-hidden bg-black" {...props}>
       <VantaController vantaRef={vantaEffectRef} />
@@ -320,9 +340,75 @@ export const SessionView = ({
 
       <div className="pointer-events-none flex-1" />
 
+      <div className="pointer-events-none absolute inset-x-0 top-4 z-50 px-3">
+        <div className="mx-auto w-full max-w-3xl">
+          <AnimatePresence>
+            <motion.div
+              key="top-hud"
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="pointer-events-auto mx-auto w-full max-w-2xl rounded-2xl border border-white/10 bg-black/20 px-3 py-2 backdrop-blur-xl"
+            >
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/90">
+                <span
+                  className={cn(
+                    'rounded-full border px-2 py-1',
+                    securitySession.authenticated
+                      ? 'border-emerald-300/30 bg-emerald-500/10 text-emerald-200'
+                      : 'border-white/10 bg-white/5 text-white/70'
+                  )}
+                >
+                  {securitySession.authenticated
+                    ? `Privado: ${securitySession.authMethod ?? 'ok'}`
+                    : securitySession.stepUpRequired
+                      ? 'Privado: step-up'
+                      : 'Privado: bloqueado'}
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">
+                  {securitySession.personaLabel ?? securitySession.personaMode ?? 'Jarvez Classico'}
+                </span>
+                {securitySession.activeCharacterName && (
+                  <span className="rounded-full border border-amber-300/30 bg-amber-500/10 px-2 py-1 text-amber-100">
+                    {securitySession.activeCharacterName}
+                  </span>
+                )}
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-white/70">
+                  {contextLabel}
+                </span>
+                <div className="ml-auto flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setIntegrationsMenuOpen((current) => !current)}
+                  >
+                    {integrationsMenuOpen ? (
+                      <PanelRightClose className="size-4" />
+                    ) : (
+                      <PanelRightOpen className="size-4" />
+                    )}
+                    <span>Integracoes</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setSilentMode(!silentMode)}
+                  >
+                    {silentMode ? 'Ativar proativo' : 'Modo silencioso'}
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
+
       <MotionBottom
         {...BOTTOM_VIEW_MOTION_PROPS}
-        className="relative z-10 mx-auto mb-4 w-full max-w-3xl px-3"
+        className="relative z-40 mx-auto mb-4 w-full max-w-3xl px-3"
       >
         {appConfig.isPreConnectBufferEnabled && (
           <AnimatePresence>
@@ -359,28 +445,6 @@ export const SessionView = ({
           </div>
         )}
 
-        <div className="mx-auto mb-3 flex w-full max-w-2xl items-center justify-between rounded-lg border border-white/20 bg-black/40 px-3 py-2 text-xs text-white">
-          <span>
-            {securitySession.authenticated
-              ? `Sessao privada autenticada via ${securitySession.authMethod ?? 'credencial'} (${securitySession.expiresIn}s restantes)`
-              : securitySession.stepUpRequired
-                ? 'Voz validada com confianca media. Confirme com PIN/frase para liberar conteudo sensivel.'
-                : 'Sessao privada bloqueada. Autentique com PIN/frase para liberar conteudo sensivel.'}
-          </span>
-        </div>
-
-        <div className="mx-auto mb-3 flex w-full max-w-2xl items-center justify-between rounded-lg border border-white/20 bg-black/40 px-3 py-2 text-xs text-white">
-          <span>Awareness: {contextLabel}</span>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            onClick={() => setSilentMode(!silentMode)}
-          >
-            {silentMode ? 'Ativar proativo' : 'Modo silencioso'}
-          </Button>
-        </div>
-
         <ActionConfirmationPrompt
           pendingConfirmation={pendingConfirmation}
           isConfirming={isConfirming}
@@ -388,37 +452,93 @@ export const SessionView = ({
           onCancel={handleCancelAction}
         />
 
-        {events.length > 0 && (
-          <div className="mx-auto mb-3 w-full max-w-2xl rounded-lg border border-white/20 bg-black/40 px-3 py-2 text-xs text-white/90">
-            <p className="mb-2 font-semibold text-white">Acoes recentes</p>
-            <div className="space-y-1">
-              {events.slice(0, 3).map((event) => (
-                <div key={event.callId} className="flex items-center justify-between gap-2">
-                  <span className="truncate">
-                    <span
-                      className={cn(
-                        'mr-2 font-semibold',
-                        event.status === 'completed' && 'text-emerald-300',
-                        event.status === 'failed' && 'text-rose-300',
-                        event.status === 'confirmation_required' && 'text-amber-300'
-                      )}
-                    >
-                      {event.status === 'completed' && 'SUCESSO'}
-                      {event.status === 'failed' && 'FALHA'}
-                      {event.status === 'confirmation_required' && 'CONFIRMAR'}
-                    </span>
-                    {event.message ?? event.actionName}
-                  </span>
-                  <span className="shrink-0 text-[11px] text-white/60">
-                    {new Date(event.timestamp).toLocaleTimeString()}
-                  </span>
+        <AnimatePresence>
+          {integrationsMenuOpen && (
+            <motion.aside
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 16 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="pointer-events-auto fixed top-24 right-4 z-[120] w-72 rounded-3xl border border-white/10 bg-black/55 p-3 shadow-2xl backdrop-blur-xl"
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">Conexoes</p>
+                  <p className="text-[11px] text-white/50">Autorizacoes e webhooks</p>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setIntegrationsMenuOpen(false)}
+                >
+                  <PanelRightClose className="size-4" />
+                </Button>
+              </div>
 
-        <div className="relative mx-auto max-w-2xl bg-transparent pb-3 md:pb-12">
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-left transition-colors hover:bg-white/10"
+                  onClick={() => {
+                    setIntegrationsMenuOpen(false);
+                    window.open('/api/spotify/login', '_blank', 'noopener,noreferrer');
+                  }}
+                >
+                  <div className="rounded-xl bg-emerald-500/15 p-2 text-emerald-300">
+                    <Disc3 className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">Spotify</p>
+                    <p className="truncate text-[11px] text-white/55">
+                      Conectar conta e controlar playback
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-left transition-colors hover:bg-white/10"
+                  onClick={() => {
+                    setIntegrationsMenuOpen(false);
+                    window.open('/api/onenote/login', '_blank', 'noopener,noreferrer');
+                  }}
+                >
+                  <div className="rounded-xl bg-violet-500/15 p-2 text-violet-300">
+                    <BookOpenText className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">OneNote</p>
+                    <p className="truncate text-[11px] text-white/55">
+                      Consultar e atualizar cadernos e paginas
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-left transition-colors hover:bg-white/10"
+                  onClick={() => {
+                    setIntegrationsMenuOpen(false);
+                    window.open('/api/whatsapp/webhook', '_blank', 'noopener,noreferrer');
+                  }}
+                >
+                  <div className="rounded-xl bg-sky-500/15 p-2 text-sky-300">
+                    <MessageCircleMore className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">WhatsApp</p>
+                    <p className="truncate text-[11px] text-white/55">
+                      Abrir webhook e validar recebimento
+                    </p>
+                  </div>
+                </button>
+              </div>
+            </motion.aside>
+          )}
+        </AnimatePresence>
+
+        <div className="relative mx-auto max-w-2xl bg-transparent pb-3 opacity-75 transition-opacity duration-200 focus-within:opacity-100 hover:opacity-100 md:pb-12">
           <AgentControlBar
             variant="livekit"
             controls={controls}

@@ -94,6 +94,20 @@ export function useAgentActionEvents() {
         }
 
         const security = actionResult.data?.security_status;
+        const personaMode =
+          (typeof actionResult.data?.applied_persona_mode === 'string'
+            ? actionResult.data.applied_persona_mode
+            : undefined) ??
+          (typeof actionResult.data?.current_persona_mode === 'string'
+            ? actionResult.data.current_persona_mode
+            : undefined) ??
+          (typeof actionResult.data?.persona_mode === 'string'
+            ? actionResult.data.persona_mode
+            : undefined);
+        const personaProfile = actionResult.data?.persona_profile;
+        const activeCharacter = actionResult.data?.active_character;
+        const activeCharacterCleared = actionResult.data?.active_character_cleared === true;
+
         if (security) {
           setSecuritySession({
             authenticated: Boolean(security.authenticated),
@@ -105,7 +119,46 @@ export function useAgentActionEvents() {
               typeof actionResult.data?.voice_score === 'number'
                 ? actionResult.data.voice_score
                 : undefined,
+            personaMode,
+            personaColorHex:
+              typeof personaProfile?.color_hex === 'string' ? personaProfile.color_hex : undefined,
+            personaLabel:
+              typeof personaProfile?.label === 'string' ? personaProfile.label : undefined,
+            activeCharacterName:
+              typeof activeCharacter?.name === 'string' ? activeCharacter.name : undefined,
+            activeCharacterSource:
+              typeof activeCharacter?.source === 'string' ? activeCharacter.source : undefined,
+            activeCharacterSummary:
+              typeof activeCharacter?.summary === 'string' ? activeCharacter.summary : undefined,
           });
+        } else if (personaMode || personaProfile || activeCharacter || activeCharacterCleared) {
+          setSecuritySession((current) => ({
+            ...current,
+            personaMode: personaMode ?? current.personaMode,
+            personaColorHex:
+              typeof personaProfile?.color_hex === 'string'
+                ? personaProfile.color_hex
+                : current.personaColorHex,
+            personaLabel:
+              typeof personaProfile?.label === 'string'
+                ? personaProfile.label
+                : current.personaLabel,
+            activeCharacterName: activeCharacterCleared
+              ? undefined
+              : typeof activeCharacter?.name === 'string'
+                ? activeCharacter.name
+                : current.activeCharacterName,
+            activeCharacterSource: activeCharacterCleared
+              ? undefined
+              : typeof activeCharacter?.source === 'string'
+                ? activeCharacter.source
+                : current.activeCharacterSource,
+            activeCharacterSummary: activeCharacterCleared
+              ? undefined
+              : typeof activeCharacter?.summary === 'string'
+                ? activeCharacter.summary
+                : current.activeCharacterSummary,
+          }));
         }
 
         if (actionResult.data?.authentication_required) {

@@ -34,6 +34,26 @@ export interface ActionResultPayload {
     voice_score?: number;
     step_up_required?: boolean;
     private_access_granted?: boolean;
+    persona_mode?: string;
+    current_persona_mode?: string;
+    applied_persona_mode?: string;
+    persona_profile?: {
+      label?: string;
+      style?: string;
+      color_hex?: string;
+      voice_hint?: string;
+    };
+    active_character?: {
+      name?: string;
+      source?: string;
+      summary?: string;
+      activated_at?: string;
+      page_id?: string;
+      page_title?: string;
+      section_name?: string;
+    } | null;
+    active_character_name?: string | null;
+    active_character_cleared?: boolean;
   };
   error?: string;
 }
@@ -58,6 +78,12 @@ export interface SecuritySessionState {
   authMethod?: string;
   stepUpRequired: boolean;
   voiceScore?: number;
+  personaMode?: string;
+  personaColorHex?: string;
+  personaLabel?: string;
+  activeCharacterName?: string;
+  activeCharacterSource?: string;
+  activeCharacterSummary?: string;
 }
 
 export interface ReconnectState {
