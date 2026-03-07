@@ -18,8 +18,11 @@ Projeto unificado do Jarvez com:
 - `frontend/.env.local`
 
 No `backend/.env`, personalize:
-- `JARVEZ_USER_ID` (id de memoria no Mem0)
-- `JARVEZ_USER_NAME` (nome usado no contexto do agente)
+- `JARVEZ_USER_NAME` (nome exibido no contexto do agente)
+
+Observacao:
+- O `user_id` da memoria agora e automatico por participante da sessao (LiveKit identity).
+- Se nao houver identidade disponivel, o backend usa fallback `anon-{room}-{random}`.
 
 3. Inicie o projeto:
 
@@ -28,3 +31,43 @@ No `backend/.env`, personalize:
 ```
 
 Isso abre duas janelas automaticamente (backend e frontend), mas a inicializacao e feita por um unico comando.
+
+## Acoes reais com Home Assistant
+
+Configure no `backend/.env`:
+
+- `HOME_ASSISTANT_URL` (ex: `http://192.168.1.10:8123`)
+- `HOME_ASSISTANT_TOKEN` (long-lived access token)
+- `HOME_ASSISTANT_ALLOWED_SERVICES` (padrao: `light.turn_on,light.turn_off`)
+- `ACTION_CONFIRMATION_TTL_SECONDS` (padrao: `60`)
+- `HOME_ASSISTANT_TIMEOUT_SECONDS` (padrao: `5`)
+- `HOME_ASSISTANT_RETRY_COUNT` (padrao: `2`)
+
+Exemplos de `entity_id`:
+
+- `light.sala`
+- `light.quarto`
+- `light.escritorio`
+
+Comandos de voz suportados (MVP):
+
+- \"Ligue a luz da sala\"
+- \"Desligue a luz do quarto\"
+- \"Defina o brilho da luz da sala para 120\"
+- \"Sim, confirmo\" (para executar a acao sensivel pendente)
+
+## Modelo de seguranca
+
+- Toda acao passa por policy gate no backend.
+- Acoes sensiveis exigem confirmacao explicita (two-step).
+- `call_service` e interno e respeita allowlist de servicos.
+- O token de confirmacao expira e e valido so para o mesmo participante/sala.
+
+## Troubleshooting rapido
+
+- `Token de confirmacao invalido ou expirado`:
+  gere nova confirmacao pedindo a acao novamente.
+- `Home Assistant nao configurado`:
+  valide `HOME_ASSISTANT_URL` e `HOME_ASSISTANT_TOKEN`.
+- `Servico nao permitido`:
+  adicione o servico na `HOME_ASSISTANT_ALLOWED_SERVICES` se realmente necessario.
