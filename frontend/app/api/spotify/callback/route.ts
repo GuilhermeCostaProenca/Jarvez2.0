@@ -1,17 +1,48 @@
 import { NextResponse } from 'next/server';
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
+import { createHmac, timingSafeEqual } from 'crypto';
 
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID ?? '';
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET ?? '';
 const SPOTIFY_REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI ?? '';
-const STATE_COOKIE = 'jarvez_spotify_oauth_state';
 export const runtime = 'nodejs';
+
+function resolveStateSecret(): string {
+  return process.env.SPOTIFY_STATE_SECRET?.trim() || SPOTIFY_CLIENT_SECRET || SPOTIFY_CLIENT_ID;
+}
+
+function isValidSignedState(state: string): boolean {
+  const [nonce, signature] = state.split('.');
+  if (!nonce || !signature) return false;
+  const expected = createHmac('sha256', resolveStateSecret()).update(nonce).digest('hex');
+  const left = Buffer.from(signature, 'utf-8');
+  const right = Buffer.from(expected, 'utf-8');
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
+function resolveLoopbackOrigin(request: Request): string {
+  const incoming = new URL(request.url);
+  const isLocalHost = incoming.hostname === 'localhost' || incoming.hostname === '127.0.0.1';
+  if (!isLocalHost) return incoming.origin;
+  return `${incoming.protocol}//127.0.0.1${incoming.port ? `:${incoming.port}` : ''}`;
+}
 
 function resolveRedirectUri(request: Request): string {
   const configured = SPOTIFY_REDIRECT_URI.trim();
-  if (configured) return configured;
-  const origin = new URL(request.url).origin;
+  const origin = resolveLoopbackOrigin(request);
+  if (configured) {
+    const configuredUrl = new URL(configured);
+    const isConfiguredLocal =
+      configuredUrl.hostname === 'localhost' || configuredUrl.hostname === '127.0.0.1';
+    const incomingUrl = new URL(request.url);
+    const isIncomingLocal =
+      incomingUrl.hostname === 'localhost' || incomingUrl.hostname === '127.0.0.1';
+    if (!isConfiguredLocal || !isIncomingLocal) return configured;
+    const targetPath = configuredUrl.pathname || '/api/spotify/callback';
+    return `${origin}${targetPath}`;
+  }
   return `${origin}/api/spotify/callback`;
 }
 
@@ -43,15 +74,7 @@ export async function GET(request: Request) {
     return new NextResponse('Missing Spotify authorization code', { status: 400 });
   }
 
-  const cookieHeader = request.headers.get('cookie') ?? '';
-  const stateCookie = cookieHeader
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${STATE_COOKIE}=`))
-    ?.split('=')
-    .slice(1)
-    .join('=');
-  if (!stateCookie || !state || stateCookie !== state) {
+  if (!state || !isValidSignedState(state)) {
     return new NextResponse('Invalid OAuth state', { status: 400 });
   }
 
@@ -100,8 +123,14 @@ export async function GET(request: Request) {
     'utf-8'
   );
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || 'http://127.0.0.1:3001';
-  const response = NextResponse.redirect(`${appUrl}/?spotify=connected`);
-  response.cookies.delete(STATE_COOKIE);
-  return response;
+  const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  const appUrl = configuredAppUrl
+    ? (() => {
+        const app = new URL(configuredAppUrl);
+        const isConfiguredLocal = app.hostname === 'localhost' || app.hostname === '127.0.0.1';
+        const requestOrigin = resolveLoopbackOrigin(request);
+        return isConfiguredLocal ? requestOrigin : configuredAppUrl;
+      })()
+    : resolveLoopbackOrigin(request);
+  return NextResponse.redirect(`${appUrl}/?spotify=connected`);
 }

@@ -18,10 +18,47 @@ export function ActionConfirmationPrompt({
     return null;
   }
 
+  const params = pendingConfirmation.params ?? {};
+  const changes = Array.isArray(params.changes)
+    ? params.changes.filter(
+        (item): item is { path?: string } =>
+          typeof item === 'object' && item !== null && 'path' in item
+      )
+    : [];
+  const command =
+    typeof params.command === 'string' && params.command
+      ? [
+          params.command,
+          ...(Array.isArray(params.arguments)
+            ? params.arguments.filter((item): item is string => typeof item === 'string')
+            : []),
+        ].join(' ')
+      : null;
+  const projectRef =
+    typeof params.project === 'string'
+      ? params.project
+      : typeof params.project_name === 'string'
+        ? params.project_name
+        : typeof params.name === 'string'
+          ? params.name
+          : typeof params.project_id === 'string'
+            ? params.project_id
+            : null;
+
   return (
     <div className="mx-auto mb-3 w-full max-w-2xl rounded-lg border border-amber-400/40 bg-black/70 p-3 text-xs text-amber-100 shadow-lg">
       <p className="font-semibold text-amber-200">Confirmacao de acao sensivel</p>
       <p className="mt-1 text-white/90">{pendingConfirmation.message}</p>
+      {pendingConfirmation.actionName && (
+        <p className="mt-1 text-[11px] text-white/60">Acao: {pendingConfirmation.actionName}</p>
+      )}
+      {projectRef && <p className="mt-1 text-[11px] text-white/60">Projeto: {projectRef}</p>}
+      {changes.length > 0 && (
+        <p className="mt-1 text-[11px] text-white/60">
+          Arquivos: {changes.slice(0, 3).map((item) => item.path).filter(Boolean).join(', ')}
+        </p>
+      )}
+      {command && <p className="mt-1 font-mono text-[11px] text-white/70">{command}</p>}
       <p className="mt-1 text-[11px] text-white/60">Expira em {pendingConfirmation.expiresIn}s</p>
       <div className="mt-3 flex gap-2">
         <Button type="button" size="sm" onClick={() => void onConfirm()} disabled={isConfirming}>

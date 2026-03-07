@@ -38,6 +38,30 @@ async function saveInbox(items: Record<string, unknown>[]): Promise<void> {
   await writeFile(filePath, JSON.stringify(items, null, 2), 'utf-8');
 }
 
+async function forwardToMcpBridge(messages: Record<string, unknown>[]): Promise<void> {
+  const bridgeUrl = process.env.WHATSAPP_MCP_BRIDGE_URL?.trim();
+  if (!bridgeUrl || messages.length === 0) {
+    return;
+  }
+  try {
+    const response = await fetch(bridgeUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        source: 'whatsapp_legacy_v1',
+        received_at: new Date().toISOString(),
+        messages,
+      }),
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      console.warn('whatsapp webhook bridge failed', response.status);
+    }
+  } catch (error) {
+    console.warn('whatsapp webhook bridge error', error);
+  }
+}
+
 function verifySignature(rawBody: string, signatureHeader: string | null): boolean {
   const appSecret = process.env.WHATSAPP_APP_SECRET?.trim();
   if (!appSecret) return true;
@@ -115,6 +139,7 @@ export async function POST(request: Request) {
   if (normalized.length > 0) {
     const merged = [...normalized, ...stored].slice(0, 200);
     await saveInbox(merged);
+    await forwardToMcpBridge(normalized);
   }
 
   return NextResponse.json({ received: true });

@@ -1,11 +1,80 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { useChat, useTextStream } from '@livekit/components-react';
+import { useChat, useRoomContext, useTextStream } from '@livekit/components-react';
+import {
+  readStoredCodexTaskHistory,
+  readStoredCodingHistory,
+  writeStoredCodexTaskHistory,
+  writeStoredCodingHistory,
+} from '@/lib/coding-history-storage';
+import {
+  attachTraceToOpsCommand,
+  readStoredAutoRemediation,
+  readStoredAutomationState,
+  readStoredBrowserTask,
+  readStoredCanaryPromotion,
+  readStoredCanaryState,
+  readStoredControlTick,
+  readStoredEvalBaselineSummary,
+  readStoredEvalMetrics,
+  readStoredEvalMetricsSummary,
+  readStoredExecutionTraces,
+  readStoredFeatureFlags,
+  readStoredIncidentSnapshot,
+  readStoredModelRoute,
+  readStoredPlaybookReport,
+  readStoredPolicyEvents,
+  readStoredProvidersHealth,
+  readStoredSloReport,
+  readStoredSubagents,
+  writeStoredAutoRemediation,
+  writeStoredAutomationState,
+  writeStoredBackendDomainTrustScores,
+  writeStoredBrowserTask,
+  writeStoredCanaryPromotion,
+  writeStoredCanaryState,
+  writeStoredControlTick,
+  writeStoredEvalBaselineSummary,
+  writeStoredEvalMetrics,
+  writeStoredEvalMetricsSummary,
+  writeStoredExecutionTraces,
+  writeStoredFeatureFlags,
+  writeStoredIncidentSnapshot,
+  writeStoredModelRoute,
+  writeStoredPlaybookReport,
+  writeStoredPolicyEvents,
+  writeStoredProvidersHealth,
+  writeStoredSloReport,
+  writeStoredSubagents,
+  writeStoredWorkflowState,
+  readStoredWorkflowState,
+  writeStoredWhatsAppChannelStatus,
+} from '@/lib/orchestration-storage';
+import {
+  readStoredResearchSchedules,
+  writeStoredResearchDashboard,
+  writeStoredResearchSchedules,
+} from '@/lib/research-dashboard-storage';
 import type {
+  ActionEvidence,
   ActionExecutionEvent,
   ActionResultPayload,
+  AutomationState,
+  BrowserTaskState,
+  CodexTaskEvent,
+  CodexTaskHistoryEntry,
+  CodexTaskState,
+  CodingHistoryEntry,
+  ExecutionTraceStep,
+  ModelRouteDecision,
   PendingActionConfirmation,
+  PolicyEvent,
+  ResearchDashboard,
+  ResearchSchedule,
   SecuritySessionState,
+  SessionSnapshot,
+  SubagentState,
+  WorkflowState,
 } from '@/lib/types/realtime';
 
 interface FunctionCallItem {
@@ -25,6 +94,15 @@ interface FunctionToolsExecutedEvent {
   function_call_outputs?: Array<FunctionCallOutputItem | null>;
 }
 
+interface CodexStreamEvent {
+  type?: string;
+  codex_task?: CodexTaskState | null;
+  codex_event?: CodexTaskEvent | null;
+  codex_history?: CodexTaskHistoryEntry[];
+  notice?: SecuritySessionState['autonomyNotice'];
+  snapshot?: SessionSnapshot | null;
+}
+
 function safeParseJson<T>(value: string): T | null {
   try {
     return JSON.parse(value) as T;
@@ -42,26 +120,452 @@ function extractActionResult(output?: string): ActionResultPayload | null {
   return parsed;
 }
 
+function normalizeCodexTask(task: unknown): CodexTaskState | null {
+  if (!task || typeof task !== 'object') {
+    return null;
+  }
+  return task as CodexTaskState;
+}
+
+function normalizeCodexEvent(event: unknown): CodexTaskEvent | null {
+  if (!event || typeof event !== 'object') {
+    return null;
+  }
+  return event as CodexTaskEvent;
+}
+
+function normalizeCodexHistory(history: unknown): CodexTaskHistoryEntry[] {
+  if (!Array.isArray(history)) {
+    return [];
+  }
+  return history.filter((item): item is CodexTaskHistoryEntry =>
+    Boolean(item && typeof item === 'object')
+  );
+}
+
+function normalizeSessionSnapshot(snapshot: unknown): SessionSnapshot | null {
+  if (!snapshot || typeof snapshot !== "object") {
+    return null;
+  }
+  return snapshot as SessionSnapshot;
+}
+
 export function useAgentActionEvents() {
   const { textStreams } = useTextStream('lk.agent.events');
   const { send } = useChat();
+  const room = useRoomContext();
 
   const processedStreamIds = useRef<Set<string>>(new Set());
+  const spokenAutonomyNoticeAt = useRef<Map<string, number>>(new Map());
+  const reportedAutonomyNoticeDelivery = useRef<Set<string>>(new Set());
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingActionConfirmation | null>(
     null
   );
   const [isConfirming, setIsConfirming] = useState(false);
   const [events, setEvents] = useState<ActionExecutionEvent[]>([]);
+  const [latestResearchDashboard, setLatestResearchDashboard] = useState<ResearchDashboard | null>(
+    null
+  );
+  const [researchSchedules, setResearchSchedules] = useState<ResearchSchedule[]>([]);
+  const [latestModelRoute, setLatestModelRoute] = useState<ModelRouteDecision | null>(null);
+  const [subagentStates, setSubagentStates] = useState<SubagentState[]>([]);
+  const [policyEvents, setPolicyEvents] = useState<PolicyEvent[]>([]);
+  const [executionTraces, setExecutionTraces] = useState<ExecutionTraceStep[]>([]);
+  const [latestEvalBaselineSummary, setLatestEvalBaselineSummary] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  const [evalMetrics, setEvalMetrics] = useState<Array<Record<string, unknown>>>([]);
+  const [evalMetricsSummary, setEvalMetricsSummary] = useState<Record<string, unknown> | null>(
+    null
+  );
+  const [sloReport, setSloReport] = useState<Record<string, unknown> | null>(null);
+  const [providersHealth, setProvidersHealth] = useState<Array<Record<string, unknown>>>([]);
+  const [featureFlags, setFeatureFlags] = useState<Record<string, unknown> | null>(null);
+  const [canaryState, setCanaryState] = useState<Record<string, unknown> | null>(null);
+  const [incidentSnapshot, setIncidentSnapshot] = useState<Record<string, unknown> | null>(null);
+  const [playbookReport, setPlaybookReport] = useState<Record<string, unknown> | null>(null);
+  const [autoRemediation, setAutoRemediation] = useState<Record<string, unknown> | null>(null);
+  const [canaryPromotion, setCanaryPromotion] = useState<Record<string, unknown> | null>(null);
+  const [controlTick, setControlTick] = useState<Record<string, unknown> | null>(null);
+  const [latestWorkerStatus, setLatestWorkerStatus] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+  const [latestProjectAnalysis, setLatestProjectAnalysis] = useState<
+    NonNullable<ActionResultPayload['data']>['project_analysis'] | null
+  >(null);
+  const [latestProposedCodeChange, setLatestProposedCodeChange] = useState<
+    NonNullable<ActionResultPayload['data']>['proposed_code_change'] | null
+  >(null);
+  const [latestCommandExecution, setLatestCommandExecution] = useState<
+    NonNullable<ActionResultPayload['data']>['command_execution'] | null
+  >(null);
+  const [latestGitStatus, setLatestGitStatus] = useState<
+    NonNullable<ActionResultPayload['data']>['git_status'] | null
+  >(null);
+  const [latestGitDiffSummary, setLatestGitDiffSummary] = useState<
+    NonNullable<ActionResultPayload['data']>['git_diff_summary'] | null
+  >(null);
+  const [codingHistory, setCodingHistory] = useState<CodingHistoryEntry[]>([]);
+  const [activeCodexTask, setActiveCodexTask] = useState<CodexTaskState | null>(null);
+  const [codexTaskEvents, setCodexTaskEvents] = useState<CodexTaskEvent[]>([]);
+  const [codexTaskHistory, setCodexTaskHistory] = useState<CodexTaskHistoryEntry[]>([]);
+  const [browserTask, setBrowserTask] = useState<BrowserTaskState | null>(null);
+  const [workflowState, setWorkflowState] = useState<WorkflowState | null>(null);
+  const [automationState, setAutomationState] = useState<AutomationState | null>(null);
   const [securitySession, setSecuritySession] = useState<SecuritySessionState>({
     authenticated: false,
     identityBound: false,
     expiresIn: 0,
     stepUpRequired: false,
+    autonomyNotice: null,
   });
 
-  const pushEvent = useCallback((event: ActionExecutionEvent) => {
-    setEvents((current) => [event, ...current].slice(0, 8));
+  useEffect(() => {
+    setResearchSchedules(readStoredResearchSchedules());
+    setCodingHistory(readStoredCodingHistory());
+    setCodexTaskHistory(readStoredCodexTaskHistory());
+    setLatestModelRoute(readStoredModelRoute());
+    setSubagentStates(readStoredSubagents());
+    setPolicyEvents(readStoredPolicyEvents());
+    setExecutionTraces(readStoredExecutionTraces());
+    setLatestEvalBaselineSummary(readStoredEvalBaselineSummary());
+    setEvalMetrics(readStoredEvalMetrics());
+    setEvalMetricsSummary(readStoredEvalMetricsSummary());
+    setSloReport(readStoredSloReport());
+    setProvidersHealth(readStoredProvidersHealth());
+    setFeatureFlags(readStoredFeatureFlags());
+    setCanaryState(readStoredCanaryState());
+    setIncidentSnapshot(readStoredIncidentSnapshot());
+    setPlaybookReport(readStoredPlaybookReport());
+    setAutoRemediation(readStoredAutoRemediation());
+    setCanaryPromotion(readStoredCanaryPromotion());
+    setControlTick(readStoredControlTick());
+    setBrowserTask(readStoredBrowserTask());
+    setWorkflowState(readStoredWorkflowState());
+    setAutomationState(readStoredAutomationState());
   }, []);
+
+  const pushEvent = useCallback((event: ActionExecutionEvent) => {
+    setEvents((current) => [event, ...current].slice(0, 12));
+  }, []);
+
+  const pushPolicyEvent = useCallback((event: PolicyEvent) => {
+    setPolicyEvents((current) => {
+      const next = [event, ...current].slice(0, 40);
+      writeStoredPolicyEvents(next);
+      return next;
+    });
+  }, []);
+
+  const pushTraceStep = useCallback((trace: ExecutionTraceStep) => {
+    setExecutionTraces((current) => {
+      const next = [trace, ...current].slice(0, 120);
+      writeStoredExecutionTraces(next);
+      return next;
+    });
+  }, []);
+
+  const pushCodingHistory = useCallback((entry: CodingHistoryEntry) => {
+    setCodingHistory((current) => {
+      const next = [entry, ...current].slice(0, 12);
+      writeStoredCodingHistory(next);
+      return next;
+    });
+  }, []);
+
+  const pushCodexTaskEvent = useCallback((event: CodexTaskEvent) => {
+    setCodexTaskEvents((current) => [event, ...current].slice(0, 20));
+  }, []);
+
+  const replaceCodexTaskHistory = useCallback((entries: CodexTaskHistoryEntry[]) => {
+    setCodexTaskHistory(() => {
+      const next = entries.slice(0, 12);
+      writeStoredCodexTaskHistory(next);
+      return next;
+    });
+  }, []);
+
+  const upsertCodexTaskHistory = useCallback((entry: CodexTaskHistoryEntry) => {
+    setCodexTaskHistory((current) => {
+      const next = [entry, ...current.filter((item) => item.task_id !== entry.task_id)].slice(
+        0,
+        12
+      );
+      writeStoredCodexTaskHistory(next);
+      return next;
+    });
+  }, []);
+
+  const applyAutonomyNotice = useCallback(
+    (notice: SecuritySessionState['autonomyNotice'], { speak }: { speak: boolean }) => {
+      if (!notice || notice.active === false) {
+        return;
+      }
+
+      setSecuritySession((current) => ({
+        ...current,
+        autonomyNotice: {
+          active: notice.active !== false,
+          level: notice.level,
+          title: notice.title,
+          message: notice.message,
+          domain: notice.domain,
+          scenario: notice.scenario,
+          decision: notice.decision,
+          signature: notice.signature,
+          spoken_message: notice.spoken_message,
+          spoken_channel: notice.spoken_channel,
+          trace_id: notice.trace_id,
+        },
+      }));
+
+      const noticeMessage = notice.message ?? 'Autonomia reduzida temporariamente.';
+      if (notice.level === 'critical') {
+        toast.error(noticeMessage);
+      } else if (notice.level === 'warning') {
+        toast.warning(noticeMessage);
+      } else {
+        toast.message(noticeMessage);
+      }
+
+      if (
+        !speak ||
+        (notice.level !== 'warning' && notice.level !== 'critical') ||
+        notice.spoken_channel === 'agent_audio' ||
+        typeof window === 'undefined' ||
+        !('speechSynthesis' in window)
+      ) {
+        return;
+      }
+
+      const signature =
+        notice.signature ??
+        `${notice.scenario ?? 'notice'}:${notice.domain ?? 'general'}:${notice.decision ?? 'unknown'}`;
+      const now = Date.now();
+      const lastSpokenAt = spokenAutonomyNoticeAt.current.get(signature) ?? 0;
+      if (now - lastSpokenAt < 15_000) {
+        return;
+      }
+      spokenAutonomyNoticeAt.current.set(signature, now);
+      if (spokenAutonomyNoticeAt.current.size > 40) {
+        for (const [key, value] of spokenAutonomyNoticeAt.current.entries()) {
+          if (now - value > 60_000) {
+            spokenAutonomyNoticeAt.current.delete(key);
+          }
+        }
+      }
+
+      const utterance = new SpeechSynthesisUtterance(
+        notice.spoken_message ??
+          `Atencao. Reduzi a autonomia no dominio ${notice.domain ?? 'general'}.`
+      );
+      utterance.lang = 'pt-BR';
+      utterance.rate = 1;
+      utterance.pitch = 1;
+
+      try {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+        setSecuritySession((current) => ({
+          ...current,
+          autonomyNotice: current.autonomyNotice
+            ? {
+                ...current.autonomyNotice,
+                spoken_channel: 'browser_tts',
+              }
+            : current.autonomyNotice,
+        }));
+        const telemetryKey =
+          notice.trace_id ??
+          notice.signature ??
+          `${notice.scenario ?? 'notice'}:${notice.domain ?? 'general'}:${notice.decision ?? 'unknown'}`;
+        if (!reportedAutonomyNoticeDelivery.current.has(telemetryKey)) {
+          reportedAutonomyNoticeDelivery.current.add(telemetryKey);
+          const payload = new TextEncoder().encode(
+            JSON.stringify({
+              type: 'autonomy_notice_delivery',
+              trace_id: notice.trace_id,
+              signature: notice.signature,
+              channel: 'browser_tts',
+              level: notice.level,
+              domain: notice.domain,
+              scenario: notice.scenario,
+            })
+          );
+          void room.localParticipant
+            .publishData(payload, {
+              reliable: true,
+              topic: 'jarvez.client.telemetry',
+            })
+            .catch(() => {
+              reportedAutonomyNoticeDelivery.current.delete(telemetryKey);
+            });
+        }
+      } catch {
+        // Ignore browser speech synthesis failures; the visual notice remains available.
+      }
+    },
+    [room]
+  );
+
+  const hydrateSessionSnapshot = useCallback(
+    (snapshot: SessionSnapshot) => {
+      const securityPayload = snapshot.security_session;
+      const securityStatus = securityPayload?.security_status;
+      const personaProfile = securityPayload?.persona_profile;
+      const activeCharacter = securityPayload?.active_character;
+      const activeProject = securityPayload?.active_project;
+
+      if (securityStatus || securityPayload) {
+        setSecuritySession((current) => ({
+          ...current,
+          authenticated: Boolean(securityStatus?.authenticated),
+          identityBound: Boolean(securityStatus?.identity_bound),
+          expiresIn: Number(securityStatus?.expires_in ?? 0),
+          authMethod:
+            typeof securityStatus?.auth_method === 'string' ? securityStatus.auth_method : undefined,
+          stepUpRequired: Boolean(securityStatus?.step_up_required),
+          personaMode:
+            typeof securityPayload?.persona_mode === 'string'
+              ? securityPayload.persona_mode
+              : current.personaMode,
+          personaColorHex:
+            typeof personaProfile?.color_hex === 'string'
+              ? personaProfile.color_hex
+              : current.personaColorHex,
+          personaLabel:
+            typeof personaProfile?.label === 'string' ? personaProfile.label : current.personaLabel,
+          activeCharacterName:
+            typeof activeCharacter?.name === 'string' ? activeCharacter.name : undefined,
+          activeCharacterSource:
+            typeof activeCharacter?.source === 'string' ? activeCharacter.source : undefined,
+          activeCharacterSummary:
+            typeof activeCharacter?.summary === 'string' ? activeCharacter.summary : undefined,
+          activeProjectId:
+            typeof activeProject?.project_id === 'string' ? activeProject.project_id : undefined,
+          activeProjectName:
+            typeof activeProject?.name === 'string' ? activeProject.name : undefined,
+          activeProjectRootPath:
+            typeof activeProject?.root_path === 'string' ? activeProject.root_path : undefined,
+          activeProjectIndexStatus:
+            typeof activeProject?.index_status === 'string' ? activeProject.index_status : undefined,
+          codingMode:
+            typeof securityPayload?.coding_mode === 'string'
+              ? securityPayload.coding_mode
+              : current.codingMode,
+        }));
+      }
+
+      if (Array.isArray(snapshot.research_schedules)) {
+        const nextSchedules = snapshot.research_schedules
+          .map((item) => ({
+            id: typeof item.id === 'string' ? item.id : '',
+            query: typeof item.query === 'string' ? item.query : '',
+            cadence: typeof item.cadence === 'string' ? item.cadence : 'daily',
+            timeOfDay: typeof item.time_of_day === 'string' ? item.time_of_day : '08:00',
+            prompt: typeof item.prompt === 'string' ? item.prompt : '',
+            lastRunOn: typeof item.last_run_on === 'string' ? item.last_run_on : undefined,
+          }))
+          .filter((item) => item.id && item.query && item.prompt);
+        setResearchSchedules(nextSchedules);
+        writeStoredResearchSchedules(nextSchedules);
+      }
+      if (snapshot.model_route && typeof snapshot.model_route === 'object') {
+        setLatestModelRoute(snapshot.model_route);
+        writeStoredModelRoute(snapshot.model_route);
+      }
+      if (Array.isArray(snapshot.subagent_states)) {
+        setSubagentStates(snapshot.subagent_states);
+        writeStoredSubagents(snapshot.subagent_states);
+      }
+      if (Array.isArray(snapshot.policy_events)) {
+        setPolicyEvents(snapshot.policy_events);
+        writeStoredPolicyEvents(snapshot.policy_events);
+      }
+      if (Array.isArray(snapshot.execution_traces)) {
+        setExecutionTraces(snapshot.execution_traces);
+        writeStoredExecutionTraces(snapshot.execution_traces);
+      }
+      if (snapshot.eval_baseline_summary && typeof snapshot.eval_baseline_summary === 'object') {
+        setLatestEvalBaselineSummary(snapshot.eval_baseline_summary);
+        writeStoredEvalBaselineSummary(snapshot.eval_baseline_summary);
+      }
+      if (Array.isArray(snapshot.eval_metrics)) {
+        setEvalMetrics(snapshot.eval_metrics);
+        writeStoredEvalMetrics(snapshot.eval_metrics);
+      }
+      if (snapshot.eval_metrics_summary && typeof snapshot.eval_metrics_summary === 'object') {
+        setEvalMetricsSummary(snapshot.eval_metrics_summary);
+        writeStoredEvalMetricsSummary(snapshot.eval_metrics_summary);
+      }
+      if (snapshot.slo_report && typeof snapshot.slo_report === 'object') {
+        setSloReport(snapshot.slo_report);
+        writeStoredSloReport(snapshot.slo_report);
+      }
+      if (Array.isArray(snapshot.providers_health)) {
+        setProvidersHealth(snapshot.providers_health);
+        writeStoredProvidersHealth(snapshot.providers_health);
+      }
+      if (snapshot.feature_flags && typeof snapshot.feature_flags === 'object') {
+        setFeatureFlags(snapshot.feature_flags);
+        writeStoredFeatureFlags(snapshot.feature_flags);
+      }
+      if (snapshot.canary_state && typeof snapshot.canary_state === 'object') {
+        setCanaryState(snapshot.canary_state as Record<string, unknown>);
+        writeStoredCanaryState(snapshot.canary_state as Record<string, unknown>);
+      }
+      if (snapshot.incident_snapshot && typeof snapshot.incident_snapshot === 'object') {
+        setIncidentSnapshot(snapshot.incident_snapshot as Record<string, unknown>);
+        writeStoredIncidentSnapshot(snapshot.incident_snapshot as Record<string, unknown>);
+      }
+      if (snapshot.playbook_report && typeof snapshot.playbook_report === 'object') {
+        setPlaybookReport(snapshot.playbook_report as Record<string, unknown>);
+        writeStoredPlaybookReport(snapshot.playbook_report as Record<string, unknown>);
+      }
+      if (snapshot.auto_remediation && typeof snapshot.auto_remediation === 'object') {
+        setAutoRemediation(snapshot.auto_remediation as Record<string, unknown>);
+        writeStoredAutoRemediation(snapshot.auto_remediation as Record<string, unknown>);
+      }
+      if (snapshot.canary_promotion && typeof snapshot.canary_promotion === 'object') {
+        setCanaryPromotion(snapshot.canary_promotion as Record<string, unknown>);
+        writeStoredCanaryPromotion(snapshot.canary_promotion as Record<string, unknown>);
+      }
+      if (snapshot.control_tick && typeof snapshot.control_tick === 'object') {
+        setControlTick(snapshot.control_tick as Record<string, unknown>);
+        writeStoredControlTick(snapshot.control_tick as Record<string, unknown>);
+      }
+      if (snapshot.active_codex_task && typeof snapshot.active_codex_task === 'object') {
+        setActiveCodexTask(snapshot.active_codex_task);
+      }
+      if (Array.isArray(snapshot.codex_history)) {
+        replaceCodexTaskHistory(snapshot.codex_history);
+      }
+      if (snapshot.browser_tasks) {
+        if (Array.isArray(snapshot.browser_tasks)) {
+          const latest = snapshot.browser_tasks[0] ?? null;
+          setBrowserTask(latest);
+          writeStoredBrowserTask(latest);
+        } else {
+          setBrowserTask(snapshot.browser_tasks);
+          writeStoredBrowserTask(snapshot.browser_tasks);
+        }
+      }
+      if (snapshot.workflow_state && typeof snapshot.workflow_state === 'object') {
+        setWorkflowState(snapshot.workflow_state);
+        writeStoredWorkflowState(snapshot.workflow_state);
+      }
+      if (snapshot.automation_state && typeof snapshot.automation_state === 'object') {
+        setAutomationState(snapshot.automation_state);
+        writeStoredAutomationState(snapshot.automation_state);
+      }
+      if (snapshot.whatsapp_channel && typeof snapshot.whatsapp_channel === 'object') {
+        writeStoredWhatsAppChannelStatus(snapshot.whatsapp_channel as Record<string, unknown>);
+      }
+    },
+    [replaceCodexTaskHistory]
+  );
 
   useEffect(() => {
     for (const stream of textStreams) {
@@ -75,13 +579,81 @@ export function useAgentActionEvents() {
         processedStreamIds.current.clear();
       }
 
-      const eventPayload = safeParseJson<FunctionToolsExecutedEvent>(stream.text);
-      if (!eventPayload || eventPayload.type !== 'function_tools_executed') {
+      const genericPayload = safeParseJson<CodexStreamEvent | FunctionToolsExecutedEvent>(
+        stream.text
+      );
+      if (!genericPayload || typeof genericPayload !== 'object') {
+        continue;
+      }
+
+      if (
+        genericPayload.type === 'codex_task_started' ||
+        genericPayload.type === 'codex_task_progress' ||
+        genericPayload.type === 'codex_task_completed' ||
+        genericPayload.type === 'codex_task_failed' ||
+        genericPayload.type === 'codex_task_cancelled'
+      ) {
+        const codexTask = normalizeCodexTask((genericPayload as CodexStreamEvent).codex_task);
+        const codexEvent = normalizeCodexEvent((genericPayload as CodexStreamEvent).codex_event);
+        const codexHistoryItems = normalizeCodexHistory(
+          (genericPayload as CodexStreamEvent).codex_history
+        );
+
+        if (codexTask) {
+          setActiveCodexTask(codexTask);
+          if (
+            codexTask.status === 'completed' ||
+            codexTask.status === 'failed' ||
+            codexTask.status === 'cancelled'
+          ) {
+            upsertCodexTaskHistory(codexTask);
+          }
+        }
+        if (codexEvent) {
+          if (genericPayload.type === 'codex_task_started') {
+            setCodexTaskEvents([codexEvent]);
+          } else {
+            pushCodexTaskEvent(codexEvent);
+          }
+        }
+        if (codexHistoryItems.length) {
+          replaceCodexTaskHistory(codexHistoryItems);
+        }
+        continue;
+      }
+
+      if (genericPayload.type === 'autonomy_notice') {
+        applyAutonomyNotice((genericPayload as CodexStreamEvent).notice ?? null, { speak: true });
+        continue;
+      }
+
+      if (genericPayload.type === 'session_snapshot') {
+        const snapshot = normalizeSessionSnapshot((genericPayload as CodexStreamEvent).snapshot);
+        if (snapshot) {
+          hydrateSessionSnapshot(snapshot);
+        }
+        continue;
+      }
+
+      const eventPayload = genericPayload as FunctionToolsExecutedEvent;
+      if (eventPayload.type !== 'function_tools_executed') {
         continue;
       }
 
       const calls = eventPayload.function_calls ?? [];
       const outputs = eventPayload.function_call_outputs ?? [];
+
+      calls.forEach((call, index) => {
+        const actionName = call?.name ?? `action_${index + 1}`;
+        pushEvent({
+          callId: call?.call_id ?? `${streamId}-start-${index}`,
+          actionName,
+          name: actionName,
+          status: 'started',
+          timestamp: Date.now(),
+          message: `Executando ${actionName}...`,
+        });
+      });
 
       outputs.forEach((output, index) => {
         if (!output || typeof output.output !== 'string') {
@@ -107,6 +679,252 @@ export function useAgentActionEvents() {
         const personaProfile = actionResult.data?.persona_profile;
         const activeCharacter = actionResult.data?.active_character;
         const activeCharacterCleared = actionResult.data?.active_character_cleared === true;
+        const activeProject = actionResult.data?.active_project;
+        const codingMode =
+          typeof actionResult.data?.coding_mode === 'string'
+            ? actionResult.data.coding_mode
+            : undefined;
+        const workerStatus = actionResult.data?.worker_status;
+        const projectAnalysis = actionResult.data?.project_analysis;
+        const proposedCodeChange = actionResult.data?.proposed_code_change;
+        const commandExecution = actionResult.data?.command_execution;
+        const gitStatus = actionResult.data?.git_status;
+        const gitDiffSummary = actionResult.data?.git_diff_summary;
+        const webDashboard = actionResult.data?.web_dashboard;
+        const webDashboardSchedule = actionResult.data?.web_dashboard_schedule;
+        const modelRoute = actionResult.data?.model_route;
+        const subagentState = actionResult.data?.subagent_state;
+        const subagentStatesPayload = actionResult.data?.subagent_states;
+        const policyPayload = actionResult.data?.policy;
+        const autonomyNoticePayload = actionResult.data?.autonomy_notice;
+        const evalBaselineSummary = actionResult.data?.eval_baseline_summary;
+        const evalMetricsPayload = actionResult.data?.eval_metrics;
+        const evalMetricsSummaryPayload = actionResult.data?.eval_metrics_summary;
+        const sloReportPayload = actionResult.data?.slo_report;
+        const providersHealthPayload = actionResult.data?.providers_health;
+        const domainTrustPayload = actionResult.data?.domain_trust;
+        const featureFlagsPayload = actionResult.data?.feature_flags;
+        const canaryStatePayload = actionResult.data?.canary_state;
+        const incidentSnapshotPayload = actionResult.data?.ops_incident_snapshot;
+        const playbookReportPayload = actionResult.data?.ops_playbook_report;
+        const autoRemediationPayload = actionResult.data?.ops_auto_remediation;
+        const canaryPromotionPayload = actionResult.data?.ops_canary_promotion;
+        const controlTickPayload = actionResult.data?.ops_control_tick;
+        const browserTaskPayload = actionResult.data?.browser_task;
+        const workflowStatePayload = actionResult.data?.workflow_state;
+        const automationStatePayload = actionResult.data?.automation_state;
+        const whatsappChannelPayload = actionResult.data?.whatsapp_channel;
+        const evidence = actionResult.evidence as ActionEvidence | undefined;
+        const codexTask = normalizeCodexTask(actionResult.data?.codex_task);
+        const codexHistoryItems = normalizeCodexHistory(actionResult.data?.codex_history);
+
+        if (workerStatus?.message) {
+          setLatestWorkerStatus({
+            success: workerStatus.success !== false,
+            message: workerStatus.message,
+          });
+        }
+        if (projectAnalysis) {
+          setLatestProjectAnalysis(projectAnalysis);
+        }
+        if (proposedCodeChange) {
+          setLatestProposedCodeChange(proposedCodeChange);
+        }
+        if (commandExecution) {
+          setLatestCommandExecution(commandExecution);
+        }
+        if (gitStatus) {
+          setLatestGitStatus(gitStatus);
+        }
+        if (gitDiffSummary) {
+          setLatestGitDiffSummary(gitDiffSummary);
+        }
+        if (codexTask) {
+          setActiveCodexTask(codexTask);
+          if (
+            codexTask.status === 'completed' ||
+            codexTask.status === 'failed' ||
+            codexTask.status === 'cancelled'
+          ) {
+            upsertCodexTaskHistory(codexTask);
+          }
+        }
+        if (codexHistoryItems.length) {
+          replaceCodexTaskHistory(codexHistoryItems);
+        }
+        if (modelRoute) {
+          setLatestModelRoute(modelRoute);
+          writeStoredModelRoute(modelRoute);
+        }
+        if (Array.isArray(subagentStatesPayload)) {
+          setSubagentStates(subagentStatesPayload);
+          writeStoredSubagents(subagentStatesPayload);
+        } else if (subagentState && subagentState.subagent_id) {
+          setSubagentStates((current) => {
+            const next = [
+              subagentState,
+              ...current.filter((item) => item.subagent_id !== subagentState.subagent_id),
+            ].slice(0, 40);
+            writeStoredSubagents(next);
+            return next;
+          });
+        }
+        if (policyPayload) {
+          pushPolicyEvent(policyPayload);
+        } else if (actionResult.policy_decision || actionResult.risk) {
+          const traceActionName = calls[index]?.name ?? output.name ?? 'action';
+          pushPolicyEvent({
+            action_name: traceActionName,
+            risk: actionResult.risk,
+            decision: actionResult.policy_decision,
+            reason: undefined,
+          });
+        }
+        if (autonomyNoticePayload && autonomyNoticePayload.active !== false) {
+          applyAutonomyNotice(autonomyNoticePayload, { speak: false });
+        } else if (
+          policyPayload &&
+          typeof policyPayload === 'object' &&
+          policyPayload.trust_drift_active === false
+        ) {
+          setSecuritySession((current) => ({
+            ...current,
+            autonomyNotice: null,
+          }));
+        }
+        if (evalBaselineSummary && typeof evalBaselineSummary === 'object') {
+          setLatestEvalBaselineSummary(evalBaselineSummary as Record<string, unknown>);
+          writeStoredEvalBaselineSummary(evalBaselineSummary as Record<string, unknown>);
+        }
+        if (Array.isArray(evalMetricsPayload)) {
+          const nextMetrics = evalMetricsPayload.filter((item): item is Record<string, unknown> =>
+            Boolean(item && typeof item === 'object')
+          );
+          setEvalMetrics(nextMetrics);
+          writeStoredEvalMetrics(nextMetrics);
+        }
+        if (evalMetricsSummaryPayload && typeof evalMetricsSummaryPayload === 'object') {
+          setEvalMetricsSummary(evalMetricsSummaryPayload as Record<string, unknown>);
+          writeStoredEvalMetricsSummary(evalMetricsSummaryPayload as Record<string, unknown>);
+        }
+        if (sloReportPayload && typeof sloReportPayload === 'object') {
+          setSloReport(sloReportPayload as Record<string, unknown>);
+          writeStoredSloReport(sloReportPayload as Record<string, unknown>);
+        }
+        if (Array.isArray(providersHealthPayload)) {
+          const rows = providersHealthPayload.filter((item): item is Record<string, unknown> =>
+            Boolean(item && typeof item === 'object')
+          );
+          setProvidersHealth(rows);
+          writeStoredProvidersHealth(rows);
+        }
+        if (Array.isArray(domainTrustPayload)) {
+          writeStoredBackendDomainTrustScores(
+            domainTrustPayload.filter((item): item is Record<string, unknown> =>
+              Boolean(item && typeof item === 'object')
+            )
+          );
+        }
+        if (featureFlagsPayload && typeof featureFlagsPayload === 'object') {
+          setFeatureFlags(featureFlagsPayload as Record<string, unknown>);
+          writeStoredFeatureFlags(featureFlagsPayload as Record<string, unknown>);
+        }
+        if (canaryStatePayload && typeof canaryStatePayload === 'object') {
+          setCanaryState(canaryStatePayload as Record<string, unknown>);
+          writeStoredCanaryState(canaryStatePayload as Record<string, unknown>);
+        }
+        if (incidentSnapshotPayload && typeof incidentSnapshotPayload === 'object') {
+          setIncidentSnapshot(incidentSnapshotPayload as Record<string, unknown>);
+          writeStoredIncidentSnapshot(incidentSnapshotPayload as Record<string, unknown>);
+        }
+        if (playbookReportPayload && typeof playbookReportPayload === 'object') {
+          setPlaybookReport(playbookReportPayload as Record<string, unknown>);
+          writeStoredPlaybookReport(playbookReportPayload as Record<string, unknown>);
+        }
+        if (autoRemediationPayload && typeof autoRemediationPayload === 'object') {
+          setAutoRemediation(autoRemediationPayload as Record<string, unknown>);
+          writeStoredAutoRemediation(autoRemediationPayload as Record<string, unknown>);
+        }
+        if (canaryPromotionPayload && typeof canaryPromotionPayload === 'object') {
+          setCanaryPromotion(canaryPromotionPayload as Record<string, unknown>);
+          writeStoredCanaryPromotion(canaryPromotionPayload as Record<string, unknown>);
+        }
+        if (controlTickPayload && typeof controlTickPayload === 'object') {
+          setControlTick(controlTickPayload as Record<string, unknown>);
+          writeStoredControlTick(controlTickPayload as Record<string, unknown>);
+        }
+        if (browserTaskPayload && typeof browserTaskPayload === 'object') {
+          const nextBrowser = browserTaskPayload as BrowserTaskState;
+          setBrowserTask(nextBrowser);
+          writeStoredBrowserTask(nextBrowser);
+        }
+        if (workflowStatePayload && typeof workflowStatePayload === 'object') {
+          const nextWorkflow = workflowStatePayload as WorkflowState;
+          setWorkflowState(nextWorkflow);
+          writeStoredWorkflowState(nextWorkflow);
+        }
+        if (automationStatePayload && typeof automationStatePayload === 'object') {
+          const nextAutomation = automationStatePayload as AutomationState;
+          setAutomationState(nextAutomation);
+          writeStoredAutomationState(nextAutomation);
+        }
+        if (whatsappChannelPayload && typeof whatsappChannelPayload === 'object') {
+          writeStoredWhatsAppChannelStatus(whatsappChannelPayload as Record<string, unknown>);
+        }
+
+        if (webDashboard?.query && Array.isArray(webDashboard.results)) {
+          const nextDashboard: ResearchDashboard = {
+            query: webDashboard.query,
+            summary: webDashboard.summary ?? '',
+            generatedAt: webDashboard.generated_at,
+            images: Array.isArray(webDashboard.images)
+              ? webDashboard.images.filter((item): item is string => typeof item === 'string')
+              : [],
+            results: webDashboard.results
+              .map((item) => ({
+                title: item.title ?? 'Resultado',
+                url: item.url ?? '',
+                domain: item.domain ?? 'site',
+                snippet: item.snippet,
+                pageTitle: item.page_title,
+                pageDescription: item.page_description,
+                imageUrl: item.image_url,
+              }))
+              .filter((item) => item.url),
+          };
+
+          setLatestResearchDashboard(nextDashboard);
+          writeStoredResearchDashboard(nextDashboard);
+
+          if (typeof window !== 'undefined' && webDashboard.dashboard_opened !== true) {
+            const dashboardUrl = webDashboard.dashboard_url || '/research-dashboard';
+            const opened = window.open(dashboardUrl, 'jarvez-research-dashboard');
+            if (!opened) {
+              toast.warning('O navegador bloqueou a nova guia do dashboard.');
+            }
+          }
+        }
+
+        if (
+          webDashboardSchedule?.id &&
+          webDashboardSchedule?.query &&
+          webDashboardSchedule?.prompt
+        ) {
+          const nextSchedule: ResearchSchedule = {
+            id: webDashboardSchedule.id,
+            query: webDashboardSchedule.query,
+            cadence: webDashboardSchedule.cadence ?? 'daily',
+            timeOfDay: webDashboardSchedule.time_of_day ?? '08:00',
+            prompt: webDashboardSchedule.prompt,
+            lastRunOn: webDashboardSchedule.last_run_on,
+          };
+          setResearchSchedules((current) => {
+            const next = [nextSchedule, ...current.filter((item) => item.id !== nextSchedule.id)];
+            writeStoredResearchSchedules(next);
+            return next;
+          });
+          toast.message(`Briefing diario salvo para ${nextSchedule.timeOfDay}.`);
+        }
 
         if (security) {
           setSecuritySession({
@@ -130,8 +948,26 @@ export function useAgentActionEvents() {
               typeof activeCharacter?.source === 'string' ? activeCharacter.source : undefined,
             activeCharacterSummary:
               typeof activeCharacter?.summary === 'string' ? activeCharacter.summary : undefined,
+            activeProjectId:
+              typeof activeProject?.project_id === 'string' ? activeProject.project_id : undefined,
+            activeProjectName:
+              typeof activeProject?.name === 'string' ? activeProject.name : undefined,
+            activeProjectRootPath:
+              typeof activeProject?.root_path === 'string' ? activeProject.root_path : undefined,
+            activeProjectIndexStatus:
+              typeof activeProject?.index_status === 'string'
+                ? activeProject.index_status
+                : undefined,
+            codingMode,
           });
-        } else if (personaMode || personaProfile || activeCharacter || activeCharacterCleared) {
+        } else if (
+          personaMode ||
+          personaProfile ||
+          activeCharacter ||
+          activeCharacterCleared ||
+          activeProject ||
+          codingMode
+        ) {
           setSecuritySession((current) => ({
             ...current,
             personaMode: personaMode ?? current.personaMode,
@@ -158,6 +994,23 @@ export function useAgentActionEvents() {
               : typeof activeCharacter?.summary === 'string'
                 ? activeCharacter.summary
                 : current.activeCharacterSummary,
+            activeProjectId:
+              typeof activeProject?.project_id === 'string'
+                ? activeProject.project_id
+                : current.activeProjectId,
+            activeProjectName:
+              typeof activeProject?.name === 'string'
+                ? activeProject.name
+                : current.activeProjectName,
+            activeProjectRootPath:
+              typeof activeProject?.root_path === 'string'
+                ? activeProject.root_path
+                : current.activeProjectRootPath,
+            activeProjectIndexStatus:
+              typeof activeProject?.index_status === 'string'
+                ? activeProject.index_status
+                : current.activeProjectIndexStatus,
+            codingMode: codingMode ?? current.codingMode,
           }));
         }
 
@@ -191,6 +1044,23 @@ export function useAgentActionEvents() {
             timestamp: Date.now(),
             message: actionResult.message,
           });
+          if (
+            actionName.startsWith('project_') ||
+            actionName.startsWith('code_') ||
+            actionName.startsWith('coding_mode_')
+          ) {
+            pushCodingHistory({
+              id: `${callId}-confirmation`,
+              timestamp: Date.now(),
+              actionName,
+              status: 'confirmation_required',
+              message: actionResult.message,
+              projectName:
+                typeof activeProject?.name === 'string'
+                  ? activeProject.name
+                  : securitySession.activeProjectName,
+            });
+          }
           return;
         }
 
@@ -201,6 +1071,22 @@ export function useAgentActionEvents() {
           toast.error(`Falha na acao: ${actionResult.error ?? actionResult.message}`);
         }
 
+        if (actionResult.trace_id) {
+          const traceStep: ExecutionTraceStep = {
+            traceId: actionResult.trace_id,
+            actionName,
+            timestamp: Date.now(),
+            risk: actionResult.risk,
+            policyDecision: actionResult.policy_decision,
+            provider: evidence?.provider,
+            fallbackUsed: actionResult.fallback_used,
+            success: actionResult.success,
+            message: actionResult.message,
+          };
+          pushTraceStep(traceStep);
+          attachTraceToOpsCommand(traceStep);
+        }
+
         pushEvent({
           callId,
           actionName,
@@ -209,9 +1095,39 @@ export function useAgentActionEvents() {
           timestamp: Date.now(),
           message: actionResult.message,
         });
+
+        if (
+          actionName.startsWith('project_') ||
+          actionName.startsWith('code_') ||
+          actionName.startsWith('coding_mode_')
+        ) {
+          pushCodingHistory({
+            id: `${callId}-${status}`,
+            timestamp: Date.now(),
+            actionName,
+            status,
+            message: actionResult.message,
+            projectName:
+              typeof activeProject?.name === 'string'
+                ? activeProject.name
+                : securitySession.activeProjectName,
+          });
+        }
       });
     }
-  }, [pushEvent, textStreams]);
+  }, [
+    applyAutonomyNotice,
+    hydrateSessionSnapshot,
+    pushCodingHistory,
+    pushCodexTaskEvent,
+    pushEvent,
+    pushPolicyEvent,
+    pushTraceStep,
+    replaceCodexTaskHistory,
+    securitySession.activeProjectName,
+    textStreams,
+    upsertCodexTaskHistory,
+  ]);
 
   const confirmPendingAction = useCallback(async () => {
     if (!pendingConfirmation) {
@@ -240,6 +1156,37 @@ export function useAgentActionEvents() {
     events,
     pendingConfirmation,
     isConfirming,
+    latestResearchDashboard,
+    researchSchedules,
+    latestModelRoute,
+    subagentStates,
+    policyEvents,
+    executionTraces,
+    latestEvalBaselineSummary,
+    evalMetrics,
+    evalMetricsSummary,
+    sloReport,
+    providersHealth,
+    featureFlags,
+    canaryState,
+    incidentSnapshot,
+    playbookReport,
+    autoRemediation,
+    canaryPromotion,
+    controlTick,
+    latestWorkerStatus,
+    latestProjectAnalysis,
+    latestProposedCodeChange,
+    latestCommandExecution,
+    latestGitStatus,
+    latestGitDiffSummary,
+    codingHistory,
+    activeCodexTask,
+    browserTask,
+    workflowState,
+    automationState,
+    codexTaskEvents,
+    codexTaskHistory,
     securitySession,
     confirmPendingAction,
     cancelPendingAction,

@@ -26,10 +26,20 @@ import { TileLayout } from '@/components/app/tile-layout';
 import { Button } from '@/components/ui/button';
 import { useAgentActionEvents } from '@/hooks/useAgentActionEvents';
 import { useAwarenessProactive } from '@/hooks/useAwarenessProactive';
+import {
+  TRUST_CENTER_OPS_COMMAND_QUEUE_KEY,
+  claimStoredPendingOpsCommand,
+  updateStoredOpsCommandStatus,
+} from '@/lib/orchestration-storage';
+import {
+  readStoredResearchSchedules,
+  writeStoredResearchSchedules,
+} from '@/lib/research-dashboard-storage';
 import { cn } from '@/lib/shadcn/utils';
-import type { ParticipantIdentity, ReconnectState } from '@/lib/types/realtime';
+import type { ParticipantIdentity, ReconnectState, ResearchSchedule } from '@/lib/types/realtime';
 import { Shimmer } from '../ai-elements/shimmer';
 import { ActionConfirmationPrompt } from './action-confirmation-prompt';
+import { CodingWorkspace } from './coding-workspace';
 
 const MotionBottom = motion.create('div');
 const MotionMessage = motion.create(Shimmer);
@@ -217,9 +227,24 @@ export const SessionView = ({
   const [integrationsMenuOpen, setIntegrationsMenuOpen] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const vantaEffectRef = useRef<VantaEffect | null>(null);
+  const opsDispatcherIdRef = useRef(
+    `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  );
+  const isDispatchingOpsCommandRef = useRef(false);
   const {
+    events,
     pendingConfirmation,
     isConfirming,
+    latestWorkerStatus,
+    latestProjectAnalysis,
+    latestProposedCodeChange,
+    latestCommandExecution,
+    latestGitStatus,
+    latestGitDiffSummary,
+    codingHistory,
+    activeCodexTask,
+    codexTaskEvents,
+    codexTaskHistory,
     securitySession,
     confirmPendingAction,
     cancelPendingAction,
@@ -291,6 +316,116 @@ export const SessionView = ({
     }
   }, [messages]);
 
+  useEffect(() => {
+    if (!session.isConnected || typeof window === 'undefined') {
+      return;
+    }
+
+    const runDueSchedules = () => {
+      const parsed: ResearchSchedule[] = readStoredResearchSchedules();
+
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        return;
+      }
+
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const minutesNow = now.getHours() * 60 + now.getMinutes();
+      let changed = false;
+
+      const nextSchedules = parsed.map((schedule) => {
+        if (!schedule?.timeOfDay || !schedule.prompt || schedule.lastRunOn === today) {
+          return schedule;
+        }
+
+        const [hoursText, minutesText] = schedule.timeOfDay.split(':');
+        const hours = Number.parseInt(hoursText ?? '', 10);
+        const minutes = Number.parseInt(minutesText ?? '', 10);
+        if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+          return schedule;
+        }
+
+        const scheduledMinutes = hours * 60 + minutes;
+        if (minutesNow < scheduledMinutes) {
+          return schedule;
+        }
+
+        changed = true;
+        void send(schedule.prompt);
+        return {
+          ...schedule,
+          lastRunOn: today,
+        };
+      });
+
+      if (changed) {
+        writeStoredResearchSchedules(nextSchedules);
+      }
+    };
+
+    runDueSchedules();
+    const timer = window.setInterval(runDueSchedules, 60_000);
+    return () => window.clearInterval(timer);
+  }, [send, session.isConnected]);
+
+  useEffect(() => {
+    if (!session.isConnected || typeof window === 'undefined') {
+      return;
+    }
+
+    let cancelled = false;
+
+    const processOpsQueue = async () => {
+      if (cancelled || isDispatchingOpsCommandRef.current) {
+        return;
+      }
+
+      const claimed = claimStoredPendingOpsCommand(opsDispatcherIdRef.current);
+      if (!claimed) {
+        return;
+      }
+
+      isDispatchingOpsCommandRef.current = true;
+      try {
+        await send(claimed.prompt);
+        updateStoredOpsCommandStatus(claimed.id, 'sent', {
+          dispatcherId: opsDispatcherIdRef.current,
+          setDispatchTimestamp: true,
+        });
+      } catch (error) {
+        updateStoredOpsCommandStatus(claimed.id, 'failed', {
+          dispatcherId: opsDispatcherIdRef.current,
+          error: error instanceof Error ? error.message : 'Falha ao enviar comando operacional.',
+        });
+      } finally {
+        isDispatchingOpsCommandRef.current = false;
+        if (!cancelled) {
+          window.setTimeout(() => {
+            void processOpsQueue();
+          }, 150);
+        }
+      }
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === TRUST_CENTER_OPS_COMMAND_QUEUE_KEY) {
+        void processOpsQueue();
+      }
+    };
+
+    void processOpsQueue();
+    window.addEventListener('storage', handleStorage);
+    const timer = window.setInterval(() => {
+      void processOpsQueue();
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('storage', handleStorage);
+      window.clearInterval(timer);
+    };
+  }, [send, session.isConnected]);
+
   const handleDisconnect = () => {
     if (onManualDisconnect) onManualDisconnect();
 
@@ -309,6 +444,175 @@ export const SessionView = ({
     cancelPendingAction();
     void send('Cancelar acao pendente.');
   };
+  const hasCodingContext =
+    securitySession.codingMode === 'coding' ||
+    !!securitySession.activeProjectName ||
+    !!activeCodexTask ||
+    codexTaskHistory.length > 0 ||
+    !!latestWorkerStatus ||
+    !!latestProjectAnalysis ||
+    !!latestProposedCodeChange ||
+    !!latestCommandExecution ||
+    !!latestGitStatus ||
+    !!latestGitDiffSummary;
+  const isCodingWorkspace = hasCodingContext;
+  const shouldShowCodexPanel =
+    !isCodingWorkspace &&
+    (!!latestWorkerStatus ||
+      !!latestProjectAnalysis ||
+      !!latestProposedCodeChange ||
+      !!latestCommandExecution ||
+      !!latestGitStatus ||
+      !!latestGitDiffSummary);
+
+  if (isCodingWorkspace) {
+    return (
+      <section className="relative flex h-svh w-svw flex-col overflow-hidden bg-black" {...props}>
+        <CodingWorkspace
+          securitySession={securitySession}
+          activeCodexTask={activeCodexTask}
+          codexTaskEvents={codexTaskEvents}
+          codexTaskHistory={codexTaskHistory}
+          contextLabel={contextLabel}
+          silentMode={silentMode}
+          integrationsMenuOpen={integrationsMenuOpen}
+          onToggleSilentMode={() => setSilentMode(!silentMode)}
+          onToggleIntegrations={() => setIntegrationsMenuOpen((current) => !current)}
+          onSendPrompt={send}
+        />
+
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-40 px-4">
+          <div className="mx-auto w-full max-w-6xl">
+            {reconnectState.connectionState !== 'connected' && (
+              <div className="pointer-events-auto mx-auto mb-3 flex w-full max-w-4xl items-center justify-between rounded-lg border border-white/20 bg-black/60 px-3 py-2 text-xs text-white">
+                <span>
+                  {reconnectState.isReconnecting
+                    ? `Reconectando... tentativa ${reconnectState.attempt} de ${reconnectState.maxAttempts}`
+                    : 'Desconectado. Tente reconectar manualmente.'}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void reconnectState.reconnectNow()}
+                  disabled={reconnectState.isReconnecting}
+                >
+                  Reconectar
+                </Button>
+              </div>
+            )}
+
+            <div className="pointer-events-auto mx-auto w-full max-w-4xl">
+              <ActionConfirmationPrompt
+                pendingConfirmation={pendingConfirmation}
+                isConfirming={isConfirming}
+                onConfirm={handleConfirmAction}
+                onCancel={handleCancelAction}
+              />
+            </div>
+
+            <div className="pointer-events-auto relative mx-auto max-w-4xl bg-transparent pb-2 opacity-85 transition-opacity duration-200 focus-within:opacity-100 hover:opacity-100">
+              <AgentControlBar
+                variant="livekit"
+                controls={controls}
+                isChatOpen={chatOpen}
+                isConnected={session.isConnected}
+                onDisconnect={handleDisconnect}
+                onIsChatOpenChange={setChatOpen}
+              />
+            </div>
+          </div>
+        </div>
+
+        <AnimatePresence>
+          {integrationsMenuOpen && (
+            <motion.aside
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 16 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="pointer-events-auto fixed top-24 right-4 z-[120] w-72 rounded-3xl border border-white/10 bg-black/55 p-3 shadow-2xl backdrop-blur-xl"
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">Conexoes</p>
+                  <p className="text-[11px] text-white/50">Autorizacoes e webhooks</p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setIntegrationsMenuOpen(false)}
+                >
+                  <PanelRightClose className="size-4" />
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-left transition-colors hover:bg-white/10"
+                  onClick={() => {
+                    setIntegrationsMenuOpen(false);
+                    window.open('/api/spotify/login', '_blank', 'noopener,noreferrer');
+                  }}
+                >
+                  <div className="rounded-xl bg-emerald-500/15 p-2 text-emerald-300">
+                    <Disc3 className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">Spotify</p>
+                    <p className="truncate text-[11px] text-white/55">
+                      Conectar conta e controlar playback
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-left transition-colors hover:bg-white/10"
+                  onClick={() => {
+                    setIntegrationsMenuOpen(false);
+                    window.open('/api/onenote/login', '_blank', 'noopener,noreferrer');
+                  }}
+                >
+                  <div className="rounded-xl bg-violet-500/15 p-2 text-violet-300">
+                    <BookOpenText className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">OneNote</p>
+                    <p className="truncate text-[11px] text-white/55">
+                      Consultar e atualizar cadernos e paginas
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-left transition-colors hover:bg-white/10"
+                  onClick={() => {
+                    setIntegrationsMenuOpen(false);
+                    window.open('/api/whatsapp/webhook', '_blank', 'noopener,noreferrer');
+                  }}
+                >
+                  <div className="rounded-xl bg-sky-500/15 p-2 text-sky-300">
+                    <MessageCircleMore className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">WhatsApp</p>
+                    <p className="truncate text-[11px] text-white/55">
+                      Abrir webhook e validar recebimento
+                    </p>
+                  </div>
+                </button>
+              </div>
+            </motion.aside>
+          )}
+        </AnimatePresence>
+      </section>
+    );
+  }
+
   return (
     <section className="relative flex h-svh w-svw flex-col overflow-hidden bg-black" {...props}>
       <VantaController vantaRef={vantaEffectRef} />
@@ -372,6 +676,33 @@ export const SessionView = ({
                 {securitySession.activeCharacterName && (
                   <span className="rounded-full border border-amber-300/30 bg-amber-500/10 px-2 py-1 text-amber-100">
                     {securitySession.activeCharacterName}
+                  </span>
+                )}
+                {securitySession.codingMode === 'coding' && (
+                  <span className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2 py-1 text-cyan-100">
+                    Codex Mode
+                  </span>
+                )}
+                {securitySession.activeProjectName && (
+                  <span className="rounded-full border border-sky-300/30 bg-sky-500/10 px-2 py-1 text-sky-100">
+                    {securitySession.activeProjectName}
+                  </span>
+                )}
+                {securitySession.autonomyNotice?.active && (
+                  <span
+                    className={cn(
+                      'rounded-full border px-2 py-1',
+                      securitySession.autonomyNotice.level === 'critical'
+                        ? 'border-rose-300/30 bg-rose-500/10 text-rose-100'
+                        : securitySession.autonomyNotice.level === 'warning'
+                          ? 'border-amber-300/30 bg-amber-500/10 text-amber-100'
+                          : 'border-cyan-300/30 bg-cyan-500/10 text-cyan-100'
+                    )}
+                    title={securitySession.autonomyNotice.message ?? undefined}
+                  >
+                    {securitySession.autonomyNotice.domain
+                      ? `Autonomia reduzida: ${securitySession.autonomyNotice.domain}`
+                      : 'Autonomia reduzida'}
                   </span>
                 )}
                 <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-white/70">
