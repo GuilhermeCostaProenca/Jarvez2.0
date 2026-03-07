@@ -42,6 +42,9 @@ Configure no `backend/.env`:
 - `ACTION_CONFIRMATION_TTL_SECONDS` (padrao: `60`)
 - `HOME_ASSISTANT_TIMEOUT_SECONDS` (padrao: `5`)
 - `HOME_ASSISTANT_RETRY_COUNT` (padrao: `2`)
+- `JARVEZ_SECURITY_PIN` (obrigatorio para liberar modo privado)
+- `JARVEZ_SECURITY_PASSPHRASE` (opcional, segundo segredo)
+- `JARVEZ_SECURE_SESSION_TTL_SECONDS` (padrao: `600`)
 
 Exemplos de `entity_id`:
 
@@ -55,13 +58,26 @@ Comandos de voz suportados (MVP):
 - \"Desligue a luz do quarto\"
 - \"Defina o brilho da luz da sala para 120\"
 - \"Sim, confirmo\" (para executar a acao sensivel pendente)
+- \"Autenticar: meu PIN e 1234\" (libera sessao privada)
+- \"Bloquear modo privado\" (encerra autenticacao)
 
 ## Modelo de seguranca
 
 - Toda acao passa por policy gate no backend.
+- Acoes sensiveis exigem sessao autenticada (participante atual + PIN).
 - Acoes sensiveis exigem confirmacao explicita (two-step).
 - `call_service` e interno e respeita allowlist de servicos.
 - O token de confirmacao expira e e valido so para o mesmo participante/sala.
+- Sem autenticacao, o agente deve manter respostas privadas bloqueadas.
+
+## Memoria com escopo
+
+- A memoria agora e separada em `public` e `private`.
+- Conteudo sensivel e salvo como `private` por padrao.
+- O agente tambem pergunta quando detectar conteudo pessoal:
+  - "Quer que eu trate isso como segredo (privado) ou publico?"
+- Sem autenticacao ativa, apenas memoria `public` e considerada.
+- Apos autenticar, o agente pode carregar memoria `private` da mesma identidade.
 
 ## Troubleshooting rapido
 

@@ -208,8 +208,14 @@ export const SessionView = ({
   const [chatOpen, setChatOpen] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const vantaEffectRef = useRef<VantaEffect | null>(null);
-  const { events, pendingConfirmation, isConfirming, confirmPendingAction, cancelPendingAction } =
-    useAgentActionEvents();
+  const {
+    events,
+    pendingConfirmation,
+    isConfirming,
+    securitySession,
+    confirmPendingAction,
+    cancelPendingAction,
+  } = useAgentActionEvents();
 
   const participants = useRemoteParticipants();
   const agentParticipant = participants.find((p) => !p.isLocal);
@@ -350,6 +356,14 @@ export const SessionView = ({
             </Button>
           </div>
         )}
+
+        <div className="mx-auto mb-3 flex w-full max-w-2xl items-center justify-between rounded-lg border border-white/20 bg-black/40 px-3 py-2 text-xs text-white">
+          <span>
+            {securitySession.authenticated
+              ? `Sessao privada autenticada (${securitySession.expiresIn}s restantes)`
+              : 'Sessao privada bloqueada. Autentique com PIN para liberar conteudo sensivel.'}
+          </span>
+        </div>
 
         <ActionConfirmationPrompt
           pendingConfirmation={pendingConfirmation}

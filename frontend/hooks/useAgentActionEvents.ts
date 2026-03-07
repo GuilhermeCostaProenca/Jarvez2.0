@@ -5,6 +5,7 @@ import type {
   ActionExecutionEvent,
   ActionResultPayload,
   PendingActionConfirmation,
+  SecuritySessionState,
 } from '@/lib/types/realtime';
 
 interface FunctionCallItem {
@@ -51,6 +52,11 @@ export function useAgentActionEvents() {
   );
   const [isConfirming, setIsConfirming] = useState(false);
   const [events, setEvents] = useState<ActionExecutionEvent[]>([]);
+  const [securitySession, setSecuritySession] = useState<SecuritySessionState>({
+    authenticated: false,
+    identityBound: false,
+    expiresIn: 0,
+  });
 
   const pushEvent = useCallback((event: ActionExecutionEvent) => {
     setEvents((current) => [event, ...current].slice(0, 8));
@@ -84,6 +90,19 @@ export function useAgentActionEvents() {
         const actionResult = extractActionResult(output.output);
         if (!actionResult) {
           return;
+        }
+
+        const security = actionResult.data?.security_status;
+        if (security) {
+          setSecuritySession({
+            authenticated: Boolean(security.authenticated),
+            identityBound: Boolean(security.identity_bound),
+            expiresIn: Number(security.expires_in ?? 0),
+          });
+        }
+
+        if (actionResult.data?.authentication_required) {
+          toast.warning('Sessao privada bloqueada. Diga seu PIN para autenticar.');
         }
 
         const call = calls[index];
@@ -157,6 +176,7 @@ export function useAgentActionEvents() {
     events,
     pendingConfirmation,
     isConfirming,
+    securitySession,
     confirmPendingAction,
     cancelPendingAction,
   };
