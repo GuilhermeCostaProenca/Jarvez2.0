@@ -1,25 +1,119 @@
 from __future__ import annotations
 
+import asyncio
+import base64
 import json
 import logging
-import math
 import os
 import random
 import re
 import secrets
+import shutil
 import subprocess
 import tempfile
 import time
+import webbrowser
 import html
-from dataclasses import dataclass
+import hashlib
+import unicodedata
+import uuid
+from difflib import SequenceMatcher
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Awaitable, Callable
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 
 import requests
+from actions_core import (
+    ACTION_REGISTRY,
+    ACTIVE_CHARACTER_BY_PARTICIPANT,
+    ACTIVE_CODEX_TASK_BY_PARTICIPANT,
+    ACTIVE_PROJECT_BY_PARTICIPANT,
+    AUTHENTICATED_SESSIONS,
+    AUTO_REMEDIATION_LAST_EXECUTION,
+    CANARY_PROMOTION_LAST_EXECUTION,
+    CANARY_ROLLOUT_PERCENT_OVERRIDE,
+    CANARY_SESSION_OVERRIDES,
+    CAPABILITY_MODE_BY_PARTICIPANT,
+    CODEX_RUNNING_PROCESSES,
+    CODEX_TASK_HISTORY_BY_PARTICIPANT,
+    CONTROL_LOOP_BREACH_HISTORY,
+    CONTROL_LOOP_FREEZE_LAST_TRIGGER,
+    FEATURE_FLAG_OVERRIDES,
+    MEMORY_SCOPE_OVERRIDES,
+    PARTICIPANT_PENDING_TOKENS,
+    PENDING_CONFIRMATIONS,
+    PERSONA_MODE_BY_PARTICIPANT,
+    RPG_ACTIVE_RECORDINGS,
+    RPG_LAST_SESSION_FILES,
+    VOICE_STEP_UP_PENDING,
+    ActionContext,
+    ActionResult,
+    ActionSpec,
+    ActiveCharacterMode,
+    ActiveCodexTask,
+    ActiveProjectMode,
+    AuthenticatedSession,
+    PendingConfirmation,
+    RPGSessionRecordingState,
+    get_action,
+    get_exposed_actions,
+    get_state_store,
+    publish_session_event,
+    register_action,
+)
+from actions_core.dispatch import merge_event_state
 from voice_biometrics import VoiceProfileStore, get_recent_voice_embedding
+from code_knowledge import CodeKnowledgeIndex
+from codex_cli import is_codex_available, run_exec_streaming
+from code_worker_client import CodeWorkerClient
+from coding_llm import explain_project_state, propose_patch_plan, summarize_diff
+from evals import append_metric, baseline_scenarios, read_metrics, summarize_action_metrics, summarize_slo
+from github_catalog import GitHubCatalogClient, GitHubRepo
+from orchestration import (
+    build_provider_registry,
+    build_task_plan,
+    cancel_subagent,
+    complete_subagent,
+    list_subagents,
+    route_orchestration,
+    spawn_subagent,
+    start_subagent_task,
+)
+from policy import (
+    ALLOWED_AUTONOMY_MODES,
+    classify_action_risk,
+    clear_domain_autonomy_mode,
+    clear_domain_trust,
+    clear_trust_drift,
+    get_domain_autonomy_details,
+    get_domain_trust,
+    get_domain_autonomy_mode,
+    get_effective_autonomy_mode,
+    get_trust_drift,
+    evaluate_policy,
+    get_autonomy_mode,
+    get_killswitch_status,
+    infer_action_domain,
+    is_blocked,
+    list_domain_autonomy_modes,
+    list_domain_trust,
+    list_trust_drift,
+    record_domain_outcome,
+    replace_trust_drift,
+    set_domain_autonomy_mode,
+    set_autonomy_mode,
+    set_killswitch_domain,
+    set_killswitch_global,
+)
+from providers.provider_router import TaskType, preview_route
+from project_catalog import ProjectCatalog, ProjectRecord
 from rpg_knowledge import RPGKnowledgeIndex
+from rpg_engine import generate_character_sheet, generate_threat_sheet
+from rpg_engine.contracts import InvalidCharacterBuildError, InvalidThreatDefinitionError
+from skills import get_skill, list_skills
 
 try:
     from pypdf import PdfReader, PdfWriter
@@ -55,6 +149,39 @@ logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 JsonObject = dict[str, Any]
 ActionHandler = Callable[[JsonObject, "ActionContext"], Awaitable["ActionResult"]]
+STATE_STORE = get_state_store()
+SESSION_STATE_NAMESPACES = {
+    "memory_scope",
+    "persona_mode",
+    "capability_mode",
+    "active_project",
+    "active_character",
+    "active_codex_task",
+    "codex_history",
+}
+EVENT_STATE_NAMESPACES = {
+    "research_schedules",
+    "model_route",
+    "subagent_states",
+    "policy_events",
+    "execution_traces",
+    "eval_baseline_summary",
+    "eval_metrics",
+    "eval_metrics_summary",
+    "slo_report",
+    "providers_health",
+    "feature_flags",
+    "canary_state",
+    "incident_snapshot",
+    "playbook_report",
+    "auto_remediation",
+    "canary_promotion",
+    "control_tick",
+    "browser_tasks",
+    "workflow_state",
+    "automation_state",
+    "whatsapp_channel",
+}
 
 SENSITIVE_KEYS = {
     "token",
@@ -75,137 +202,16 @@ AMBIGUOUS_CONFIRMATION_RE = re.compile(
     r"\b(talvez|acho que sim|nao sei|n\u00e3o sei|depois|quem sabe|mais ou menos)\b",
     re.IGNORECASE,
 )
+BOOL_FALSE_VALUES = {"0", "false", "off", "no", "nao", "não"}
 
-THREAT_SOLO_COMBAT_TABLE: dict[str, JsonObject] = {
-    "1/4": {"attack_value": 6, "average_damage": 8, "defense": 11, "strong_save": 3, "medium_save": 0, "weak_save": -2, "hit_points": 7, "standard_effect_dc": 12},
-    "1/3": {"attack_value": 6, "average_damage": 9, "defense": 12, "strong_save": 4, "medium_save": 1, "weak_save": -1, "hit_points": 10, "standard_effect_dc": 12},
-    "1/2": {"attack_value": 7, "average_damage": 10, "defense": 14, "strong_save": 6, "medium_save": 3, "weak_save": -1, "hit_points": 15, "standard_effect_dc": 13},
-    "1": {"attack_value": 9, "average_damage": 15, "defense": 16, "strong_save": 11, "medium_save": 5, "weak_save": 0, "hit_points": 35, "standard_effect_dc": 14},
-    "2": {"attack_value": 12, "average_damage": 18, "defense": 19, "strong_save": 13, "medium_save": 7, "weak_save": 2, "hit_points": 70, "standard_effect_dc": 16},
-    "3": {"attack_value": 14, "average_damage": 21, "defense": 21, "strong_save": 15, "medium_save": 9, "weak_save": 3, "hit_points": 105, "standard_effect_dc": 17},
-    "4": {"attack_value": 16, "average_damage": 24, "defense": 23, "strong_save": 16, "medium_save": 10, "weak_save": 4, "hit_points": 140, "standard_effect_dc": 18},
-    "5": {"attack_value": 17, "average_damage": 40, "defense": 24, "strong_save": 17, "medium_save": 11, "weak_save": 5, "hit_points": 200, "standard_effect_dc": 20},
-    "6": {"attack_value": 20, "average_damage": 56, "defense": 27, "strong_save": 18, "medium_save": 12, "weak_save": 6, "hit_points": 240, "standard_effect_dc": 22},
-    "7": {"attack_value": 24, "average_damage": 62, "defense": 31, "strong_save": 20, "medium_save": 14, "weak_save": 7, "hit_points": 280, "standard_effect_dc": 24},
-    "8": {"attack_value": 26, "average_damage": 68, "defense": 33, "strong_save": 21, "medium_save": 15, "weak_save": 8, "hit_points": 320, "standard_effect_dc": 26},
-    "9": {"attack_value": 27, "average_damage": 74, "defense": 34, "strong_save": 21, "medium_save": 15, "weak_save": 9, "hit_points": 360, "standard_effect_dc": 28},
-    "10": {"attack_value": 29, "average_damage": 80, "defense": 36, "strong_save": 22, "medium_save": 16, "weak_save": 10, "hit_points": 400, "standard_effect_dc": 30},
-    "11": {"attack_value": 34, "average_damage": 130, "defense": 41, "strong_save": 24, "medium_save": 18, "weak_save": 11, "hit_points": 550, "standard_effect_dc": 31},
-    "12": {"attack_value": 36, "average_damage": 144, "defense": 43, "strong_save": 26, "medium_save": 20, "weak_save": 12, "hit_points": 600, "standard_effect_dc": 33},
-    "13": {"attack_value": 37, "average_damage": 158, "defense": 44, "strong_save": 26, "medium_save": 20, "weak_save": 13, "hit_points": 650, "standard_effect_dc": 35},
-    "14": {"attack_value": 39, "average_damage": 172, "defense": 46, "strong_save": 28, "medium_save": 22, "weak_save": 14, "hit_points": 700, "standard_effect_dc": 38},
-    "15": {"attack_value": 43, "average_damage": 186, "defense": 50, "strong_save": 28, "medium_save": 22, "weak_save": 15, "hit_points": 750, "standard_effect_dc": 40},
-    "16": {"attack_value": 46, "average_damage": 200, "defense": 53, "strong_save": 30, "medium_save": 24, "weak_save": 16, "hit_points": 800, "standard_effect_dc": 42},
-    "17": {"attack_value": 48, "average_damage": 214, "defense": 55, "strong_save": 31, "medium_save": 25, "weak_save": 17, "hit_points": 850, "standard_effect_dc": 44},
-    "18": {"attack_value": 50, "average_damage": 228, "defense": 57, "strong_save": 33, "medium_save": 27, "weak_save": 18, "hit_points": 900, "standard_effect_dc": 46},
-    "19": {"attack_value": 52, "average_damage": 242, "defense": 59, "strong_save": 34, "medium_save": 28, "weak_save": 19, "hit_points": 950, "standard_effect_dc": 48},
-    "20": {"attack_value": 54, "average_damage": 256, "defense": 61, "strong_save": 36, "medium_save": 30, "weak_save": 20, "hit_points": 1000, "standard_effect_dc": 50},
-    "S": {"attack_value": 56, "average_damage": 280, "defense": 64, "strong_save": 38, "medium_save": 32, "weak_save": 22, "hit_points": 1200, "standard_effect_dc": 52},
-    "S+": {"attack_value": 58, "average_damage": 300, "defense": 66, "strong_save": 40, "medium_save": 34, "weak_save": 24, "hit_points": 1400, "standard_effect_dc": 54},
-}
-
-
-@dataclass(slots=True)
-class ActionResult:
-    success: bool
-    message: str
-    data: JsonObject | None = None
-    error: str | None = None
-
-    def to_json(self) -> str:
-        payload: JsonObject = {
-            "success": self.success,
-            "message": self.message,
-        }
-        if self.data is not None:
-            payload["data"] = self.data
-        if self.error is not None:
-            payload["error"] = self.error
-        return json.dumps(payload, ensure_ascii=False)
-
-
-@dataclass(slots=True)
-class ActionContext:
-    job_id: str
-    room: str
-    participant_identity: str
-    session: Any | None = None
-    memory_client: Any | None = None
-    user_id: str | None = None
-
-
-@dataclass(slots=True)
-class ActionSpec:
-    name: str
-    description: str
-    params_schema: JsonObject
-    requires_confirmation: bool
-    handler: ActionHandler
-    expose_to_model: bool = True
-    requires_auth: bool = False
-
-
-@dataclass(slots=True)
-class PendingConfirmation:
-    token: str
-    action_name: str
-    params: JsonObject
-    participant_identity: str
-    room: str
-    expires_at: datetime
-
-
-@dataclass(slots=True)
-class AuthenticatedSession:
-    participant_identity: str
-    room: str
-    expires_at: datetime
-    auth_method: str
-    last_activity_at: datetime
-
-
-@dataclass(slots=True)
-class RPGSessionRecordingState:
-    participant_identity: str
-    room: str
-    title: str
-    world: str
-    started_at: datetime
-    start_history_index: int
-    active: bool
-    output_file: str | None = None
-
-
-@dataclass(slots=True)
-class ActiveCharacterMode:
-    name: str
-    source: str
-    summary: str
-    activated_at: str
-    page_id: str | None = None
-    page_title: str | None = None
-    section_name: str | None = None
-    one_note_url: str | None = None
-    visual_reference_url: str | None = None
-    pinterest_pin_url: str | None = None
-    visual_description: str | None = None
-    profile: JsonObject | None = None
-    prompt_hint: str | None = None
-    sheet_json_path: str | None = None
-    sheet_markdown_path: str | None = None
-    sheet_pdf_path: str | None = None
-
-
-ACTION_REGISTRY: dict[str, ActionSpec] = {}
-PENDING_CONFIRMATIONS: dict[str, PendingConfirmation] = {}
-PARTICIPANT_PENDING_TOKENS: dict[str, str] = {}
-AUTHENTICATED_SESSIONS: dict[str, AuthenticatedSession] = {}
-VOICE_STEP_UP_PENDING: dict[str, float] = {}
 VOICE_PROFILE_STORE = VoiceProfileStore.from_env()
-MEMORY_SCOPE_OVERRIDES: dict[str, str] = {}
-PERSONA_MODE_BY_PARTICIPANT: dict[str, str] = {}
+PROJECT_CATALOG_SINGLETON: ProjectCatalog | None = None
+CODE_WORKER_CLIENT: CodeWorkerClient | None = None
+GITHUB_CATALOG_CLIENT: GitHubCatalogClient | None = None
 SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
 SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
+THINQ_DEFAULT_API_BASE_URL = "https://api-aic.lgthinq.com"
+THINQ_API_KEY = "v6GFvkweNo7DK7yD3ylIZ9w52aKBU0eJ7wLXkSR3"
 ONENOTE_GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 ONENOTE_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 ONENOTE_AUTHORIZE_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
@@ -229,7 +235,9 @@ SPOTIFY_FALLBACK_TRACKS = [
     "spotify:track:0VjIjW4GlUZAMYd2vXMi3b",
 ]
 SPOTIFY_TOKEN_CACHE: JsonObject = {}
+SPOTIFY_DEVICE_ALIAS_CACHE: JsonObject = {}
 ONENOTE_TOKEN_CACHE: JsonObject = {}
+THINQ_SESSION_CLIENT_ID = f"jarvez-{secrets.token_hex(8)}"
 WHATSAPP_GRAPH_BASE = "https://graph.facebook.com"
 DEFAULT_PERSONA_MODE = "default"
 PERSONA_MODE_ALIASES = {
@@ -274,23 +282,261 @@ PERSONA_MODES: dict[str, JsonObject] = {
     },
 }
 RPG_KNOWLEDGE_INDEX: RPGKnowledgeIndex | None = None
-RPG_ACTIVE_RECORDINGS: dict[str, RPGSessionRecordingState] = {}
-RPG_LAST_SESSION_FILES: dict[str, str] = {}
-ACTIVE_CHARACTER_BY_PARTICIPANT: dict[str, ActiveCharacterMode] = {}
+CODE_KNOWLEDGE_INDEX: CodeKnowledgeIndex | None = None
 
 
-def register_action(spec: ActionSpec) -> None:
-    if spec.name in ACTION_REGISTRY:
-        raise ValueError(f"duplicate action name: {spec.name}")
-    ACTION_REGISTRY[spec.name] = spec
+def _parse_datetime(value: Any) -> datetime | None:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
 
 
-def get_action(name: str) -> ActionSpec | None:
-    return ACTION_REGISTRY.get(name)
+def _persist_session_namespace(participant_identity: str, room: str, namespace: str, payload: Any) -> None:
+    try:
+        STATE_STORE.upsert_session_state(
+            participant_identity=participant_identity,
+            room=room,
+            namespace=namespace,
+            payload=payload,
+        )
+    except Exception:
+        logger.warning("failed to persist session namespace=%s", namespace, exc_info=True)
 
 
-def get_exposed_actions() -> list[ActionSpec]:
-    return [spec for spec in ACTION_REGISTRY.values() if spec.expose_to_model]
+def _load_session_namespace(participant_identity: str, room: str, namespace: str) -> Any | None:
+    try:
+        return STATE_STORE.get_session_state(
+            participant_identity=participant_identity,
+            room=room,
+            namespace=namespace,
+        )
+    except Exception:
+        logger.warning("failed to load session namespace=%s", namespace, exc_info=True)
+        return None
+
+
+def _delete_session_namespace(participant_identity: str, room: str, namespace: str) -> None:
+    try:
+        STATE_STORE.upsert_session_state(
+            participant_identity=participant_identity,
+            room=room,
+            namespace=namespace,
+            payload=None,
+        )
+    except Exception:
+        logger.warning("failed to clear session namespace=%s", namespace, exc_info=True)
+
+
+def _persist_event_namespace(participant_identity: str, room: str, namespace: str, payload: Any) -> None:
+    try:
+        STATE_STORE.upsert_event_state(
+            participant_identity=participant_identity,
+            room=room,
+            namespace=namespace,
+            payload=payload,
+        )
+    except Exception:
+        logger.warning("failed to persist event namespace=%s", namespace, exc_info=True)
+
+
+def _load_event_namespace(participant_identity: str, room: str, namespace: str) -> Any | None:
+    try:
+        return STATE_STORE.get_event_state(
+            participant_identity=participant_identity,
+            room=room,
+            namespace=namespace,
+        )
+    except Exception:
+        logger.warning("failed to load event namespace=%s", namespace, exc_info=True)
+        return None
+
+
+def _active_project_from_payload(payload: Any) -> ActiveProjectMode | None:
+    if not isinstance(payload, dict):
+        return None
+    project_id = str(payload.get("project_id") or "").strip()
+    name = str(payload.get("name") or "").strip()
+    root_path = str(payload.get("root_path") or "").strip()
+    if not (project_id and name and root_path):
+        return None
+    aliases = payload.get("aliases")
+    return ActiveProjectMode(
+        project_id=project_id,
+        name=name,
+        root_path=root_path,
+        aliases=[str(item) for item in aliases] if isinstance(aliases, list) else [],
+        selected_at=str(payload.get("selected_at") or _now_iso()),
+        selection_reason=str(payload.get("selection_reason") or ""),
+        index_status=str(payload.get("index_status") or ""),
+    )
+
+
+def _active_character_from_payload(payload: Any) -> ActiveCharacterMode | None:
+    if not isinstance(payload, dict):
+        return None
+    name = str(payload.get("name") or "").strip()
+    source = str(payload.get("source") or "").strip()
+    if not (name and source):
+        return None
+    return ActiveCharacterMode(
+        name=name,
+        source=source,
+        summary=str(payload.get("summary") or ""),
+        activated_at=str(payload.get("activated_at") or _now_iso()),
+        page_id=str(payload.get("page_id") or ""),
+        page_title=str(payload.get("page_title") or ""),
+        section_name=str(payload.get("section_name") or ""),
+        one_note_url=str(payload.get("one_note_url") or "") or None,
+        visual_reference_url=str(payload.get("visual_reference_url") or "") or None,
+        pinterest_pin_url=str(payload.get("pinterest_pin_url") or "") or None,
+        visual_description=str(payload.get("visual_description") or "") or None,
+        profile=payload.get("profile") if isinstance(payload.get("profile"), dict) else None,
+        prompt_hint=str(payload.get("prompt_hint") or "") or None,
+        sheet_json_path=str(payload.get("sheet_json_path") or "") or None,
+        sheet_markdown_path=str(payload.get("sheet_markdown_path") or "") or None,
+        sheet_pdf_path=str(payload.get("sheet_pdf_path") or "") or None,
+    )
+
+
+def _active_codex_task_from_payload(payload: Any) -> ActiveCodexTask | None:
+    if not isinstance(payload, dict):
+        return None
+    task_id = str(payload.get("task_id") or "").strip()
+    status = str(payload.get("status") or "").strip()
+    project_id = str(payload.get("project_id") or "").strip()
+    project_name = str(payload.get("project_name") or "").strip()
+    working_directory = str(payload.get("working_directory") or "").strip()
+    request = str(payload.get("request") or "").strip()
+    started_at = str(payload.get("started_at") or "").strip()
+    if not (task_id and status and project_id and project_name and working_directory and request and started_at):
+        return None
+    raw_last_event = payload.get("raw_last_event")
+    return ActiveCodexTask(
+        task_id=task_id,
+        status=status,
+        project_id=project_id,
+        project_name=project_name,
+        working_directory=working_directory,
+        request=request,
+        started_at=started_at,
+        finished_at=str(payload.get("finished_at") or "") or None,
+        current_phase=str(payload.get("current_phase") or "") or None,
+        summary=str(payload.get("summary") or "") or None,
+        exit_code=payload.get("exit_code") if isinstance(payload.get("exit_code"), int) else None,
+        raw_last_event=raw_last_event if isinstance(raw_last_event, dict) else None,
+        command_preview=str(payload.get("command_preview") or "") or None,
+        error=str(payload.get("error") or "") or None,
+    )
+
+
+def _known_feature_flags() -> list[str]:
+    return ["skills_v1", "subagents_v1", "policy_v1", "multi_model_router_v1", "canary_v1"]
+
+
+def _feature_value_from_env(flag_name: str, *, default: bool = True) -> bool:
+    normalized = flag_name.strip().lower()
+    specific = str(os.getenv(f"JARVEZ_FEATURE_{normalized.upper()}", "")).strip().lower()
+    if specific:
+        return specific not in BOOL_FALSE_VALUES
+
+    raw = str(os.getenv("JARVEZ_FEATURE_FLAGS", "")).strip()
+    if not raw:
+        return default
+    enabled = {item.strip().lower() for item in raw.split(",") if item.strip()}
+    return normalized in enabled
+
+
+def _is_feature_enabled(flag_name: str, *, default: bool = True) -> bool:
+    normalized = flag_name.strip().lower()
+    if normalized in FEATURE_FLAG_OVERRIDES:
+        return bool(FEATURE_FLAG_OVERRIDES[normalized])
+    return _feature_value_from_env(normalized, default=default)
+
+
+def _require_feature(flag_name: str) -> ActionResult | None:
+    if _is_feature_enabled(flag_name):
+        return None
+    return ActionResult(
+        success=False,
+        message=f"Feature `{flag_name}` desativada nesta instancia.",
+        error="feature disabled",
+    )
+
+
+def _feature_flags_snapshot() -> JsonObject:
+    known_flags = _known_feature_flags()
+    values: JsonObject = {}
+    for flag in known_flags:
+        values[flag] = _is_feature_enabled(flag, default=False if flag == "canary_v1" else True)
+    overrides = {key: value for key, value in FEATURE_FLAG_OVERRIDES.items()}
+    return {"values": values, "overrides": overrides}
+
+
+def _canary_key(participant_identity: str, room: str) -> str:
+    return f"{participant_identity}:{room}"
+
+
+def _is_canary_session_enrolled(participant_identity: str, room: str) -> bool:
+    key = _canary_key(participant_identity, room)
+    return bool(CANARY_SESSION_OVERRIDES.get(key, False))
+
+
+def _set_canary_session_enrollment(participant_identity: str, room: str, *, enrolled: bool) -> None:
+    key = _canary_key(participant_identity, room)
+    if enrolled:
+        CANARY_SESSION_OVERRIDES[key] = True
+    else:
+        CANARY_SESSION_OVERRIDES.pop(key, None)
+
+
+def _get_canary_rollout_percent() -> int:
+    if CANARY_ROLLOUT_PERCENT_OVERRIDE is not None:
+        return max(0, min(100, int(CANARY_ROLLOUT_PERCENT_OVERRIDE)))
+    raw = str(os.getenv("JARVEZ_CANARY_ROLLOUT_PERCENT", "0")).strip()
+    try:
+        return max(0, min(100, int(raw)))
+    except Exception:
+        return 0
+
+
+def _set_canary_rollout_percent(percent: int) -> int:
+    global CANARY_ROLLOUT_PERCENT_OVERRIDE
+    normalized = max(0, min(100, int(percent)))
+    CANARY_ROLLOUT_PERCENT_OVERRIDE = normalized
+    return normalized
+
+
+def _stable_bucket_for_session(participant_identity: str, room: str) -> int:
+    token = f"{participant_identity}:{room}".encode("utf-8", errors="ignore")
+    digest = hashlib.sha256(token).hexdigest()
+    return int(digest[:8], 16) % 100
+
+
+def _canary_state_payload(participant_identity: str, room: str) -> JsonObject:
+    global_enabled = _is_feature_enabled("canary_v1", default=False)
+    manual_enrolled = _is_canary_session_enrolled(participant_identity, room)
+    rollout_percent = _get_canary_rollout_percent()
+    bucket = _stable_bucket_for_session(participant_identity, room)
+    eligible_by_rollout = bucket < rollout_percent
+    active = bool(global_enabled and (manual_enrolled or eligible_by_rollout))
+    return {
+        "global_enabled": global_enabled,
+        "session_enrolled": manual_enrolled,
+        "manual_enrolled": manual_enrolled,
+        "rollout_percent": rollout_percent,
+        "assignment_bucket": bucket,
+        "eligible_by_rollout": eligible_by_rollout,
+        "active": active,
+        "cohort": "canary" if active else "stable",
+    }
 
 
 def is_authenticated_session(participant_identity: str, room: str) -> bool:
@@ -302,11 +548,21 @@ def _memory_override_key(participant_identity: str, room: str) -> str:
 
 
 def set_memory_scope_override(participant_identity: str, room: str, scope: str) -> None:
-    MEMORY_SCOPE_OVERRIDES[_memory_override_key(participant_identity, room)] = scope
+    key = _memory_override_key(participant_identity, room)
+    MEMORY_SCOPE_OVERRIDES[key] = scope
+    _persist_session_namespace(participant_identity, room, "memory_scope", scope)
 
 
 def get_memory_scope_override(participant_identity: str, room: str) -> str | None:
-    return MEMORY_SCOPE_OVERRIDES.get(_memory_override_key(participant_identity, room))
+    key = _memory_override_key(participant_identity, room)
+    in_memory = MEMORY_SCOPE_OVERRIDES.get(key)
+    if in_memory is not None:
+        return in_memory
+    stored = _load_session_namespace(participant_identity, room, "memory_scope")
+    if isinstance(stored, str) and stored in {PUBLIC_SCOPE, PRIVATE_SCOPE}:
+        MEMORY_SCOPE_OVERRIDES[key] = stored
+        return stored
+    return None
 
 
 def _persona_key(participant_identity: str, room: str) -> str:
@@ -320,7 +576,14 @@ def _normalize_persona_mode(value: str) -> str:
 
 def get_persona_mode(participant_identity: str, room: str) -> str:
     key = _persona_key(participant_identity, room)
-    mode = PERSONA_MODE_BY_PARTICIPANT.get(key, DEFAULT_PERSONA_MODE)
+    mode = PERSONA_MODE_BY_PARTICIPANT.get(key)
+    if mode is None:
+        stored = _load_session_namespace(participant_identity, room, "persona_mode")
+        if isinstance(stored, str):
+            mode = stored
+            PERSONA_MODE_BY_PARTICIPANT[key] = stored
+        else:
+            mode = DEFAULT_PERSONA_MODE
     if mode not in PERSONA_MODES:
         return DEFAULT_PERSONA_MODE
     return mode
@@ -331,6 +594,7 @@ def set_persona_mode(participant_identity: str, room: str, mode: str) -> str:
     if normalized not in PERSONA_MODES:
         return DEFAULT_PERSONA_MODE
     PERSONA_MODE_BY_PARTICIPANT[_persona_key(participant_identity, room)] = normalized
+    _persist_session_namespace(participant_identity, room, "persona_mode", normalized)
     return normalized
 
 
@@ -348,15 +612,26 @@ def _character_key(participant_identity: str, room: str) -> str:
 
 
 def get_active_character(participant_identity: str, room: str) -> ActiveCharacterMode | None:
-    return ACTIVE_CHARACTER_BY_PARTICIPANT.get(_character_key(participant_identity, room))
+    key = _character_key(participant_identity, room)
+    active = ACTIVE_CHARACTER_BY_PARTICIPANT.get(key)
+    if active is not None:
+        return active
+    stored = _load_session_namespace(participant_identity, room, "active_character")
+    loaded = _active_character_from_payload(stored)
+    if loaded is not None:
+        ACTIVE_CHARACTER_BY_PARTICIPANT[key] = loaded
+    return loaded
 
 
 def set_active_character(participant_identity: str, room: str, character: ActiveCharacterMode) -> None:
-    ACTIVE_CHARACTER_BY_PARTICIPANT[_character_key(participant_identity, room)] = character
+    key = _character_key(participant_identity, room)
+    ACTIVE_CHARACTER_BY_PARTICIPANT[key] = character
+    _persist_session_namespace(participant_identity, room, "active_character", asdict(character))
 
 
 def clear_active_character(participant_identity: str, room: str) -> None:
     ACTIVE_CHARACTER_BY_PARTICIPANT.pop(_character_key(participant_identity, room), None)
+    _delete_session_namespace(participant_identity, room, "active_character")
 
 
 def _active_character_payload(participant_identity: str, room: str) -> JsonObject:
@@ -386,6 +661,421 @@ def _active_character_payload(participant_identity: str, room: str) -> JsonObjec
             "sheet_pdf_path": active.sheet_pdf_path,
         },
         "active_character_name": active.name,
+    }
+
+
+def _get_project_catalog() -> ProjectCatalog:
+    global PROJECT_CATALOG_SINGLETON
+    if PROJECT_CATALOG_SINGLETON is None:
+        PROJECT_CATALOG_SINGLETON = ProjectCatalog()
+    return PROJECT_CATALOG_SINGLETON
+
+
+def _get_code_worker_client() -> CodeWorkerClient:
+    global CODE_WORKER_CLIENT
+    if CODE_WORKER_CLIENT is None:
+        CODE_WORKER_CLIENT = CodeWorkerClient()
+    return CODE_WORKER_CLIENT
+
+
+def _get_github_catalog_client() -> GitHubCatalogClient:
+    global GITHUB_CATALOG_CLIENT
+    if GITHUB_CATALOG_CLIENT is None:
+        GITHUB_CATALOG_CLIENT = GitHubCatalogClient()
+    return GITHUB_CATALOG_CLIENT
+
+
+def _capability_key(participant_identity: str, room: str) -> str:
+    return f"{participant_identity}:{room}"
+
+
+def get_capability_mode(participant_identity: str, room: str) -> str:
+    key = _capability_key(participant_identity, room)
+    mode = CAPABILITY_MODE_BY_PARTICIPANT.get(key)
+    if mode is None:
+        stored = _load_session_namespace(participant_identity, room, "capability_mode")
+        if isinstance(stored, str):
+            mode = stored
+            CAPABILITY_MODE_BY_PARTICIPANT[key] = stored
+        else:
+            mode = "default"
+    return mode if mode in {"default", "coding"} else "default"
+
+
+def set_capability_mode(participant_identity: str, room: str, mode: str) -> str:
+    normalized = mode.strip().casefold().replace("-", "_")
+    resolved = "coding" if normalized in {"coding", "codex"} else "default"
+    CAPABILITY_MODE_BY_PARTICIPANT[_capability_key(participant_identity, room)] = resolved
+    _persist_session_namespace(participant_identity, room, "capability_mode", resolved)
+    return resolved
+
+
+def _capability_payload(participant_identity: str, room: str) -> JsonObject:
+    return {"coding_mode": get_capability_mode(participant_identity, room)}
+
+
+def _project_key(participant_identity: str, room: str) -> str:
+    return f"{participant_identity}:{room}"
+
+
+def get_active_project(participant_identity: str, room: str) -> ActiveProjectMode | None:
+    key = _project_key(participant_identity, room)
+    active = ACTIVE_PROJECT_BY_PARTICIPANT.get(key)
+    if active is not None:
+        return active
+    stored = _load_session_namespace(participant_identity, room, "active_project")
+    loaded = _active_project_from_payload(stored)
+    if loaded is not None:
+        ACTIVE_PROJECT_BY_PARTICIPANT[key] = loaded
+    return loaded
+
+
+def set_active_project(participant_identity: str, room: str, project: ActiveProjectMode) -> None:
+    key = _project_key(participant_identity, room)
+    ACTIVE_PROJECT_BY_PARTICIPANT[key] = project
+    _persist_session_namespace(participant_identity, room, "active_project", asdict(project))
+
+
+def clear_active_project(participant_identity: str, room: str) -> None:
+    ACTIVE_PROJECT_BY_PARTICIPANT.pop(_project_key(participant_identity, room), None)
+    _delete_session_namespace(participant_identity, room, "active_project")
+
+
+def _active_project_payload(participant_identity: str, room: str) -> JsonObject:
+    active = get_active_project(participant_identity, room)
+    if active is None:
+        return {
+            "active_project": None,
+            "active_project_name": None,
+        }
+    return {
+        "active_project": {
+            "project_id": active.project_id,
+            "name": active.name,
+            "root_path": active.root_path,
+            "aliases": active.aliases,
+            "selected_at": active.selected_at,
+            "selection_reason": active.selection_reason,
+            "index_status": active.index_status,
+        },
+        "active_project_name": active.name,
+    }
+
+
+def _codex_key(participant_identity: str, room: str) -> str:
+    return f"{participant_identity}:{room}"
+
+
+def _codex_task_to_payload(task: ActiveCodexTask) -> JsonObject:
+    payload: JsonObject = {
+        "task_id": task.task_id,
+        "status": task.status,
+        "project_id": task.project_id,
+        "project_name": task.project_name,
+        "working_directory": task.working_directory,
+        "request": task.request,
+        "started_at": task.started_at,
+    }
+    if task.finished_at is not None:
+        payload["finished_at"] = task.finished_at
+    if task.current_phase is not None:
+        payload["current_phase"] = task.current_phase
+    if task.summary is not None:
+        payload["summary"] = task.summary
+    if task.exit_code is not None:
+        payload["exit_code"] = task.exit_code
+    if task.raw_last_event is not None:
+        payload["raw_last_event"] = task.raw_last_event
+    if task.command_preview is not None:
+        payload["command_preview"] = task.command_preview
+    if task.error is not None:
+        payload["error"] = task.error
+    return payload
+
+
+def get_active_codex_task(participant_identity: str, room: str) -> ActiveCodexTask | None:
+    key = _codex_key(participant_identity, room)
+    active = ACTIVE_CODEX_TASK_BY_PARTICIPANT.get(key)
+    if active is not None:
+        return active
+    stored = _load_session_namespace(participant_identity, room, "active_codex_task")
+    loaded = _active_codex_task_from_payload(stored)
+    if loaded is not None:
+        ACTIVE_CODEX_TASK_BY_PARTICIPANT[key] = loaded
+    return loaded
+
+
+def set_active_codex_task(participant_identity: str, room: str, task: ActiveCodexTask) -> None:
+    key = _codex_key(participant_identity, room)
+    ACTIVE_CODEX_TASK_BY_PARTICIPANT[key] = task
+    _persist_session_namespace(
+        participant_identity,
+        room,
+        "active_codex_task",
+        _codex_task_to_payload(task),
+    )
+
+
+def _codex_history_payload(participant_identity: str, room: str) -> list[JsonObject]:
+    key = _codex_key(participant_identity, room)
+    history = CODEX_TASK_HISTORY_BY_PARTICIPANT.get(key)
+    if history is None:
+        stored = _load_session_namespace(participant_identity, room, "codex_history")
+        if isinstance(stored, list):
+            history = [dict(item) for item in stored if isinstance(item, dict)]
+            CODEX_TASK_HISTORY_BY_PARTICIPANT[key] = history
+        else:
+            history = []
+    return [dict(item) for item in history[:8]]
+
+
+def _push_codex_history(participant_identity: str, room: str, task: ActiveCodexTask) -> None:
+    key = _codex_key(participant_identity, room)
+    entry = _codex_task_to_payload(task)
+    current = CODEX_TASK_HISTORY_BY_PARTICIPANT.get(key, [])
+    filtered = [item for item in current if str(item.get("task_id", "")) != task.task_id]
+    next_history = [entry, *filtered][:8]
+    CODEX_TASK_HISTORY_BY_PARTICIPANT[key] = next_history
+    _persist_session_namespace(participant_identity, room, "codex_history", next_history)
+
+
+async def _publish_agent_event(ctx: ActionContext, payload: JsonObject) -> None:
+    await publish_session_event(ctx.session, payload)
+
+
+async def _emit_codex_task_event(
+    ctx: ActionContext,
+    *,
+    event_type: str,
+    task: ActiveCodexTask,
+    phase: str,
+    message: str,
+    raw_event_type: str | None = None,
+) -> None:
+    await _publish_agent_event(
+        ctx,
+        {
+            "type": event_type,
+            "codex_task": _codex_task_to_payload(task),
+            "codex_event": {
+                "task_id": task.task_id,
+                "phase": phase,
+                "message": message,
+                "timestamp": _now_iso(),
+                "raw_event_type": raw_event_type,
+            },
+            "codex_history": _codex_history_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+def _append_event_state_list(
+    participant_identity: str,
+    room: str,
+    namespace: str,
+    entry: JsonObject,
+    *,
+    key: str | None = None,
+    limit: int = 40,
+) -> None:
+    current = _load_event_namespace(participant_identity, room, namespace)
+    rows = [dict(item) for item in current] if isinstance(current, list) else []
+    if key:
+        entry_key = str(entry.get(key) or "").strip()
+        if entry_key:
+            rows = [item for item in rows if str(item.get(key) or "").strip() != entry_key]
+    next_rows = [entry, *rows][:limit]
+    _persist_event_namespace(participant_identity, room, namespace, next_rows)
+
+
+def _persist_result_state(ctx: ActionContext, action_name: str, result: ActionResult) -> None:
+    data = result.data if isinstance(result.data, dict) else {}
+    if not data:
+        return
+
+    participant_identity = ctx.participant_identity
+    room = ctx.room
+
+    if isinstance(data.get("model_route"), dict):
+        _persist_event_namespace(participant_identity, room, "model_route", data.get("model_route"))
+
+    subagent_states = data.get("subagent_states")
+    if isinstance(subagent_states, list):
+        _persist_event_namespace(
+            participant_identity,
+            room,
+            "subagent_states",
+            [item for item in subagent_states if isinstance(item, dict)],
+        )
+    else:
+        subagent_state = data.get("subagent_state")
+        if isinstance(subagent_state, dict):
+            _append_event_state_list(
+                participant_identity,
+                room,
+                "subagent_states",
+                subagent_state,
+                key="subagent_id",
+            )
+
+    if isinstance(data.get("policy"), dict):
+        policy_entry = dict(data["policy"])
+        policy_entry.setdefault("action_name", action_name)
+        _append_event_state_list(
+            participant_identity,
+            room,
+            "policy_events",
+            policy_entry,
+            key="signature",
+        )
+
+    if result.trace_id:
+        trace_entry = {
+            "traceId": result.trace_id,
+            "actionName": action_name,
+            "timestamp": int(time.time() * 1000),
+            "risk": result.risk,
+            "policyDecision": result.policy_decision,
+            "provider": result.evidence.get("provider") if isinstance(result.evidence, dict) else None,
+            "fallbackUsed": result.fallback_used,
+            "success": result.success,
+            "message": result.message,
+        }
+        _append_event_state_list(
+            participant_identity,
+            room,
+            "execution_traces",
+            trace_entry,
+            key="traceId",
+            limit=120,
+        )
+
+    if isinstance(data.get("web_dashboard_schedule"), dict):
+        schedule = dict(data["web_dashboard_schedule"])
+        current = _load_event_namespace(participant_identity, room, "research_schedules")
+        rows = [dict(item) for item in current] if isinstance(current, list) else []
+        schedule_id = str(schedule.get("id") or "").strip()
+        next_rows = [schedule, *[item for item in rows if str(item.get("id") or "").strip() != schedule_id]]
+        _persist_event_namespace(participant_identity, room, "research_schedules", next_rows[:40])
+
+    for source_key, namespace in (
+        ("eval_baseline_summary", "eval_baseline_summary"),
+        ("eval_metrics", "eval_metrics"),
+        ("eval_metrics_summary", "eval_metrics_summary"),
+        ("slo_report", "slo_report"),
+        ("providers_health", "providers_health"),
+        ("feature_flags", "feature_flags"),
+        ("canary_state", "canary_state"),
+        ("ops_incident_snapshot", "incident_snapshot"),
+        ("ops_playbook_report", "playbook_report"),
+        ("ops_auto_remediation", "auto_remediation"),
+        ("ops_canary_promotion", "canary_promotion"),
+        ("ops_control_tick", "control_tick"),
+        ("browser_task", "browser_tasks"),
+        ("workflow_state", "workflow_state"),
+        ("automation_state", "automation_state"),
+        ("whatsapp_channel", "whatsapp_channel"),
+    ):
+        payload = data.get(source_key)
+        if payload is not None:
+            _persist_event_namespace(participant_identity, room, namespace, payload)
+
+
+async def _publish_session_snapshot_for_context(ctx: ActionContext) -> None:
+    if ctx.session is None:
+        return
+    try:
+        from session_snapshot import publish_session_snapshot
+
+        await publish_session_snapshot(
+            ctx.session,
+            participant_identity=ctx.participant_identity,
+            room=ctx.room,
+        )
+    except Exception:
+        logger.warning("failed to publish session snapshot", exc_info=True)
+
+
+def _project_record_to_payload(record: ProjectRecord) -> JsonObject:
+    return {
+        "project_id": record.project_id,
+        "name": record.name,
+        "root_path": record.root_path,
+        "aliases": list(record.aliases),
+        "git_remote_url": record.git_remote_url,
+        "stack_tags": list(record.stack_tags or []),
+        "last_indexed_at": record.last_indexed_at,
+        "last_scanned_at": record.last_scanned_at,
+        "is_active": record.is_active,
+        "priority_score": record.priority_score,
+        "notes": record.notes,
+    }
+
+
+def _detect_git_branch(root_path: str) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=root_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+    if completed.returncode != 0:
+        return None
+    branch = completed.stdout.strip()
+    return branch or None
+
+
+def _build_codex_request_prompt(*, record: ProjectRecord, user_request: str, review_mode: bool = False) -> str:
+    branch = _detect_git_branch(record.root_path) or "desconhecida"
+    mode_label = "review tecnico" if review_mode else "analise tecnica"
+    return (
+        "Voce esta operando para o Jarvez em modo de leitura.\n"
+        f"Projeto: {record.name}\n"
+        f"Diretorio: {record.root_path}\n"
+        f"Branch atual: {branch}\n"
+        f"Tarefa: {mode_label}\n\n"
+        f"Pedido do usuario:\n{user_request}\n\n"
+        "Regras obrigatorias:\n"
+        "- Nao faca mudancas em arquivos.\n"
+        "- Nao rode comandos mutaveis.\n"
+        "- Trabalhe apenas com analise, planejamento, explicacao ou review.\n"
+        "- Baseie-se no repositorio local atual.\n"
+        "- Responda com: resumo, arquivos provaveis, riscos e proximos passos.\n"
+    )
+
+
+def _codex_progress_message(event: JsonObject) -> str:
+    for key in ("message", "summary", "text", "content", "delta"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    item = event.get("item")
+    if isinstance(item, dict):
+        for key in ("text", "content", "summary"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    event_type = str(event.get("type", "")).strip() or "evento"
+    return f"Codex enviou {event_type}."
+
+
+def _github_repo_to_payload(repo: GitHubRepo) -> JsonObject:
+    return {
+        "repo_id": repo.repo_id,
+        "name": repo.name,
+        "full_name": repo.full_name,
+        "owner": repo.owner,
+        "private": repo.private,
+        "default_branch": repo.default_branch,
+        "clone_url": repo.clone_url,
+        "html_url": repo.html_url,
+        "description": repo.description,
     }
 
 
@@ -549,19 +1239,38 @@ def _voice_stepup_threshold() -> float:
 
 
 def _clear_authentication(identity: str) -> None:
-    AUTHENTICATED_SESSIONS.pop(identity, None)
+    session = AUTHENTICATED_SESSIONS.pop(identity, None)
+    if session is not None:
+        try:
+            STATE_STORE.delete_authenticated_session(
+                participant_identity=identity,
+                room=session.room,
+            )
+        except Exception:
+            logger.warning("failed to delete authenticated session", exc_info=True)
     VOICE_STEP_UP_PENDING.pop(identity, None)
 
 
 def _set_authenticated(identity: str, room: str, auth_method: str) -> None:
     now = datetime.now(timezone.utc)
-    AUTHENTICATED_SESSIONS[identity] = AuthenticatedSession(
+    session = AuthenticatedSession(
         participant_identity=identity,
         room=room,
         expires_at=now + timedelta(seconds=_security_ttl_seconds()),
         auth_method=auth_method,
         last_activity_at=now,
     )
+    AUTHENTICATED_SESSIONS[identity] = session
+    try:
+        STATE_STORE.save_authenticated_session(
+            participant_identity=identity,
+            room=room,
+            auth_method=auth_method,
+            expires_at=session.expires_at,
+            last_activity_at=session.last_activity_at,
+        )
+    except Exception:
+        logger.warning("failed to persist authenticated session", exc_info=True)
     VOICE_STEP_UP_PENDING.pop(identity, None)
 
 
@@ -570,10 +1279,35 @@ def _touch_authenticated(identity: str) -> None:
     if session is None:
         return
     session.last_activity_at = datetime.now(timezone.utc)
+    try:
+        STATE_STORE.save_authenticated_session(
+            participant_identity=identity,
+            room=session.room,
+            auth_method=session.auth_method,
+            expires_at=session.expires_at,
+            last_activity_at=session.last_activity_at,
+        )
+    except Exception:
+        logger.warning("failed to update authenticated session", exc_info=True)
 
 
 def _is_authenticated(identity: str, room: str) -> bool:
     session = AUTHENTICATED_SESSIONS.get(identity)
+    if session is None:
+        stored = STATE_STORE.get_authenticated_session(participant_identity=identity, room=room)
+        if isinstance(stored, dict):
+            expires_at = _parse_datetime(stored.get("expires_at"))
+            last_activity_at = _parse_datetime(stored.get("last_activity_at"))
+            auth_method = str(stored.get("auth_method") or "").strip()
+            if expires_at is not None and last_activity_at is not None and auth_method:
+                session = AuthenticatedSession(
+                    participant_identity=identity,
+                    room=room,
+                    expires_at=expires_at,
+                    auth_method=auth_method,
+                    last_activity_at=last_activity_at,
+                )
+                AUTHENTICATED_SESSIONS[identity] = session
     if session is None:
         return False
     if session.room != room:
@@ -606,7 +1340,1172 @@ def _security_status_payload(identity: str, room: str) -> JsonObject:
         },
         **persona,
         **_active_character_payload(identity, room),
+        **_active_project_payload(identity, room),
+        **_capability_payload(identity, room),
     }
+
+
+def _workspace_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def _normalize_alias_token(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.strip().casefold())
+
+
+def _desktop_allowed_apps() -> set[str]:
+    raw = os.getenv(
+        "JARVEZ_ALLOWED_DESKTOP_APPS",
+        "chrome,chrome.exe,msedge,msedge.exe,firefox,firefox.exe,explorer,explorer.exe,"
+        "code,code.cmd,notepad,notepad.exe,wt,wt.exe,cmd,cmd.exe,powershell,powershell.exe,pwsh,pwsh.exe",
+    ).strip()
+    values = [item.strip().casefold() for item in raw.split(",") if item.strip()]
+    return set(values)
+
+
+def _desktop_allowed_commands() -> set[str]:
+    raw = os.getenv(
+        "JARVEZ_ALLOWED_LOCAL_COMMANDS",
+        "git,git.exe,python,python.exe,node,node.exe,npm,npm.cmd,npx,npx.cmd,pnpm,pnpm.cmd,"
+        "code,code.cmd,explorer,explorer.exe,notepad,notepad.exe,wt,wt.exe",
+    ).strip()
+    values = [item.strip().casefold() for item in raw.split(",") if item.strip()]
+    return set(values)
+
+
+def _unsafe_shell_enabled() -> bool:
+    raw = os.getenv("JARVEZ_ALLOW_UNSAFE_SHELL", "").strip().casefold()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _desktop_site_aliases() -> dict[str, str]:
+    return {
+        "youtube": "https://www.youtube.com",
+        "google": "https://www.google.com",
+        "gmail": "https://mail.google.com",
+        "github": "https://github.com",
+        "whatsapp": "https://web.whatsapp.com",
+        "spotify": "https://open.spotify.com",
+        "notion": "https://www.notion.so",
+        "linear": "https://linear.app",
+    }
+
+
+def _desktop_folder_aliases() -> dict[str, Path]:
+    home = Path.home()
+    one_drive_raw = os.getenv("OneDrive", "").strip()
+    one_drive = Path(one_drive_raw).expanduser() if one_drive_raw else None
+    desktop_root = one_drive if one_drive and one_drive.exists() else home
+    workspace = _workspace_root()
+    return {
+        "desktop": desktop_root / "Desktop",
+        "downloads": home / "Downloads",
+        "documents": home / "Documents",
+        "pictures": home / "Pictures",
+        "music": home / "Music",
+        "videos": home / "Videos",
+        "repo": workspace,
+        "project": workspace,
+        "workspace": workspace,
+    }
+
+
+def _desktop_app_aliases() -> dict[str, str]:
+    return {
+        "chrome": "chrome.exe",
+        "edge": "msedge.exe",
+        "firefox": "firefox.exe",
+        "explorer": "explorer.exe",
+        "vscode": "code.cmd",
+        "code": "code.cmd",
+        "notepad": "notepad.exe",
+        "terminal": "wt.exe",
+        "wt": "wt.exe",
+        "cmd": "cmd.exe",
+        "powershell": "powershell.exe",
+        "pwsh": "pwsh.exe",
+    }
+
+
+def _local_command_aliases() -> dict[str, str]:
+    return {
+        "vscode": "code.cmd",
+        "code": "code.cmd",
+        "terminal": "wt.exe",
+        "wt": "wt.exe",
+        "git": "git",
+        "python": "python",
+        "node": "node",
+        "npm": "npm.cmd",
+        "npx": "npx.cmd",
+        "pnpm": "pnpm.cmd",
+        "explorer": "explorer.exe",
+        "notepad": "notepad.exe",
+    }
+
+
+def _looks_like_url(value: str) -> bool:
+    text = value.strip()
+    if not text:
+        return False
+    if re.fullmatch(r"[a-zA-Z]:[\\/].+", text):
+        return False
+    if "\\" in text:
+        return False
+    parsed = urlparse(text)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return True
+    if text.startswith("www."):
+        return True
+    if " " in text:
+        return False
+    if "." in text and "/" not in text:
+        suffix = text.rsplit(".", 1)[-1].casefold()
+        return suffix in {"com", "br", "dev", "app", "ai", "org", "net", "io", "gg", "tv", "co"}
+    return False
+
+
+def _normalize_url(value: str) -> str:
+    text = value.strip()
+    if text.startswith(("http://", "https://")):
+        return text
+    return f"https://{text.lstrip('/')}"
+
+
+def _resolve_local_path(raw_path: str, *, must_exist: bool = False) -> Path | None:
+    candidate_raw = os.path.expandvars(raw_path.strip())
+    if not candidate_raw:
+        return None
+    candidate = Path(candidate_raw).expanduser()
+    if not candidate.is_absolute():
+        candidate = _workspace_root() / candidate
+    candidate = candidate.resolve(strict=False)
+    if must_exist and not candidate.exists():
+        return None
+    return candidate
+
+
+def _github_default_clone_root() -> Path:
+    raw = os.getenv("GITHUB_DEFAULT_CLONE_ROOT", "external-repos").strip()
+    resolved = _resolve_local_path(raw, must_exist=False)
+    target = resolved or (_workspace_root() / "external-repos")
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _resolve_open_resource_target(target: str, target_kind: str) -> tuple[str | None, Any, str | None]:
+    normalized = _normalize_alias_token(target)
+
+    if target_kind in {"auto", "url"}:
+        site_url = _desktop_site_aliases().get(normalized)
+        if site_url:
+            return "url", site_url, None
+        if _looks_like_url(target):
+            return "url", _normalize_url(target), None
+        if target_kind == "url":
+            return None, None, "URL invalida ou nao reconhecida."
+
+    if target_kind in {"auto", "path"}:
+        folder = _desktop_folder_aliases().get(normalized)
+        if folder and folder.exists():
+            return "path", str(folder.resolve(strict=False)), None
+        resolved_path = _resolve_local_path(target, must_exist=True)
+        if resolved_path is not None:
+            return "path", str(resolved_path), None
+        if target_kind == "path":
+            return None, None, "Caminho nao encontrado."
+
+    if target_kind in {"auto", "app"}:
+        alias = _desktop_app_aliases().get(normalized)
+        candidate = alias or target.strip()
+        if candidate:
+            basename = Path(candidate).name.casefold()
+            if basename in _desktop_allowed_apps():
+                return "app", [shutil.which(candidate) or candidate], None
+        if target_kind == "app":
+            return None, None, "Aplicativo nao permitido ou nao reconhecido."
+
+    return None, None, "Nao consegui identificar se isso e site, pasta/arquivo ou aplicativo."
+
+
+def _resolve_local_command(raw_command: str) -> tuple[str | None, str | None]:
+    normalized = _normalize_alias_token(raw_command)
+    candidate = _local_command_aliases().get(normalized) or raw_command.strip()
+    if not candidate:
+        return None, "Comando ausente."
+    basename = Path(candidate).name.casefold()
+    if basename in {"cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe"} and not _unsafe_shell_enabled():
+        return None, "Shell interativo bloqueado por seguranca. Defina JARVEZ_ALLOW_UNSAFE_SHELL=1 se quiser liberar."
+    if basename not in _desktop_allowed_commands():
+        return None, f"Comando nao permitido: {basename}."
+    return shutil.which(candidate) or candidate, None
+
+
+def _detached_creation_flags() -> int:
+    return getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+
+
+def _launch_detached(command: list[str], *, cwd: Path | None = None) -> None:
+    subprocess.Popen(
+        command,
+        cwd=str(cwd) if cwd else None,
+        creationflags=_detached_creation_flags(),
+        close_fds=True,
+    )
+
+
+def _trim_process_output(value: str, limit: int = 1200) -> str:
+    text = value.strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
+def _collapse_spaces(value: str) -> str:
+    return re.sub(r"\s+", " ", value or "").strip()
+
+
+def _strip_html_tags(value: str) -> str:
+    text = re.sub(r"<script[\s\S]*?</script>", " ", value, flags=re.IGNORECASE)
+    text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return _collapse_spaces(html.unescape(text))
+
+
+def _truncate_text(value: str, limit: int = 240) -> str:
+    text = _collapse_spaces(value)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+class _DuckDuckGoSearchParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.results: list[JsonObject] = []
+        self._capture_title = False
+        self._capture_snippet = False
+        self._title_depth = 0
+        self._snippet_depth = 0
+        self._title_parts: list[str] = []
+        self._snippet_parts: list[str] = []
+        self._current_href = ""
+        self._current_result: JsonObject | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = {key: value or "" for key, value in attrs}
+        css_class = attributes.get("class", "")
+
+        if tag == "a" and "result__a" in css_class and not self._capture_title:
+            self._capture_title = True
+            self._title_depth = 1
+            self._title_parts = []
+            self._current_href = attributes.get("href", "")
+            return
+
+        if self._capture_title:
+            self._title_depth += 1
+
+        if "result__snippet" in css_class and not self._capture_snippet:
+            self._capture_snippet = True
+            self._snippet_depth = 1
+            self._snippet_parts = []
+            return
+
+        if self._capture_snippet:
+            self._snippet_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._capture_title:
+            self._title_depth -= 1
+            if self._title_depth <= 0:
+                self._capture_title = False
+                title = _collapse_spaces(html.unescape("".join(self._title_parts)))
+                if title and self._current_href:
+                    self._current_result = {
+                        "title": title,
+                        "url": self._current_href,
+                    }
+                    self.results.append(self._current_result)
+                self._title_parts = []
+                self._current_href = ""
+                return
+
+        if self._capture_snippet:
+            self._snippet_depth -= 1
+            if self._snippet_depth <= 0:
+                self._capture_snippet = False
+                snippet = _collapse_spaces(html.unescape("".join(self._snippet_parts)))
+                if snippet and self._current_result is not None and not self._current_result.get("snippet"):
+                    self._current_result["snippet"] = snippet
+                self._snippet_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._capture_title:
+            self._title_parts.append(data)
+        if self._capture_snippet:
+            self._snippet_parts.append(data)
+
+
+def _normalize_search_url(raw_url: str) -> str:
+    url = raw_url.strip()
+    if not url:
+        return ""
+    if url.startswith("//"):
+        url = "https:" + url
+    parsed = urlparse(url)
+    if parsed.netloc.endswith("duckduckgo.com"):
+        target = parse_qs(parsed.query).get("uddg", [])
+        if target:
+            return unquote(target[0]).strip()
+    return url
+
+
+def _duckduckgo_blocked(search_html: str) -> bool:
+    haystack = search_html.casefold()
+    return "anomaly-modal" in haystack or "bots use duckduckgo too" in haystack
+
+
+def _fetch_web_text(url: str, *, timeout: int = 8) -> str | None:
+    try:
+        response = requests.get(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
+                )
+            },
+            timeout=timeout,
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        return None
+    response.encoding = response.encoding or response.apparent_encoding or "utf-8"
+    return response.text
+
+
+def _fetch_web_json(url: str, *, params: JsonObject | None = None, timeout: int = 8) -> Any | None:
+    try:
+        response = requests.get(
+            url,
+            params=params,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
+                )
+            },
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        return response.json()
+    except (requests.RequestException, ValueError):
+        return None
+
+
+def _extract_meta_content(page_html: str, *patterns: str) -> str | None:
+    for pattern in patterns:
+        match = re.search(pattern, page_html, flags=re.IGNORECASE)
+        if not match:
+            continue
+        value = _collapse_spaces(html.unescape(match.group(1)))
+        if value:
+            return value
+    return None
+
+
+def _page_preview_from_url(url: str) -> JsonObject:
+    page_html = _fetch_web_text(url, timeout=5)
+    if not page_html:
+        return {}
+
+    title = _extract_meta_content(page_html, r"<title[^>]*>(.*?)</title>")
+    description = _extract_meta_content(
+        page_html,
+        r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']',
+        r'<meta[^>]+content=["\'](.*?)["\'][^>]+name=["\']description["\']',
+        r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\'](.*?)["\']',
+    )
+    image_url = _extract_meta_content(
+        page_html,
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](.*?)["\']',
+        r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\'](.*?)["\']',
+    )
+    return {
+        "page_title": _truncate_text(title or "", 160) if title else None,
+        "page_description": _truncate_text(description or "", 220) if description else None,
+        "image_url": image_url,
+    }
+
+
+def _frontend_dashboard_url() -> str:
+    base_url = os.getenv("JARVEZ_FRONTEND_URL", "http://127.0.0.1:3001").strip().rstrip("/")
+    if not base_url:
+        base_url = "http://127.0.0.1:3001"
+    return f"{base_url}/research-dashboard"
+
+
+def _gemini_web_search_model() -> str:
+    return os.getenv("JARVEZ_WEB_SEARCH_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+
+
+def _run_gemini_google_search(query: str, *, max_results: int = 5) -> tuple[str, list[JsonObject], ActionResult | None]:
+    api_key = os.getenv("GOOGLE_API_KEY", "").strip()
+    if not api_key:
+        return (
+            "",
+            [],
+            ActionResult(
+                success=False,
+                message="GOOGLE_API_KEY nao configurada para pesquisa web.",
+                error="missing google api key",
+            ),
+        )
+
+    endpoint = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/{_gemini_web_search_model()}:generateContent"
+    )
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text": (
+                            "Pesquise no Google e responda de forma objetiva, citando fatos verificaveis. "
+                            "Pedido do usuario: "
+                            f"{query}"
+                        )
+                    }
+                ],
+            }
+        ],
+        "tools": [{"google_search": {}}],
+    }
+
+    try:
+        response = requests.post(
+            endpoint,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": api_key,
+            },
+            json=payload,
+            timeout=20,
+        )
+        response.raise_for_status()
+        response_payload = response.json()
+    except (requests.RequestException, ValueError) as error:
+        return (
+            "",
+            [],
+            ActionResult(
+                success=False,
+                message="Falha ao pesquisar com Google Search no Gemini.",
+                error=str(error),
+            ),
+        )
+
+    candidates = response_payload.get("candidates", [])
+    if not isinstance(candidates, list) or not candidates:
+        return (
+            "",
+            [],
+            ActionResult(
+                success=False,
+                message="O Gemini nao retornou candidatos para a pesquisa.",
+                error="missing candidates",
+            ),
+        )
+
+    candidate = candidates[0] if isinstance(candidates[0], dict) else {}
+    parts = candidate.get("content", {}).get("parts", [])
+    answer_text_parts = [
+        _collapse_spaces(str(part.get("text", "")))
+        for part in parts
+        if isinstance(part, dict) and str(part.get("text", "")).strip()
+    ]
+    answer_text = _collapse_spaces("\n".join(answer_text_parts))
+
+    grounding = candidate.get("groundingMetadata", {})
+    grounding_chunks = grounding.get("groundingChunks", [])
+    grounding_supports = grounding.get("groundingSupports", [])
+
+    results: list[JsonObject] = []
+    seen_urls: set[str] = set()
+    chunk_snippets: dict[int, list[str]] = {}
+    if isinstance(grounding_supports, list):
+        for support in grounding_supports:
+            if not isinstance(support, dict):
+                continue
+            segment = support.get("segment", {})
+            snippet = _collapse_spaces(str(segment.get("text", "")).strip())
+            if not snippet:
+                continue
+            indices = support.get("groundingChunkIndices", [])
+            if not isinstance(indices, list):
+                continue
+            for index in indices:
+                if isinstance(index, int):
+                    chunk_snippets.setdefault(index, []).append(snippet)
+
+    if isinstance(grounding_chunks, list):
+        for index, chunk in enumerate(grounding_chunks):
+            if not isinstance(chunk, dict):
+                continue
+            web_chunk = chunk.get("web", {})
+            if not isinstance(web_chunk, dict):
+                continue
+            url = str(web_chunk.get("uri", "")).strip()
+            title = _collapse_spaces(str(web_chunk.get("title", "")).strip())
+            if not url or url in seen_urls:
+                continue
+
+            seen_urls.add(url)
+            preview = _page_preview_from_url(url)
+            snippet_parts = chunk_snippets.get(index, [])
+            snippet = _truncate_text(" ".join(snippet_parts), 280) if snippet_parts else ""
+            if not snippet:
+                snippet = str(preview.get("page_description") or "").strip()
+
+            parsed = urlparse(url)
+            results.append(
+                {
+                    "title": _truncate_text(title or str(preview.get("page_title") or "Resultado"), 160),
+                    "url": url,
+                    "domain": parsed.netloc.replace("www.", "").strip() or "site",
+                    "snippet": snippet,
+                    "page_title": preview.get("page_title") or (title if title else None),
+                    "page_description": preview.get("page_description"),
+                    "image_url": preview.get("image_url"),
+                }
+            )
+            if len(results) >= max_results:
+                break
+
+    return answer_text, results, None
+
+
+def _run_web_search(query: str, *, max_results: int = 5) -> tuple[list[JsonObject], ActionResult | None]:
+    answer_text, results, error = _run_gemini_google_search(query, max_results=max_results)
+    if error is not None:
+        return [], error
+    if not results:
+        return (
+            [],
+            ActionResult(
+                success=bool(answer_text),
+                message=answer_text or f"Nao encontrei resultados confiaveis para '{query}'.",
+                data={
+                    "web_dashboard": {
+                        "query": query,
+                        "summary": answer_text or "",
+                        "generated_at": datetime.now(timezone.utc).isoformat(),
+                        "results": [],
+                        "images": [],
+                    }
+                }
+                if answer_text
+                else None,
+                error=None if answer_text else "no search results",
+            ),
+        )
+
+    return results, None
+
+
+def _build_web_dashboard_summary(query: str, results: list[JsonObject]) -> str:
+    lead_points: list[str] = []
+    for item in results[:3]:
+        title = str(item.get("title", "")).strip()
+        snippet = str(item.get("snippet") or item.get("page_description") or "").strip()
+        domain = str(item.get("domain", "")).strip()
+        if title and snippet:
+            lead_points.append(f"{title}: {snippet}")
+        elif snippet:
+            lead_points.append(f"{domain}: {snippet}")
+        elif title:
+            lead_points.append(f"{domain}: {title}")
+
+    if not lead_points:
+        return f"Resumo web pronto para '{query}', mas os sites retornaram pouco contexto textual."
+
+    summary = " | ".join(lead_points)
+    return _truncate_text(f"Resumo consolidado para '{query}': {summary}", 900)
+
+
+async def _web_search_dashboard(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    query = _collapse_spaces(str(params.get("query", "")))
+    max_results = int(params.get("max_results", 5))
+    if not query:
+        return ActionResult(success=False, message="Informe o que devo pesquisar na web.", error="missing query")
+
+    max_results = max(3, min(max_results, 8))
+    results, search_error = _run_web_search(query, max_results=max_results)
+    if search_error is not None:
+        return search_error
+
+    image_urls = [
+        str(item["image_url"])
+        for item in results
+        if isinstance(item.get("image_url"), str) and str(item.get("image_url")).strip()
+    ][:4]
+    summary = _build_web_dashboard_summary(query, results)
+    generated_at = datetime.now(timezone.utc).isoformat()
+    dashboard_url = _frontend_dashboard_url()
+    dashboard_opened = False
+
+    try:
+        dashboard_opened = bool(webbrowser.open(dashboard_url, new=2))
+    except OSError:
+        dashboard_opened = False
+
+    return ActionResult(
+        success=True,
+        message=f"Pesquisa web compilada para '{query}'.",
+        data={
+            "web_dashboard": {
+                "query": query,
+                "summary": summary,
+                "generated_at": generated_at,
+                "results": results,
+                "images": image_urls,
+                "dashboard_url": dashboard_url,
+                "dashboard_opened": dashboard_opened,
+            }
+        },
+    )
+
+
+async def _save_web_briefing_schedule(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    query = _collapse_spaces(str(params.get("query", "")))
+    time_of_day = _collapse_spaces(str(params.get("time_of_day", "08:00"))) or "08:00"
+
+    if not query:
+        return ActionResult(success=False, message="Informe o tema da pesquisa recorrente.", error="missing query")
+
+    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", time_of_day):
+        return ActionResult(success=False, message="Horario invalido. Use HH:MM.", error="invalid time_of_day")
+
+    schedule_id = f"research-{secrets.token_hex(6)}"
+    schedule = {
+        "id": schedule_id,
+        "query": query,
+        "cadence": "daily",
+        "time_of_day": time_of_day,
+        "prompt": (
+            "Faça uma pesquisa na internet e gere um dashboard completo com resumo, links e imagens sobre: "
+            f"{query}"
+        ),
+    }
+
+    return ActionResult(
+        success=True,
+        message=f"Briefing diario salvo para {time_of_day}.",
+        data={"web_dashboard_schedule": schedule},
+    )
+
+
+async def _open_desktop_resource(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    target = str(params.get("target", "")).strip()
+    target_kind = str(params.get("target_kind", "auto")).strip().casefold() or "auto"
+    if not target:
+        return ActionResult(success=False, message="Informe o recurso que devo abrir.", error="missing target")
+
+    resolved_kind, resolved_value, resolution_error = _resolve_open_resource_target(target, target_kind)
+    if resolved_kind is None:
+        return ActionResult(success=False, message=resolution_error or "Nao consegui abrir o recurso.", error="invalid target")
+
+    try:
+        if resolved_kind == "url":
+            opened = webbrowser.open(str(resolved_value), new=2)
+            if not opened:
+                return ActionResult(success=False, message="O navegador nao aceitou abrir o link.", error="browser open failed")
+        elif resolved_kind == "path":
+            if not hasattr(os, "startfile"):
+                return ActionResult(success=False, message="Abrir arquivos/pastas so esta disponivel no Windows.", error="startfile unavailable")
+            os.startfile(str(resolved_value))
+        else:
+            _launch_detached(list(resolved_value), cwd=_workspace_root())
+    except OSError as error:
+        return ActionResult(success=False, message=f"Falha ao abrir o recurso: {error}", error=str(error))
+
+    return ActionResult(
+        success=True,
+        message=f"Recurso aberto: {target}.",
+        data={
+            "target": target,
+            "resolved_target": str(resolved_value),
+            "target_kind": resolved_kind,
+        },
+    )
+
+
+async def _run_local_command(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    command = str(params.get("command", "")).strip()
+    arguments = params.get("arguments", [])
+    working_directory = str(params.get("working_directory", "")).strip()
+    wait_for_exit = bool(params.get("wait_for_exit", True))
+    timeout_seconds = int(params.get("timeout_seconds", 60))
+
+    if not isinstance(arguments, list) or any(not isinstance(item, str) for item in arguments):
+        return ActionResult(success=False, message="`arguments` precisa ser uma lista de textos.", error="invalid arguments")
+
+    resolved_command, command_error = _resolve_local_command(command)
+    if resolved_command is None:
+        return ActionResult(success=False, message=command_error or "Comando nao permitido.", error="command blocked")
+
+    if working_directory:
+        cwd = _resolve_local_path(working_directory, must_exist=True)
+        if cwd is None or not cwd.is_dir():
+            return ActionResult(success=False, message="Diretorio de trabalho nao encontrado.", error="invalid working directory")
+    else:
+        cwd = _workspace_root()
+
+    command_line = [resolved_command, *arguments]
+
+    try:
+        if not wait_for_exit:
+            _launch_detached(command_line, cwd=cwd)
+            return ActionResult(
+                success=True,
+                message="Comando iniciado em segundo plano.",
+                data={
+                    "command_line": command_line,
+                    "working_directory": str(cwd),
+                    "wait_for_exit": False,
+                },
+            )
+
+        completed = subprocess.run(
+            command_line,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=max(1, min(timeout_seconds, 600)),
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return ActionResult(success=False, message=f"Falha ao executar o comando: {error}", error=str(error))
+
+    stdout = _trim_process_output(completed.stdout or "")
+    stderr = _trim_process_output(completed.stderr or "")
+    success = completed.returncode == 0
+    return ActionResult(
+        success=success,
+        message="Comando executado com sucesso." if success else "O comando terminou com erro.",
+        data={
+            "command_line": command_line,
+            "working_directory": str(cwd),
+            "returncode": completed.returncode,
+            "stdout": stdout,
+            "stderr": stderr,
+            "wait_for_exit": True,
+        },
+        error=None if success else stderr or f"exit code {completed.returncode}",
+    )
+
+
+async def _git_clone_repository(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    repository_url = str(params.get("repository_url", "")).strip()
+    destination = str(params.get("destination", "")).strip()
+    branch = str(params.get("branch", "")).strip()
+    depth = params.get("depth")
+
+    if not repository_url:
+        return ActionResult(success=False, message="Informe a URL do repositorio.", error="missing repository url")
+
+    destination_path: Path | None = None
+    if destination:
+        destination_path = _resolve_local_path(destination, must_exist=False)
+        if destination_path is None:
+            return ActionResult(success=False, message="Destino invalido.", error="invalid destination")
+        if destination_path.exists():
+            return ActionResult(success=False, message="O destino informado ja existe.", error="destination exists")
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+
+    command_line = ["git", "clone"]
+    if branch:
+        command_line.extend(["--branch", branch])
+    if isinstance(depth, int) and depth > 0:
+        command_line.extend(["--depth", str(depth)])
+    command_line.append(repository_url)
+    if destination_path is not None:
+        command_line.append(str(destination_path))
+
+    try:
+        completed = subprocess.run(
+            command_line,
+            cwd=str(_workspace_root()),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return ActionResult(success=False, message=f"Falha ao executar git clone: {error}", error=str(error))
+
+    stdout = _trim_process_output(completed.stdout or "")
+    stderr = _trim_process_output(completed.stderr or "")
+    if completed.returncode != 0:
+        return ActionResult(
+            success=False,
+            message="O git clone falhou.",
+            data={
+                "command_line": command_line,
+                "stdout": stdout,
+                "stderr": stderr,
+                "returncode": completed.returncode,
+            },
+            error=stderr or f"exit code {completed.returncode}",
+        )
+
+    return ActionResult(
+        success=True,
+        message="Repositorio clonado com sucesso.",
+        data={
+            "command_line": command_line,
+            "destination": str(destination_path) if destination_path is not None else str(_workspace_root()),
+            "stdout": stdout,
+            "stderr": stderr,
+            "returncode": completed.returncode,
+        },
+    )
+
+
+async def _git_commit_and_push_project_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+
+    commit_message = (
+        str(params.get("message", "")).strip()
+        or str(params.get("commit_message", "")).strip()
+        or str(params.get("summary", "")).strip()
+    )
+    if not commit_message:
+        return ActionResult(success=False, message="Informe a mensagem do commit.", error="missing commit message")
+
+    root = Path(record.root_path).resolve(strict=False)
+    if not root.exists():
+        return ActionResult(success=False, message="A raiz do projeto nao existe.", error="missing project root")
+
+    def run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+
+    try:
+        status = run_git(["status", "--porcelain"])
+        if status.returncode != 0:
+            return ActionResult(
+                success=False,
+                message="Nao consegui ler o estado do git.",
+                data={
+                    "project": _project_record_to_payload(record),
+                    "git_status": {
+                        "returncode": status.returncode,
+                        "stdout": _trim_process_output(status.stdout or ""),
+                        "stderr": _trim_process_output(status.stderr or ""),
+                        "success": False,
+                    },
+                    **_active_project_payload(ctx.participant_identity, ctx.room),
+                },
+                error=_trim_process_output(status.stderr or "") or f"exit code {status.returncode}",
+            )
+
+        if not (status.stdout or "").strip():
+            return ActionResult(
+                success=True,
+                message=f"Nao ha mudancas para commit em {record.name}.",
+                data={
+                    "project": _project_record_to_payload(record),
+                    "git_status": {
+                        "returncode": status.returncode,
+                        "stdout": _trim_process_output(status.stdout or ""),
+                        "stderr": _trim_process_output(status.stderr or ""),
+                        "success": True,
+                    },
+                    **_active_project_payload(ctx.participant_identity, ctx.room),
+                },
+            )
+
+        add_result = run_git(["add", "-A"])
+        if add_result.returncode != 0:
+            return ActionResult(
+                success=False,
+                message="Falha ao adicionar arquivos no git.",
+                data={
+                    "project": _project_record_to_payload(record),
+                    "command_execution": {
+                        "returncode": add_result.returncode,
+                        "stdout": _trim_process_output(add_result.stdout or ""),
+                        "stderr": _trim_process_output(add_result.stderr or ""),
+                        "success": False,
+                        "command_line": ["git", "add", "-A"],
+                    },
+                    **_active_project_payload(ctx.participant_identity, ctx.room),
+                },
+                error=_trim_process_output(add_result.stderr or "") or f"exit code {add_result.returncode}",
+            )
+
+        commit_result = run_git(["commit", "-m", commit_message])
+        if commit_result.returncode != 0:
+            commit_stdout = _trim_process_output(commit_result.stdout or "")
+            commit_stderr = _trim_process_output(commit_result.stderr or "")
+            combined = f"{commit_stdout}\n{commit_stderr}".strip()
+            if "nothing to commit" in combined.casefold():
+                return ActionResult(
+                    success=True,
+                    message=f"Nao havia nada novo para commitar em {record.name}.",
+                    data={
+                        "project": _project_record_to_payload(record),
+                        "command_execution": {
+                            "returncode": commit_result.returncode,
+                            "stdout": commit_stdout,
+                            "stderr": commit_stderr,
+                            "success": True,
+                            "command_line": ["git", "commit", "-m", commit_message],
+                        },
+                        **_active_project_payload(ctx.participant_identity, ctx.room),
+                    },
+                )
+            return ActionResult(
+                success=False,
+                message="Falha ao criar o commit.",
+                data={
+                    "project": _project_record_to_payload(record),
+                    "command_execution": {
+                        "returncode": commit_result.returncode,
+                        "stdout": commit_stdout,
+                        "stderr": commit_stderr,
+                        "success": False,
+                        "command_line": ["git", "commit", "-m", commit_message],
+                    },
+                    **_active_project_payload(ctx.participant_identity, ctx.room),
+                },
+                error=commit_stderr or commit_stdout or f"exit code {commit_result.returncode}",
+            )
+
+        push_result = run_git(["push"])
+        push_stdout = _trim_process_output(push_result.stdout or "")
+        push_stderr = _trim_process_output(push_result.stderr or "")
+        if push_result.returncode != 0:
+            return ActionResult(
+                success=False,
+                message="O commit foi criado, mas o push falhou.",
+                data={
+                    "project": _project_record_to_payload(record),
+                    "command_execution": {
+                        "returncode": push_result.returncode,
+                        "stdout": push_stdout,
+                        "stderr": push_stderr,
+                        "success": False,
+                        "command_line": ["git", "push"],
+                    },
+                    "git_commit_message": commit_message,
+                    **_active_project_payload(ctx.participant_identity, ctx.room),
+                },
+                error=push_stderr or f"exit code {push_result.returncode}",
+            )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return ActionResult(success=False, message="Falha ao executar git localmente.", error=str(exc))
+
+    return ActionResult(
+        success=True,
+        message=f"Commit e push concluidos em {record.name}.",
+        data={
+            "project": _project_record_to_payload(record),
+            "git_commit_message": commit_message,
+            "command_execution": {
+                "returncode": push_result.returncode,
+                "stdout": push_stdout,
+                "stderr": push_stderr,
+                "success": True,
+                "command_line": ["git", "push"],
+            },
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+def _resolve_github_repo(params: JsonObject) -> tuple[GitHubRepo | None, ActionResult | None]:
+    client = _get_github_catalog_client()
+    if not client.is_configured():
+        return (
+            None,
+            ActionResult(
+                success=False,
+                message="Configure GITHUB_TOKEN ou GH_TOKEN no backend para usar repositorios do GitHub.",
+                error="github not configured",
+            ),
+        )
+
+    query = (
+        str(params.get("repository", "")).strip()
+        or str(params.get("full_name", "")).strip()
+        or str(params.get("name", "")).strip()
+        or str(params.get("query", "")).strip()
+    )
+    if not query:
+        return (
+            None,
+            ActionResult(
+                success=False,
+                message="Informe o repositorio do GitHub que devo usar.",
+                error="missing repository",
+            ),
+        )
+
+    try:
+        repo, candidates = client.resolve_repo(query)
+    except requests.RequestException as error:
+        return (
+            None,
+            ActionResult(
+                success=False,
+                message=f"Falha ao consultar o GitHub: {error}",
+                error=str(error),
+            ),
+        )
+
+    if repo is None and not candidates:
+        return (
+            None,
+            ActionResult(
+                success=False,
+                message="Nao encontrei esse repositorio no GitHub conectado.",
+                error="github repo not found",
+            ),
+        )
+
+    if repo is None:
+        return (
+            None,
+            ActionResult(
+                success=False,
+                message="Encontrei mais de um repositorio plausivel. Escolha pelo nome completo.",
+                data={"candidates": [_github_repo_to_payload(item) for item in candidates]},
+                error="github repo ambiguous",
+            ),
+        )
+
+    return repo, None
+
+
+async def _github_list_repos_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    client = _get_github_catalog_client()
+    if not client.is_configured():
+        return ActionResult(
+            success=False,
+            message="Configure GITHUB_TOKEN ou GH_TOKEN no backend para listar repositorios.",
+            error="github not configured",
+        )
+
+    limit = int(params.get("limit", 10) or 10)
+    visibility = str(params.get("visibility", "all")).strip().casefold() or "all"
+    query = str(params.get("query", "")).strip()
+
+    try:
+        repos = client.find_repos(query, limit=limit) if query else client.list_repos(visibility=visibility, limit=limit)
+    except requests.RequestException as error:
+        return ActionResult(
+            success=False,
+            message=f"Falha ao consultar o GitHub: {error}",
+            error=str(error),
+        )
+
+    return ActionResult(
+        success=True,
+        message=f"{len(repos)} repositorio(s) carregado(s) do GitHub.",
+        data={
+            "github_repos": [_github_repo_to_payload(item) for item in repos],
+            "query": query or None,
+            "visibility": visibility,
+        },
+    )
+
+
+async def _github_find_repo_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    repo, error = _resolve_github_repo(params)
+    if error is not None:
+        return error
+    assert repo is not None
+    return ActionResult(
+        success=True,
+        message=f"Repositorio encontrado: {repo.full_name}.",
+        data={"github_repo": _github_repo_to_payload(repo)},
+    )
+
+
+async def _github_clone_and_register_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    repo, error = _resolve_github_repo(params)
+    if error is not None:
+        return error
+    assert repo is not None
+
+    destination = str(params.get("destination", "")).strip()
+    destination_root_raw = str(params.get("destination_root", "")).strip()
+    branch = str(params.get("branch", "")).strip() or repo.default_branch
+    depth = params.get("depth")
+
+    destination_path: Path
+    if destination:
+        resolved_destination = _resolve_local_path(destination, must_exist=False)
+        if resolved_destination is None:
+            return ActionResult(success=False, message="Destino invalido para o clone.", error="invalid destination")
+        destination_path = resolved_destination
+    else:
+        clone_root = (
+            _resolve_local_path(destination_root_raw, must_exist=False)
+            if destination_root_raw
+            else _github_default_clone_root()
+        )
+        if clone_root is None:
+            return ActionResult(success=False, message="Pasta base invalida para clonar o repositorio.", error="invalid destination root")
+        clone_root.mkdir(parents=True, exist_ok=True)
+        destination_path = clone_root / repo.name
+
+    clone_result = await _git_clone_repository(
+        {
+            "repository_url": repo.clone_url,
+            "destination": str(destination_path),
+            "branch": branch,
+            "depth": depth,
+        },
+        ctx,
+    )
+    if not clone_result.success:
+        clone_data = dict(clone_result.data or {})
+        clone_data["github_repo"] = _github_repo_to_payload(repo)
+        clone_result.data = clone_data
+        return clone_result
+
+    record = _get_project_catalog().create_or_update_project(
+        root_path=destination_path,
+        name=repo.name,
+        aliases=[repo.full_name, repo.owner],
+        priority_score=20,
+    )
+    index_status = _ensure_project_index(record)
+    _set_active_project_from_record(record, ctx, selection_reason=repo.full_name, index_status=index_status)
+
+    return ActionResult(
+        success=True,
+        message=f"Repositorio {repo.full_name} clonado e registrado no catalogo.",
+        data={
+            "github_repo": _github_repo_to_payload(repo),
+            "project": _project_record_to_payload(record),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
 
 
 def _cleanup_expired_confirmations() -> None:
@@ -616,6 +2515,10 @@ def _cleanup_expired_confirmations() -> None:
         pending = PENDING_CONFIRMATIONS.pop(token, None)
         if pending:
             PARTICIPANT_PENDING_TOKENS.pop(pending.participant_identity, None)
+            try:
+                STATE_STORE.delete_pending_confirmation(token)
+            except Exception:
+                logger.warning("failed to delete expired pending confirmation", exc_info=True)
 
 
 def _remaining_seconds(expires_at: datetime) -> int:
@@ -627,8 +2530,14 @@ def _store_confirmation(action_name: str, params: JsonObject, ctx: ActionContext
     _cleanup_expired_confirmations()
 
     previous_token = PARTICIPANT_PENDING_TOKENS.get(ctx.participant_identity)
+    if previous_token is None:
+        previous_token = STATE_STORE.find_pending_confirmation_token(ctx.participant_identity)
     if previous_token:
         PENDING_CONFIRMATIONS.pop(previous_token, None)
+        try:
+            STATE_STORE.delete_pending_confirmation(previous_token)
+        except Exception:
+            logger.warning("failed to replace previous pending confirmation", exc_info=True)
 
     token = secrets.token_urlsafe(18)
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=_confirmation_ttl_seconds())
@@ -642,19 +2551,70 @@ def _store_confirmation(action_name: str, params: JsonObject, ctx: ActionContext
     )
     PENDING_CONFIRMATIONS[token] = pending
     PARTICIPANT_PENDING_TOKENS[ctx.participant_identity] = token
+    try:
+        STATE_STORE.save_pending_confirmation(
+            token=token,
+            participant_identity=ctx.participant_identity,
+            room=ctx.room,
+            action_name=action_name,
+            params=params,
+            expires_at=expires_at,
+        )
+    except Exception:
+        logger.warning("failed to persist pending confirmation", exc_info=True)
     return pending
 
 
 def _pop_confirmation(token: str) -> PendingConfirmation | None:
     pending = PENDING_CONFIRMATIONS.pop(token, None)
+    if pending is None:
+        stored = STATE_STORE.get_pending_confirmation(token)
+        if isinstance(stored, dict):
+            expires_at = _parse_datetime(stored.get("expires_at"))
+            if expires_at is not None:
+                pending = PendingConfirmation(
+                    token=str(stored.get("token") or token),
+                    action_name=str(stored.get("action_name") or ""),
+                    params=stored.get("params") if isinstance(stored.get("params"), dict) else {},
+                    participant_identity=str(stored.get("participant_identity") or ""),
+                    room=str(stored.get("room") or ""),
+                    expires_at=expires_at,
+                )
     if pending:
         PARTICIPANT_PENDING_TOKENS.pop(pending.participant_identity, None)
+        try:
+            STATE_STORE.delete_pending_confirmation(token)
+        except Exception:
+            logger.warning("failed to delete pending confirmation", exc_info=True)
     return pending
 
 
 def _peek_confirmation(token: str) -> PendingConfirmation | None:
     _cleanup_expired_confirmations()
-    return PENDING_CONFIRMATIONS.get(token)
+    pending = PENDING_CONFIRMATIONS.get(token)
+    if pending is not None:
+        return pending
+    stored = STATE_STORE.get_pending_confirmation(token)
+    if not isinstance(stored, dict):
+        return None
+    expires_at = _parse_datetime(stored.get("expires_at"))
+    if expires_at is None or expires_at <= datetime.now(timezone.utc):
+        try:
+            STATE_STORE.delete_pending_confirmation(token)
+        except Exception:
+            logger.warning("failed to delete stale pending confirmation", exc_info=True)
+        return None
+    pending = PendingConfirmation(
+        token=str(stored.get("token") or token),
+        action_name=str(stored.get("action_name") or ""),
+        params=stored.get("params") if isinstance(stored.get("params"), dict) else {},
+        participant_identity=str(stored.get("participant_identity") or ""),
+        room=str(stored.get("room") or ""),
+        expires_at=expires_at,
+    )
+    PENDING_CONFIRMATIONS[token] = pending
+    PARTICIPANT_PENDING_TOKENS[pending.participant_identity] = token
+    return pending
 
 
 def _extract_last_user_text(session: Any | None) -> str:
@@ -789,8 +2749,254 @@ def _call_home_assistant(
     return ActionResult(success=False, message="Erro desconhecido ao chamar Home Assistant.", error="unexpected")
 
 
+def _thinq_pat() -> str:
+    return os.getenv("THINQ_PAT", "").strip()
+
+
+def _thinq_country() -> str:
+    return os.getenv("THINQ_COUNTRY", "BR").strip().upper() or "BR"
+
+
+def _thinq_service_phase() -> str:
+    return os.getenv("THINQ_SERVICE_PHASE", "OP").strip().upper() or "OP"
+
+
+def _thinq_api_base() -> str:
+    return os.getenv("THINQ_API_BASE", THINQ_DEFAULT_API_BASE_URL).strip().rstrip("/") or THINQ_DEFAULT_API_BASE_URL
+
+
+def _thinq_client_id() -> str:
+    return os.getenv("THINQ_CLIENT_ID", THINQ_SESSION_CLIENT_ID).strip() or THINQ_SESSION_CLIENT_ID
+
+
+def _thinq_default_ac_name() -> str:
+    return os.getenv("THINQ_DEFAULT_AC_NAME", "").strip()
+
+
+def _thinq_message_id() -> str:
+    encoded = base64.urlsafe_b64encode(uuid.uuid4().bytes).decode("ascii").rstrip("=")
+    return encoded[:22]
+
+
+def _thinq_headers(*, require_auth: bool) -> dict[str, str] | ActionResult:
+    headers = {
+        "x-message-id": _thinq_message_id(),
+        "x-country": _thinq_country(),
+        "x-api-key": THINQ_API_KEY,
+    }
+    if require_auth:
+        pat = _thinq_pat()
+        if not pat:
+            return ActionResult(
+                success=False,
+                message="ThinQ nao configurado.",
+                error="missing THINQ_PAT",
+            )
+        headers["Authorization"] = f"Bearer {pat}"
+        headers["x-client-id"] = _thinq_client_id()
+    else:
+        headers["x-service-phase"] = _thinq_service_phase()
+    return headers
+
+
+def _thinq_unwrap_response(payload: Any) -> Any:
+    if isinstance(payload, dict) and "response" in payload:
+        return payload.get("response")
+    return payload
+
+
+def _thinq_api_request(
+    method: str,
+    endpoint: str,
+    *,
+    params: JsonObject | None = None,
+    body: JsonObject | None = None,
+    extra_headers: dict[str, str] | None = None,
+    require_auth: bool = True,
+) -> tuple[Any | None, ActionResult | None]:
+    headers_or_error = _thinq_headers(require_auth=require_auth)
+    if isinstance(headers_or_error, ActionResult):
+        return None, headers_or_error
+
+    if extra_headers:
+        headers_or_error.update(extra_headers)
+
+    try:
+        response = requests.request(
+            method=method.upper(),
+            url=f"{_thinq_api_base()}/{endpoint.lstrip('/')}",
+            headers=headers_or_error,
+            params=params,
+            json=body,
+            timeout=10,
+        )
+    except requests.RequestException as error:
+        return (
+            None,
+            ActionResult(
+                success=False,
+                message="Erro de comunicacao com ThinQ.",
+                error=str(error),
+            ),
+        )
+
+    payload: Any
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {"raw": response.text}
+
+    if 200 <= response.status_code < 300:
+        return _thinq_unwrap_response(payload), None
+
+    return (
+        None,
+        ActionResult(
+            success=False,
+            message=f"Falha ao chamar ThinQ ({response.status_code}).",
+            error=json.dumps(payload, ensure_ascii=False)[:1200] if not isinstance(payload, str) else payload[:1200],
+        ),
+    )
+
+
+def _thinq_extract_device_id(device: JsonObject) -> str:
+    return str(device.get("deviceId", "")).strip()
+
+
+def _thinq_extract_device_info(device: JsonObject) -> JsonObject:
+    info = device.get("deviceInfo", {})
+    return info if isinstance(info, dict) else {}
+
+
+def _thinq_extract_device_alias(device: JsonObject) -> str:
+    info = _thinq_extract_device_info(device)
+    for key in ("alias", "nickname", "name"):
+        value = info.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        value = device.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return _thinq_extract_device_id(device)
+
+
+def _thinq_extract_device_type(device: JsonObject) -> str:
+    info = _thinq_extract_device_info(device)
+    for key in ("deviceType", "type"):
+        value = info.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        value = device.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _thinq_is_air_device(device: JsonObject) -> bool:
+    label = _normalize_spotify_device_label(f"{_thinq_extract_device_type(device)} {_thinq_extract_device_alias(device)}")
+    return any(token in label.split() for token in ("air", "conditioner", "ac", "climatizador"))
+
+
+def _thinq_list_devices_payload() -> tuple[list[JsonObject] | None, ActionResult | None]:
+    payload, error = _thinq_api_request("GET", "devices")
+    if error is not None:
+        return None, error
+    devices = payload if isinstance(payload, list) else []
+    normalized = [item for item in devices if isinstance(item, dict)]
+    return normalized, None
+
+
+def _thinq_simplify_device(device: JsonObject) -> JsonObject:
+    info = _thinq_extract_device_info(device)
+    return {
+        "device_id": _thinq_extract_device_id(device),
+        "alias": _thinq_extract_device_alias(device),
+        "device_type": _thinq_extract_device_type(device),
+        "model_name": str(info.get("modelName", device.get("modelName", ""))).strip(),
+        "platform_type": str(info.get("platformType", "")).strip(),
+        "raw": device,
+    }
+
+
+def _thinq_find_device(
+    *,
+    device_name: str | None = None,
+    device_id: str | None = None,
+    require_air: bool = False,
+) -> tuple[JsonObject | None, ActionResult | None]:
+    devices, error = _thinq_list_devices_payload()
+    if error is not None:
+        return None, error
+    assert devices is not None
+
+    filtered = [device for device in devices if not require_air or _thinq_is_air_device(device)]
+
+    if device_id:
+        exact = next((item for item in filtered if _thinq_extract_device_id(item) == device_id.strip()), None)
+        if exact is not None:
+            return exact, None
+
+    requested_name = (device_name or "").strip()
+    if requested_name:
+        normalized = _normalize_spotify_device_label(requested_name)
+        exact = next(
+            (item for item in filtered if _normalize_spotify_device_label(_thinq_extract_device_alias(item)) == normalized),
+            None,
+        )
+        if exact is not None:
+            return exact, None
+
+        contains = next(
+            (
+                item
+                for item in filtered
+                if normalized
+                and normalized in _normalize_spotify_device_label(_thinq_extract_device_alias(item))
+            ),
+            None,
+        )
+        if contains is not None:
+            return contains, None
+
+        best_match: JsonObject | None = None
+        best_score = 0.0
+        for item in filtered:
+            alias_normalized = _normalize_spotify_device_label(_thinq_extract_device_alias(item))
+            score = SequenceMatcher(None, normalized, alias_normalized).ratio()
+            if score > best_score:
+                best_score = score
+                best_match = item
+        if best_match is not None and best_score >= 0.62:
+            return best_match, None
+
+    if require_air and len(filtered) == 1:
+        return filtered[0], None
+
+    if not requested_name and _thinq_default_ac_name() and require_air:
+        return _thinq_find_device(device_name=_thinq_default_ac_name(), require_air=True)
+
+    available = ", ".join(_thinq_extract_device_alias(item) for item in filtered[:8]) or "nenhum"
+    return (
+        None,
+        ActionResult(
+            success=False,
+            message="Dispositivo ThinQ nao encontrado.",
+            error=f"device not found; disponiveis agora: {available}",
+        ),
+    )
+
+
 def _spotify_tokens_path() -> Path:
     raw = os.getenv("SPOTIFY_TOKENS_PATH", "data/spotify_tokens.json").strip()
+    path = Path(raw)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _spotify_device_aliases_path() -> Path:
+    raw = os.getenv("SPOTIFY_DEVICE_ALIASES_PATH", "data/spotify_device_aliases.json").strip()
     path = Path(raw)
     if not path.is_absolute():
         path = Path(__file__).resolve().parent / path
@@ -834,6 +3040,33 @@ def _read_onenote_tokens_file() -> JsonObject:
 
 def _write_onenote_tokens_file(payload: JsonObject) -> None:
     path = _onenote_tokens_path()
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _ac_arrival_prefs_path() -> Path:
+    raw = os.getenv("AC_ARRIVAL_PREFS_PATH", "data/ac_arrival_prefs.json").strip()
+    path = Path(raw)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _load_ac_arrival_prefs() -> JsonObject:
+    path = _ac_arrival_prefs_path()
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            return payload
+    except Exception:
+        pass
+    return {}
+
+
+def _save_ac_arrival_prefs(payload: JsonObject) -> None:
+    path = _ac_arrival_prefs_path()
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -1387,6 +3620,60 @@ def _spotify_frontend_base_url() -> str:
     return os.getenv("JARVEZ_FRONTEND_URL", "http://127.0.0.1:3001").strip()
 
 
+def _normalize_spotify_device_label(value: str) -> str:
+    folded = unicodedata.normalize("NFKD", value.casefold())
+    without_marks = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", " ", without_marks).strip()
+
+
+def _read_spotify_device_aliases_file() -> JsonObject:
+    path = _spotify_device_aliases_path()
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            return payload
+    except Exception:
+        pass
+    return {}
+
+
+def _write_spotify_device_aliases_file(payload: JsonObject) -> None:
+    _spotify_device_aliases_path().write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _spotify_initialize_device_aliases_cache() -> None:
+    if SPOTIFY_DEVICE_ALIAS_CACHE:
+        return
+    stored = _read_spotify_device_aliases_file()
+    aliases = stored.get("aliases", {})
+    if isinstance(aliases, dict):
+        SPOTIFY_DEVICE_ALIAS_CACHE["aliases"] = {
+            _normalize_spotify_device_label(str(key)): str(value).strip()
+            for key, value in aliases.items()
+            if str(key).strip() and str(value).strip()
+        }
+    else:
+        SPOTIFY_DEVICE_ALIAS_CACHE["aliases"] = {}
+
+
+def _spotify_remember_device_alias(alias: str, device_id: str) -> None:
+    normalized_alias = _normalize_spotify_device_label(alias)
+    if not normalized_alias or not device_id:
+        return
+    _spotify_initialize_device_aliases_cache()
+    aliases = SPOTIFY_DEVICE_ALIAS_CACHE.setdefault("aliases", {})
+    if not isinstance(aliases, dict):
+        aliases = {}
+        SPOTIFY_DEVICE_ALIAS_CACHE["aliases"] = aliases
+    aliases[normalized_alias] = device_id
+    _write_spotify_device_aliases_file({"aliases": aliases})
+
+
 def _read_spotify_tokens_file() -> JsonObject:
     path = _spotify_tokens_path()
     if not path.exists():
@@ -1596,21 +3883,164 @@ def _spotify_find_device(device_name: str | None = None, device_id: str | None =
         return None, ActionResult(success=False, message="Device Spotify nao encontrado pelo id informado.", error="device not found")
 
     if device_name:
-        normalized = device_name.casefold().strip()
+        normalized = _normalize_spotify_device_label(device_name)
+        _spotify_initialize_device_aliases_cache()
+        aliases = SPOTIFY_DEVICE_ALIAS_CACHE.get("aliases", {})
+        reserved_aliases = {
+            "alexa",
+            "echo",
+            "pc",
+            "computador",
+            "notebook",
+            "desktop",
+            "iphone",
+            "celular",
+            "telefone",
+            "mobile",
+        }
+        if isinstance(aliases, dict) and normalized not in reserved_aliases:
+            remembered_device_id = _coerce_optional_str(aliases.get(normalized))
+            if remembered_device_id:
+                for device in devices:
+                    if isinstance(device, dict) and str(device.get("id", "")).strip() == remembered_device_id:
+                        return device, None
         exact = [
-            d for d in devices if isinstance(d, dict) and str(d.get("name", "")).casefold().strip() == normalized
+            d
+            for d in devices
+            if isinstance(d, dict) and _normalize_spotify_device_label(str(d.get("name", ""))) == normalized
         ]
         if exact:
             return exact[0], None
         partial = [
-            d for d in devices if isinstance(d, dict) and normalized in str(d.get("name", "")).casefold().strip()
+            d
+            for d in devices
+            if isinstance(d, dict) and normalized and normalized in _normalize_spotify_device_label(str(d.get("name", "")))
         ]
         if partial:
             return partial[0], None
+
+        requested_tokens_list = normalized.split()
+        requested_tokens = set(requested_tokens_list)
+
+        def select_single_device(candidates: list[JsonObject]) -> JsonObject | None:
+            if len(candidates) == 1:
+                return candidates[0]
+            return None
+
+        def select_preferred_device(candidates: list[JsonObject]) -> JsonObject | None:
+            if not candidates:
+                return None
+            single = select_single_device(candidates)
+            if single is not None:
+                return single
+
+            def score(device: JsonObject) -> tuple[int, int]:
+                normalized_name = _normalize_spotify_device_label(str(device.get("name", "")))
+                score_value = 0
+                if bool(device.get("is_active")):
+                    score_value += 4
+                if "guih" in normalized_name:
+                    score_value += 5
+                if "echo" in normalized_name:
+                    score_value += 3
+                if "iphone" in normalized_name:
+                    score_value += 3
+                if str(device.get("type", "")).casefold() == "speaker":
+                    score_value += 2
+                if "amzn" in str(device.get("id", "")).casefold():
+                    score_value += 2
+                if "todo lugar" in normalized_name:
+                    score_value -= 3
+                return score_value, len(normalized_name)
+
+            ranked = sorted(candidates, key=score, reverse=True)
+            return ranked[0]
+
+        if {"alexa", "echo"} & requested_tokens:
+            alexa_candidates = [
+                d
+                for d in devices
+                if isinstance(d, dict)
+                and (
+                    "amzn" in str(d.get("id", "")).casefold()
+                    or str(d.get("type", "")).casefold() == "speaker"
+                )
+            ]
+            selected = select_preferred_device(alexa_candidates)
+            if selected is not None:
+                return selected, None
+
+        if {"pc", "computador", "notebook", "desktop"} & requested_tokens:
+            computer_candidates = [
+                d
+                for d in devices
+                if isinstance(d, dict) and str(d.get("type", "")).casefold() == "computer"
+            ]
+            selected = select_preferred_device(computer_candidates)
+            if selected is not None:
+                return selected, None
+
+        if {"iphone", "celular", "telefone", "mobile"} & requested_tokens:
+            mobile_candidates = [
+                d
+                for d in devices
+                if isinstance(d, dict)
+                and (
+                    str(d.get("type", "")).casefold() in {"smartphone", "tablet"}
+                    or "iphone" in _normalize_spotify_device_label(str(d.get("name", ""))).split()
+                )
+            ]
+            selected = select_preferred_device(mobile_candidates)
+            if selected is not None:
+                return selected, None
+
+        token_overlap = []
+        if requested_tokens:
+            for device in devices:
+                if not isinstance(device, dict):
+                    continue
+                device_name_normalized = _normalize_spotify_device_label(str(device.get("name", "")))
+                device_tokens = set(device_name_normalized.split())
+                overlap = len(requested_tokens & device_tokens)
+                if overlap:
+                    token_overlap.append((overlap, device))
+        if token_overlap:
+            token_overlap.sort(key=lambda item: item[0], reverse=True)
+            return token_overlap[0][1], None
+        if any(token in {"echo", "alexa"} for token in requested_tokens_list):
+            amazon_devices = [
+                d
+                for d in devices
+                if isinstance(d, dict)
+                and (
+                    "amzn" in str(d.get("id", "")).casefold()
+                    or "echo" in _normalize_spotify_device_label(str(d.get("name", ""))).split()
+                    or "alexa" in _normalize_spotify_device_label(str(d.get("name", ""))).split()
+                )
+            ]
+            if len(amazon_devices) == 1:
+                return amazon_devices[0], None
+
+        fuzzy_scored: list[tuple[float, JsonObject]] = []
+        for device in devices:
+            if not isinstance(device, dict):
+                continue
+            device_name_normalized = _normalize_spotify_device_label(str(device.get("name", "")))
+            if not device_name_normalized:
+                continue
+            similarity = SequenceMatcher(None, normalized, device_name_normalized).ratio()
+            if similarity >= 0.55:
+                fuzzy_scored.append((similarity, device))
+        if fuzzy_scored:
+            fuzzy_scored.sort(key=lambda item: item[0], reverse=True)
+            return fuzzy_scored[0][1], None
         available = [str(d.get("name", "")) for d in devices if isinstance(d, dict)]
+        if len(devices) == 1 and isinstance(devices[0], dict):
+            return devices[0], None
+        available_list = ", ".join(name for name in available if name) or "nenhum device visivel"
         return None, ActionResult(
             success=False,
-            message=f"Nao encontrei o speaker '{device_name}' no Spotify Connect.",
+            message=f"Nao encontrei o speaker '{device_name}' no Spotify Connect. Disponiveis agora: {available_list}.",
             data={"available_devices": available},
             error="device not found",
         )
@@ -1646,6 +4076,37 @@ def _spotify_pick_surprise_tracks(top_tracks_payload: JsonObject | None) -> list
     return uris[: min(20, len(uris))]
 
 
+def _normalize_spotify_uri(raw_uri: str) -> str:
+    value = raw_uri.strip()
+    if not value:
+        return ""
+
+    if value.startswith(("https://open.spotify.com/", "http://open.spotify.com/")):
+        parsed = urlparse(value)
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if len(path_parts) >= 2:
+            return f"spotify:{path_parts[0]}:{path_parts[1]}"
+        return value
+
+    if value.startswith("spotify:"):
+        return value.split("?", 1)[0]
+
+    return value
+
+
+def _coerce_optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _is_spotify_restriction_error(result: ActionResult | None) -> bool:
+    if result is None or not result.error:
+        return False
+    return "Restriction violated" in result.error
+
+
 def _whatsapp_graph_version() -> str:
     return os.getenv("WHATSAPP_GRAPH_VERSION", "v22.0").strip() or "v22.0"
 
@@ -1669,6 +4130,243 @@ def _whatsapp_inbox_path() -> Path:
         path = Path(__file__).resolve().parent / path
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _code_knowledge_db_path() -> Path:
+    raw = os.getenv("CODE_KNOWLEDGE_DB_PATH", "data/code_knowledge.db").strip()
+    path = Path(raw)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _code_repo_root() -> Path:
+    raw = os.getenv("CODE_REPO_ROOT", "").strip()
+    if raw:
+        path = Path(raw)
+        if not path.is_absolute():
+            path = Path(__file__).resolve().parent.parent / path
+        return path
+    return Path(__file__).resolve().parent.parent
+
+
+def _project_index_stale_seconds() -> int:
+    raw = os.getenv("PROJECT_INDEX_STALE_SECONDS", "1800").strip()
+    try:
+        return max(60, min(86400, int(raw)))
+    except ValueError:
+        return 1800
+
+
+def _project_is_stale(record: ProjectRecord) -> bool:
+    if not record.last_indexed_at:
+        return True
+    try:
+        last = datetime.fromisoformat(record.last_indexed_at.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    return (datetime.now(timezone.utc) - last).total_seconds() > _project_index_stale_seconds()
+
+
+def _set_active_project_from_record(
+    record: ProjectRecord,
+    ctx: ActionContext,
+    *,
+    selection_reason: str,
+    index_status: str,
+) -> ActiveProjectMode:
+    active = ActiveProjectMode(
+        project_id=record.project_id,
+        name=record.name,
+        root_path=record.root_path,
+        aliases=list(record.aliases),
+        selected_at=_now_iso(),
+        selection_reason=selection_reason,
+        index_status=index_status,
+    )
+    set_active_project(ctx.participant_identity, ctx.room, active)
+    return active
+
+
+def _ensure_project_index(record: ProjectRecord) -> str:
+    if not record.is_active:
+        return "inactive"
+    root = Path(record.root_path).resolve(strict=False)
+    if not root.exists():
+        return "missing_root"
+    if not _project_is_stale(record):
+        return "fresh"
+    summary = _get_code_index().index_project(
+        record.project_id,
+        root,
+        project_name=record.name,
+        aliases=record.aliases,
+    )
+    _get_project_catalog().update_last_indexed(record.project_id)
+    if summary.get("documents_failed"):
+        return "reindexed_with_failures"
+    return "reindexed"
+
+
+def _resolve_project_record(params: JsonObject, ctx: ActionContext) -> tuple[ProjectRecord | None, ActionResult | None]:
+    project_id = str(params.get("project_id", "")).strip()
+    catalog = _get_project_catalog()
+    if project_id:
+        record = catalog.get_project(project_id)
+        if record is None or not record.is_active:
+            return None, ActionResult(success=False, message="Projeto nao encontrado.", error="unknown project")
+        index_status = _ensure_project_index(record)
+        _set_active_project_from_record(record, ctx, selection_reason="project_id", index_status=index_status)
+        return record, None
+
+    active = get_active_project(ctx.participant_identity, ctx.room)
+    query = (
+        str(params.get("query", "")).strip()
+        or str(params.get("project_query", "")).strip()
+        or str(params.get("fuzzy_query", "")).strip()
+        or str(params.get("project", "")).strip()
+        or str(params.get("project_name", "")).strip()
+        or str(params.get("name", "")).strip()
+    )
+    if not query and active is not None:
+        record = catalog.get_project(active.project_id)
+        if record is not None and record.is_active:
+            return record, None
+
+    if not query:
+        return None, ActionResult(
+            success=False,
+            message="Informe qual projeto devo usar.",
+            data={"projects": [_project_record_to_payload(item) for item in catalog.list_projects()[:5]]},
+            error="missing project",
+        )
+
+    match, confidence, candidates = catalog.resolve(
+        query,
+        active_project_id=active.project_id if active else None,
+        limit=3,
+    )
+    if match is None:
+        return None, ActionResult(
+            success=False,
+            message="Nao consegui identificar o projeto com seguranca.",
+            data={
+                "project_resolution_required": True,
+                "confidence": confidence,
+                "candidates": [_project_record_to_payload(item) for item in candidates],
+            },
+            error="project resolution failed",
+        )
+    if confidence == "medium":
+        return None, ActionResult(
+            success=False,
+            message="Encontrei mais de um projeto plausivel. Escolha um pelo nome ou project_id.",
+            data={
+                "project_resolution_required": True,
+                "confidence": confidence,
+                "candidates": [_project_record_to_payload(item) for item in candidates],
+            },
+            error="ambiguous project",
+        )
+
+    index_status = _ensure_project_index(match)
+    _set_active_project_from_record(match, ctx, selection_reason=query, index_status=index_status)
+    return match, None
+
+
+def _code_worker_request(path: str, payload: JsonObject | None = None) -> tuple[JsonObject | None, ActionResult | None]:
+    client = _get_code_worker_client()
+    try:
+        if path == "/health":
+            response = client.health()
+        elif path == "/read-file":
+            response = client.read_file(payload or {})
+        elif path == "/search-files":
+            response = client.search_files(payload or {})
+        elif path == "/git-status":
+            response = client.git_status(payload or {})
+        elif path == "/git-diff":
+            response = client.git_diff(payload or {})
+        elif path == "/apply-patch":
+            response = client.apply_patch(payload or {})
+        elif path == "/run-command":
+            response = client.run_command(payload or {})
+        else:
+            return None, ActionResult(success=False, message="Endpoint do code worker invalido.", error="invalid worker path")
+    except requests.RequestException as error:
+        return None, ActionResult(
+            success=False,
+            message="Code worker indisponivel. Inicie o processo do worker local.",
+            error=str(error),
+        )
+
+    if not isinstance(response, dict):
+        return None, ActionResult(success=False, message="Resposta invalida do code worker.", error="invalid worker response")
+    if not response.get("success"):
+        return None, ActionResult(
+            success=False,
+            message=str(response.get("message", "Code worker retornou erro.")),
+            data=response.get("data") if isinstance(response.get("data"), dict) else None,
+            error=str(response.get("error", "worker error")),
+        )
+    return response, None
+
+
+def _build_confirmation_message(name: str, params: JsonObject) -> str:
+    explicit = str(params.get("confirmation_summary", "")).strip()
+    if explicit:
+        return explicit
+
+    if name == "code_apply_patch":
+        changes = params.get("changes", [])
+        file_labels: list[str] = []
+        if isinstance(changes, list):
+            for item in changes[:3]:
+                if not isinstance(item, dict):
+                    continue
+                path = str(item.get("path", "")).strip()
+                if path:
+                    file_labels.append(path)
+        suffix = ", ".join(file_labels) if file_labels else "arquivos do projeto ativo"
+        return f"Confirma aplicar patch em {suffix}?"
+
+    if name == "code_run_command":
+        command = str(params.get("command", "")).strip()
+        arguments = params.get("arguments", [])
+        command_parts = [command] + [item for item in arguments if isinstance(item, str)]
+        readable = " ".join(part for part in command_parts if part).strip() or "comando"
+        return f"Confirma executar `{readable}` no projeto ativo?"
+
+    if name == "git_clone_repository":
+        repo = str(params.get("repository_url", "")).strip() or "repositorio informado"
+        return f"Confirma clonar {repo}?"
+
+    if name == "git_commit_and_push_project":
+        message = (
+            str(params.get("message", "")).strip()
+            or str(params.get("commit_message", "")).strip()
+            or "commit no projeto ativo"
+        )
+        return f'Confirma criar commit e fazer push com a mensagem "{message}"?'
+
+    if name == "github_clone_and_register":
+        repo = (
+            str(params.get("repository", "")).strip()
+            or str(params.get("full_name", "")).strip()
+            or str(params.get("name", "")).strip()
+            or "repositorio informado"
+        )
+        return f"Confirma clonar {repo} do GitHub e registrar no catalogo?"
+
+    if name == "run_local_command":
+        command = str(params.get("command", "")).strip() or "comando local"
+        arguments = params.get("arguments", [])
+        command_parts = [command] + [item for item in arguments if isinstance(item, str)]
+        readable = " ".join(part for part in command_parts if part).strip()
+        return f"Confirma executar `{readable}`?"
+
+    return f"Confirma executar {name} com os parametros informados?"
 
 
 def _rpg_db_path() -> Path:
@@ -1783,52 +4481,6 @@ def _tormenta20_pdf_template_path() -> Path:
 def _rpg_pdf_export_enabled() -> bool:
     raw = os.getenv("RPG_CHARACTER_PDF_TEMPLATE_PATH", "").strip().casefold()
     return raw not in {"disabled", "off", "false", "0"}
-
-
-def _node_binary() -> str:
-    return os.getenv("NODE_BIN", "node").strip() or "node"
-
-
-def _t20_sheet_bridge_path() -> Path:
-    return Path(__file__).resolve().parent / "tools" / "t20_sheet_bridge.cjs"
-
-
-def _run_t20_sheet_builder(payload: JsonObject) -> tuple[JsonObject | None, str | None]:
-    bridge_path = _t20_sheet_bridge_path()
-    if not bridge_path.exists():
-        return None, "bridge script not found"
-
-    try:
-        completed = subprocess.run(
-            [_node_binary(), str(bridge_path)],
-            input=json.dumps(payload, ensure_ascii=False),
-            text=True,
-            capture_output=True,
-            cwd=str(Path(__file__).resolve().parent.parent),
-            timeout=20,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        return None, str(error)
-
-    stdout = (completed.stdout or "").strip()
-    stderr = (completed.stderr or "").strip()
-    if completed.returncode != 0:
-        return None, stderr or stdout or f"node exited with code {completed.returncode}"
-    if not stdout:
-        return None, "empty bridge response"
-    try:
-        parsed = json.loads(stdout)
-    except json.JSONDecodeError as error:
-        return None, f"invalid bridge json: {error}"
-    if not isinstance(parsed, dict):
-        return None, "bridge response must be an object"
-    if not parsed.get("success"):
-        return None, str(parsed.get("error", "unknown bridge error"))
-    data = parsed.get("data")
-    if not isinstance(data, dict):
-        return None, "bridge response missing data"
-    return data, None
 
 
 def _humanize_identifier(value: str) -> str:
@@ -2288,482 +4940,6 @@ def _export_tormenta20_sheet_pdf(sheet: JsonObject, output_path: Path) -> tuple[
     return True, None
 
 
-def _parse_threat_nd_value(raw_value: str) -> tuple[str, float]:
-    value = str(raw_value or "").strip().upper()
-    mapping = {
-        "1/4": 0.25,
-        "1/3": 0.33,
-        "1/2": 0.5,
-        "S": 20.0,
-        "S+": 21.0,
-    }
-    if value in mapping:
-        return value, mapping[value]
-    if re.fullmatch(r"\d{1,2}", value):
-        numeric = float(int(value))
-        if 1 <= numeric <= 20:
-            return str(int(numeric)), numeric
-    raise ValueError("challenge_level must be 1/4, 1/3, 1/2, 1..20, S or S+")
-
-
-def _threat_challenge_tier(nd_value: float) -> str:
-    if nd_value <= 4:
-        return "Iniciante"
-    if nd_value <= 10:
-        return "Veterano"
-    if nd_value <= 16:
-        return "Campeao"
-    if nd_value <= 20:
-        return "Lenda"
-    return "L+"
-
-
-def _calculate_threat_combat_stats(role: str, challenge_level: str, has_mana_points: bool) -> JsonObject:
-    normalized_challenge, nd_value = _parse_threat_nd_value(challenge_level)
-    base = dict(THREAT_SOLO_COMBAT_TABLE[normalized_challenge])
-    role_key = str(role or "Solo").strip().casefold()
-    role_tuning = {
-        "solo": {"attack": 0, "damage": 1.0, "defense": 0, "hp": 1.0, "dc": 0},
-        "especial": {"attack": -2, "damage": 0.9, "defense": -1, "hp": 0.8, "dc": 1},
-        "lacaio": {"attack": -4, "damage": 0.6, "defense": -2, "hp": 0.35, "dc": -2},
-    }.get(role_key, {"attack": 0, "damage": 1.0, "defense": 0, "hp": 1.0, "dc": 0})
-
-    combat_stats = {
-        "attack_value": max(1, base["attack_value"] + int(role_tuning["attack"])),
-        "average_damage": max(1, int(round(base["average_damage"] * float(role_tuning["damage"])))),
-        "defense": max(10, base["defense"] + int(role_tuning["defense"])),
-        "strong_save": base["strong_save"],
-        "medium_save": base["medium_save"],
-        "weak_save": base["weak_save"],
-        "hit_points": max(1, int(round(base["hit_points"] * float(role_tuning["hp"])))),
-        "standard_effect_dc": max(10, base["standard_effect_dc"] + int(role_tuning["dc"])),
-    }
-    if has_mana_points:
-        combat_stats["mana_points"] = max(1, int(math.ceil(nd_value * 3)))
-    return combat_stats
-
-
-def _default_threat_attributes(role: str) -> JsonObject:
-    role_key = str(role or "Solo").strip().casefold()
-    profiles: dict[str, JsonObject] = {
-        "solo": {"forca": 5, "destreza": 2, "constituicao": 5, "inteligencia": 1, "sabedoria": 2, "carisma": 1},
-        "especial": {"forca": 2, "destreza": 3, "constituicao": 3, "inteligencia": 4, "sabedoria": 2, "carisma": 2},
-        "lacaio": {"forca": 1, "destreza": 2, "constituicao": 1, "inteligencia": 0, "sabedoria": 0, "carisma": 0},
-    }
-    return dict(profiles.get(role_key, profiles["solo"]))
-
-
-def _default_threat_resistance_assignments(role: str) -> JsonObject:
-    role_key = str(role or "Solo").strip().casefold()
-    profiles: dict[str, JsonObject] = {
-        "solo": {"Fortitude": "strong", "Reflexos": "medium", "Vontade": "medium"},
-        "especial": {"Fortitude": "medium", "Reflexos": "medium", "Vontade": "strong"},
-        "lacaio": {"Fortitude": "medium", "Reflexos": "weak", "Vontade": "weak"},
-    }
-    return dict(profiles.get(role_key, profiles["solo"]))
-
-
-def _recommended_threat_ability_count(challenge_level: str, role: str) -> JsonObject:
-    _, nd_value = _parse_threat_nd_value(challenge_level)
-    role_key = str(role or "Solo").strip().casefold()
-    if nd_value <= 4:
-        base = {"min": 1, "max": 2}
-    elif nd_value <= 10:
-        base = {"min": 2, "max": 4}
-    elif nd_value <= 16:
-        base = {"min": 4, "max": 6}
-    elif nd_value <= 20:
-        base = {"min": 5, "max": 8}
-    else:
-        base = {"min": 6, "max": 10}
-    if role_key == "lacaio":
-        base["max"] = max(base["min"], base["max"] - 2)
-    elif role_key == "especial":
-        base["max"] += 1
-    return base
-
-
-def _build_threat_qualities(role: str, challenge_level: str, combat_stats: JsonObject) -> list[str]:
-    recommendations = _recommended_threat_ability_count(challenge_level, role)
-    _, nd_value = _parse_threat_nd_value(challenge_level)
-    role_key = str(role or "Solo").strip().casefold()
-    qualities = [
-        f"Recomenda-se entre {recommendations['min']} e {recommendations['max']} habilidades para este papel.",
-        f"CD padrao sugerida: {combat_stats.get('standard_effect_dc')}.",
-    ]
-    if role_key == "solo":
-        qualities.append("Considere ao menos 1 reacao e 1 efeito de area para sustentar o combate solo.")
-    if role_key == "especial":
-        qualities.append("Priorize efeitos de controle, mobilidade ou ruptura de acao para marcar a identidade especial.")
-    if role_key == "lacaio":
-        qualities.append("Mantenha ataques simples e dano comprimido; o perigo do lacaio vem do numero, nao da complexidade.")
-    if nd_value >= 15:
-        qualities.append("Para ND alto, inclua uma habilidade de fase final ou escalada para evitar combate estatico.")
-    return qualities
-
-
-def _build_generated_threat_abilities(
-    *,
-    role: str,
-    challenge_level: str,
-    combat_stats: JsonObject,
-    has_mana_points: bool,
-) -> list[JsonObject]:
-    _, nd_value = _parse_threat_nd_value(challenge_level)
-    role_key = str(role or "Solo").strip().casefold()
-    effect_dc = int(combat_stats.get("standard_effect_dc", 10) or 10)
-    avg_damage = int(combat_stats.get("average_damage", 1) or 1)
-    mana_cost = int(combat_stats.get("mana_points", 0) or 0)
-    abilities: list[JsonObject] = [
-        {
-            "category": "ofensiva",
-            "name": "Golpe Assolador",
-            "summary": f"Causa cerca de {avg_damage} de dano e pressiona a linha de frente.",
-            "action_type": "Padrao",
-            "pm_cost": max(0, mana_cost // 6) if has_mana_points else 0,
-        },
-        {
-            "category": "controle",
-            "name": "Pressao Tatica",
-            "summary": f"Impõe condição relevante com CD {effect_dc} e quebra o ritmo do alvo.",
-            "action_type": "Padrao",
-            "pm_cost": max(0, mana_cost // 8) if has_mana_points else 0,
-        },
-    ]
-    if role_key != "lacaio":
-        abilities.append(
-            {
-                "category": "mobilidade",
-                "name": "Reposicionamento Hostil",
-                "summary": "Move-se ou desloca inimigos para punir posicionamento ruim.",
-                "action_type": "Livre" if role_key == "especial" else "Movimento",
-                "pm_cost": max(0, mana_cost // 10) if has_mana_points else 0,
-            }
-        )
-    if role_key in {"solo", "especial"}:
-        abilities.append(
-            {
-                "category": "defesa",
-                "name": "Resposta Instintiva",
-                "summary": "Reação defensiva para reduzir dano, evitar acerto ou punir foco excessivo.",
-                "action_type": "Reacao",
-                "pm_cost": max(0, mana_cost // 12) if has_mana_points else 0,
-            }
-        )
-    if nd_value >= 11:
-        abilities.append(
-            {
-                "category": "fase",
-                "name": "Escalada de Confronto",
-                "summary": "Ao perder PV suficientes, entra em fase mais agressiva com mais dano ou CD.",
-                "action_type": "Livre",
-                "pm_cost": max(0, mana_cost // 5) if has_mana_points else 0,
-            }
-        )
-    return abilities
-
-
-def _build_generated_boss_features(
-    *,
-    challenge_level: str,
-    combat_stats: JsonObject,
-    has_mana_points: bool,
-) -> JsonObject:
-    _, nd_value = _parse_threat_nd_value(challenge_level)
-    effect_dc = int(combat_stats.get("standard_effect_dc", 10) or 10)
-    avg_damage = int(combat_stats.get("average_damage", 1) or 1)
-    hit_points = int(combat_stats.get("hit_points", 1) or 1)
-    mana_points = int(combat_stats.get("mana_points", 0) or 0)
-    return {
-        "reactions": [
-            {
-                "name": "Contra-Golpe Instintivo",
-                "summary": f"Quando sofre pico de dano, reage impondo teste de resistência CD {effect_dc} ou contra-pressão imediata.",
-                "uses_per_round": 3,
-                "pm_cost": max(0, mana_points // 12) if has_mana_points else 0,
-            }
-        ],
-        "legendary_actions": [
-            {
-                "name": "Pressão Lendária",
-                "cost": 1,
-                "summary": f"Causa cerca de {max(1, avg_damage // 3)} de dano ou desloca um alvo fora de posição.",
-            },
-            {
-                "name": "Ruptura de Ritmo",
-                "cost": 2,
-                "summary": f"Força teste CD {effect_dc - 2} ou reduz a eficiência ofensiva do grupo até a próxima rodada.",
-            },
-            {
-                "name": "Impulso Final",
-                "cost": 3,
-                "summary": "Ativa poder de área, limpa pressão do mapa ou acelera a fase final.",
-            },
-        ],
-        "phases": [
-            {
-                "threshold": "66%",
-                "summary": f"Ao cair abaixo de {int(hit_points * 0.66)}, entra em fase de pressão crescente, com foco em controle e reposicionamento.",
-            },
-            {
-                "threshold": "33%",
-                "summary": f"Ao cair abaixo de {int(hit_points * 0.33)}, destrava pico ofensivo, aumenta dano e torna o combate mais agressivo.",
-            },
-        ],
-        "defeat_condition": (
-            f"Ao cair, desencadeia um efeito residual final com teste CD {effect_dc}. "
-            "Quem falhar sofre consequência narrativa ou condição persistente ligada ao tema da ameaça."
-        ),
-        "boss_tuning": {
-            "recommended_hit_point_breakpoints": [int(hit_points * 0.66), int(hit_points * 0.33)],
-            "nd_is_high": nd_value >= 11,
-        },
-    }
-
-
-def _build_threat_skills(challenge_level: str, attributes: JsonObject) -> list[JsonObject]:
-    _, nd_value = _parse_threat_nd_value(challenge_level)
-    training_bonus = 2 if nd_value <= 6 else 4 if nd_value <= 14 else 6
-    skill_map = [
-        ("Percepcao", "sabedoria", True, 2),
-        ("Iniciativa", "destreza", True, 0),
-        ("Fortitude", "constituicao", True, 0),
-        ("Reflexos", "destreza", True, 0),
-        ("Vontade", "sabedoria", True, 0),
-        ("Intimidacao", "carisma", False, 2),
-    ]
-    skills: list[JsonObject] = []
-    half_nd = int(math.floor(nd_value / 2))
-    for name, attr, trained, custom_bonus in skill_map:
-        attr_mod = int(attributes.get(attr, 0) or 0)
-        total = half_nd + attr_mod + (training_bonus if trained else 0) + custom_bonus
-        skills.append(
-            {
-                "name": name,
-                "attribute": attr,
-                "trained": trained,
-                "custom_bonus": custom_bonus,
-                "total": total,
-            }
-        )
-    return skills
-
-
-def _default_threat_attacks(name: str, combat_stats: JsonObject, role: str) -> list[JsonObject]:
-    attack_bonus = int(combat_stats.get("attack_value", 0) or 0)
-    average_damage = int(combat_stats.get("average_damage", 0) or 0)
-    role_key = str(role or "Solo").strip().casefold()
-    if role_key == "lacaio":
-        attacks = [
-            {
-                "name": "Golpe de Investida",
-                "attack_bonus": attack_bonus,
-                "damage": f"{max(1, average_damage - 4)} dano",
-                "action_type": "Padrao",
-            }
-        ]
-    elif role_key == "especial":
-        attacks = [
-            {
-                "name": "Ataque Principal",
-                "attack_bonus": attack_bonus,
-                "damage": f"{average_damage} dano",
-                "action_type": "Padrao",
-            },
-            {
-                "name": "Efeito Especial",
-                "attack_bonus": attack_bonus - 2,
-                "damage": f"{max(1, average_damage - 6)} dano + condicao",
-                "action_type": "Completa",
-            },
-        ]
-    else:
-        attacks = [
-            {
-                "name": "Ataque Principal",
-                "attack_bonus": attack_bonus,
-                "damage": f"{average_damage} dano",
-                "action_type": "Padrao",
-            },
-            {
-                "name": "Golpe Devastador",
-                "attack_bonus": attack_bonus - 2,
-                "damage": f"{max(1, average_damage + 8)} dano",
-                "action_type": "Completa",
-            },
-        ]
-    for item in attacks:
-        item["source_hint"] = f"Gerado automaticamente para {name}"
-    return attacks
-
-
-def _build_tormenta20_threat_data(
-    *,
-    name: str,
-    world: str,
-    threat_type: str,
-    size: str,
-    role: str,
-    challenge_level: str,
-    concept: str,
-    has_mana_points: bool,
-    displacement: str,
-    is_boss: bool,
-    attributes: JsonObject | None = None,
-) -> JsonObject:
-    normalized_challenge, nd_value = _parse_threat_nd_value(challenge_level)
-    combat_stats = _calculate_threat_combat_stats(role, normalized_challenge, has_mana_points)
-    threat_attributes = _default_threat_attributes(role)
-    resistance_assignments = _default_threat_resistance_assignments(role)
-    if isinstance(attributes, dict):
-        for key, value in attributes.items():
-            if key in threat_attributes and isinstance(value, int):
-                threat_attributes[key] = max(-5, min(15, value))
-    skills = _build_threat_skills(normalized_challenge, threat_attributes)
-    attacks = _default_threat_attacks(name, combat_stats, role)
-    ability_recommendation = _recommended_threat_ability_count(normalized_challenge, role)
-    qualities = _build_threat_qualities(role, normalized_challenge, combat_stats)
-    generated_abilities = _build_generated_threat_abilities(
-        role=role,
-        challenge_level=normalized_challenge,
-        combat_stats=combat_stats,
-        has_mana_points=has_mana_points,
-    )
-    boss_features = _build_generated_boss_features(
-        challenge_level=normalized_challenge,
-        combat_stats=combat_stats,
-        has_mana_points=has_mana_points,
-    ) if is_boss else {}
-    return {
-        "system": "tormenta20-threat-generator",
-        "builder": "jarvez-threat-generator",
-        "name": name,
-        "world": world,
-        "type": threat_type,
-        "size": size,
-        "role": role,
-        "challenge_level": normalized_challenge,
-        "challenge_tier": _threat_challenge_tier(nd_value),
-        "concept": concept,
-        "is_boss": is_boss,
-        "has_mana_points": has_mana_points,
-        "displacement": displacement,
-        "combat_stats": combat_stats,
-        "attributes": threat_attributes,
-        "resistance_assignments": resistance_assignments,
-        "skills": skills,
-        "attacks": attacks,
-        "ability_recommendation": ability_recommendation,
-        "qualities": qualities,
-        "generated_abilities": generated_abilities,
-        "boss_features": boss_features,
-        "treasure_level": "Padrao",
-        "source_reference": "Inspired by Fichas de Nimb threat generator tables",
-        "updated_at": _now_iso(),
-    }
-
-
-def _build_tormenta20_threat_markdown(threat: JsonObject) -> str:
-    combat = threat.get("combat_stats") if isinstance(threat.get("combat_stats"), dict) else {}
-    attrs = threat.get("attributes") if isinstance(threat.get("attributes"), dict) else {}
-    resistance_assignments = threat.get("resistance_assignments") if isinstance(threat.get("resistance_assignments"), dict) else {}
-    skills = threat.get("skills") if isinstance(threat.get("skills"), list) else []
-    attacks = threat.get("attacks") if isinstance(threat.get("attacks"), list) else []
-    qualities = threat.get("qualities") if isinstance(threat.get("qualities"), list) else []
-    generated_abilities = threat.get("generated_abilities") if isinstance(threat.get("generated_abilities"), list) else []
-    ability_recommendation = threat.get("ability_recommendation") if isinstance(threat.get("ability_recommendation"), dict) else {}
-    boss_features = threat.get("boss_features") if isinstance(threat.get("boss_features"), dict) else {}
-    reactions = boss_features.get("reactions") if isinstance(boss_features.get("reactions"), list) else []
-    legendary_actions = boss_features.get("legendary_actions") if isinstance(boss_features.get("legendary_actions"), list) else []
-    phases = boss_features.get("phases") if isinstance(boss_features.get("phases"), list) else []
-    return "\n".join(
-        [
-            f"# Amea?a Tormenta20 - {threat.get('name', '')}",
-            "",
-            f"- Mundo: {threat.get('world', '')}",
-            f"- Tipo: {threat.get('type', '')}",
-            f"- Tamanho: {threat.get('size', '')}",
-            f"- Papel: {threat.get('role', '')}",
-            f"- ND: {threat.get('challenge_level', '')}",
-            f"- Tier: {threat.get('challenge_tier', '')}",
-            f"- Conceito: {threat.get('concept', '')}",
-            f"- Builder: {threat.get('builder', '')}",
-            "",
-            "## Estatisticas de Combate",
-            f"- Ataque base: {combat.get('attack_value')}",
-            f"- Dano medio: {combat.get('average_damage')}",
-            f"- Defesa: {combat.get('defense')}",
-            f"- Fortitude forte: {combat.get('strong_save')}",
-            f"- Reflexos medio: {combat.get('medium_save')}",
-            f"- Vontade fraca: {combat.get('weak_save')}",
-            f"- PV: {combat.get('hit_points')}",
-            f"- CD padrao: {combat.get('standard_effect_dc')}",
-            f"- PM: {combat.get('mana_points', 0)}",
-            "",
-            "## Resistencias",
-            f"- Fortitude: {resistance_assignments.get('Fortitude', '')}",
-            f"- Reflexos: {resistance_assignments.get('Reflexos', '')}",
-            f"- Vontade: {resistance_assignments.get('Vontade', '')}",
-            "",
-            "## Atributos",
-            *(f"- {key.capitalize()}: {value}" for key, value in attrs.items()),
-            "",
-            "## Pericias",
-            *(
-                f"- {item.get('name')}: {item.get('total')} ({item.get('attribute')})"
-                for item in skills
-                if isinstance(item, dict)
-            ),
-            "",
-            "## Ataques Sugeridos",
-            *(
-                f"- {item.get('name')}: +{item.get('attack_bonus')} / {item.get('damage')} [{item.get('action_type')}]"
-                for item in attacks
-                if isinstance(item, dict)
-            ),
-            "",
-            "## Recomendacao de Habilidades",
-            f"- Minimo: {ability_recommendation.get('min', 0)}",
-            f"- Maximo: {ability_recommendation.get('max', 0)}",
-            "",
-            "## Qualidades Sugeridas",
-            *(f"- {item}" for item in qualities if str(item).strip()),
-            "",
-            "## Habilidades Geradas",
-            *(
-                f"- {item.get('name')} [{item.get('category')}]: {item.get('summary')}"
-                + (f" (acao: {item.get('action_type')}, PM: {item.get('pm_cost')})" if isinstance(item, dict) else "")
-                for item in generated_abilities
-                if isinstance(item, dict)
-            ),
-            "",
-            "## Reacoes de Chefe",
-            *(
-                f"- {item.get('name')}: {item.get('summary')} (usos/rodada: {item.get('uses_per_round')}, PM: {item.get('pm_cost')})"
-                for item in reactions
-                if isinstance(item, dict)
-            ),
-            "",
-            "## Acoes Lendarias",
-            *(
-                f"- {item.get('name')} [{item.get('cost')}]: {item.get('summary')}"
-                for item in legendary_actions
-                if isinstance(item, dict)
-            ),
-            "",
-            "## Fases",
-            *(
-                f"- {item.get('threshold')}: {item.get('summary')}"
-                for item in phases
-                if isinstance(item, dict)
-            ),
-            "",
-            "## Derrota",
-            str(boss_features.get("defeat_condition", "")).strip(),
-        ]
-    )
-
-
 def _export_tormenta20_threat_pdf(threat: JsonObject, output_path: Path) -> tuple[bool, str | None]:
     if (
         SimpleDocTemplate is None
@@ -3018,237 +5194,6 @@ def _export_tormenta20_threat_pdf(threat: JsonObject, output_path: Path) -> tupl
     return True, None
 
 
-def _normalize_class_name(raw_value: str) -> str:
-    normalized = raw_value.strip().casefold()
-    aliases = {
-        "arcanista": "arcanista",
-        "mago": "arcanista",
-        "feiticeiro": "arcanista",
-        "bruxo": "arcanista",
-        "barbaro": "barbaro",
-        "bardo": "bardo",
-        "bucaneiro": "bucaneiro",
-        "cacador": "cacador",
-        "cavaleiro": "cavaleiro",
-        "clerigo": "clerigo",
-        "druida": "druida",
-        "guerreiro": "guerreiro",
-        "inventor": "inventor",
-        "ladino": "ladino",
-        "lutador": "lutador",
-        "nobre": "nobre",
-        "paladino": "paladino",
-    }
-    return aliases.get(normalized, normalized)
-
-
-def _ability_modifier(score: int) -> int:
-    return (int(score) - 10) // 2
-
-
-def _tormenta20_class_profile(class_name: str) -> JsonObject:
-    profiles: dict[str, JsonObject] = {
-        "arcanista": {"pv_base": 8, "pm_base": 6, "key_ability": "inteligencia", "skills": ["Misticismo", "Conhecimento", "Vontade"]},
-        "barbaro": {"pv_base": 20, "pm_base": 3, "key_ability": "forca", "skills": ["Atletismo", "Fortitude", "Sobrevivencia"]},
-        "bardo": {"pv_base": 12, "pm_base": 4, "key_ability": "carisma", "skills": ["Atuacao", "Diplomacia", "Enganacao"]},
-        "bucaneiro": {"pv_base": 16, "pm_base": 3, "key_ability": "destreza", "skills": ["Acrobacia", "Enganacao", "Reflexos"]},
-        "cacador": {"pv_base": 16, "pm_base": 4, "key_ability": "sabedoria", "skills": ["Sobrevivencia", "Percepcao", "Pontaria"]},
-        "cavaleiro": {"pv_base": 20, "pm_base": 3, "key_ability": "carisma", "skills": ["Fortitude", "Guerra", "Intimidacao"]},
-        "clerigo": {"pv_base": 16, "pm_base": 5, "key_ability": "sabedoria", "skills": ["Religiao", "Vontade", "Cura"]},
-        "druida": {"pv_base": 16, "pm_base": 4, "key_ability": "sabedoria", "skills": ["Sobrevivencia", "Adestramento", "Vontade"]},
-        "guerreiro": {"pv_base": 20, "pm_base": 3, "key_ability": "forca", "skills": ["Luta", "Fortitude", "Iniciativa"]},
-        "inventor": {"pv_base": 12, "pm_base": 4, "key_ability": "inteligencia", "skills": ["Oficio", "Conhecimento", "Investigacao"]},
-        "ladino": {"pv_base": 12, "pm_base": 4, "key_ability": "destreza", "skills": ["Furtividade", "Ladinagem", "Reflexos"]},
-        "lutador": {"pv_base": 20, "pm_base": 3, "key_ability": "forca", "skills": ["Luta", "Atletismo", "Fortitude"]},
-        "nobre": {"pv_base": 16, "pm_base": 4, "key_ability": "carisma", "skills": ["Diplomacia", "Intuicao", "Nobreza"]},
-        "paladino": {"pv_base": 20, "pm_base": 3, "key_ability": "carisma", "skills": ["Luta", "Vontade", "Religiao"]},
-    }
-    return profiles.get(_normalize_class_name(class_name), {"pv_base": 16, "pm_base": 3, "key_ability": "carisma", "skills": ["Percepcao", "Vontade", "Iniciativa"]})
-
-
-def _build_tormenta20_sheet_data(
-    *,
-    name: str,
-    world: str,
-    race: str,
-    class_name: str,
-    level: int,
-    concept: str,
-    attrs: JsonObject,
-) -> JsonObject:
-    profile = _tormenta20_class_profile(class_name)
-    con_mod = _ability_modifier(int(attrs["constituicao"]))
-    dex_mod = _ability_modifier(int(attrs["destreza"]))
-    key_ability = str(profile["key_ability"])
-    key_mod = _ability_modifier(int(attrs.get(key_ability, 10)))
-    half_level = max(0, level // 2)
-    pv_total = max(1, int(profile["pv_base"]) + con_mod + max(0, level - 1) * max(1, int(profile["pv_base"]) // 2 + con_mod))
-    pm_total = max(0, int(profile["pm_base"]) + max(0, level - 1) * max(1, int(profile["pm_base"]) // 2))
-    defense = 10 + dex_mod + half_level
-    initiative = dex_mod + half_level
-    perception = _ability_modifier(int(attrs["sabedoria"])) + half_level
-    attack = max(_ability_modifier(int(attrs["forca"])), dex_mod, key_mod) + half_level
-    resistances = {
-        "fortitude": con_mod + half_level,
-        "reflexes": dex_mod + half_level,
-        "will": _ability_modifier(int(attrs["sabedoria"])) + half_level,
-    }
-    return {
-        "system": "tormenta20-base",
-        "builder": "fallback",
-        "name": name,
-        "world": world,
-        "race": race,
-        "class_name": class_name,
-        "origin": "acolyte",
-        "level": level,
-        "concept": concept,
-        "attributes": attrs,
-        "modifiers": {
-            "forca": _ability_modifier(int(attrs["forca"])),
-            "destreza": dex_mod,
-            "constituicao": con_mod,
-            "inteligencia": _ability_modifier(int(attrs["inteligencia"])),
-            "sabedoria": _ability_modifier(int(attrs["sabedoria"])),
-            "carisma": _ability_modifier(int(attrs["carisma"])),
-        },
-        "derived": {
-            "pv": pv_total,
-            "pm": pm_total,
-            "defense": defense,
-            "initiative": initiative,
-            "perception": perception,
-            "attack_base": attack,
-            "resistances": resistances,
-        },
-        "trained_skills": [{"name": skill, "total": 0, "trained": True, "attribute": key_ability} for skill in list(profile["skills"])[:8]],
-        "top_skills": [{"name": skill, "total": 0, "trained": True, "attribute": key_ability} for skill in list(profile["skills"])[:8]],
-        "attacks": [],
-        "build_steps": [],
-        "recommended_skills": list(profile["skills"]),
-        "serialized_character": {},
-        "displacement": 9,
-        "current_cargo": 0,
-        "max_cargo": 10 + max(0, _ability_modifier(int(attrs["forca"]))) * 5,
-        "carry_capacity": (10 + max(0, _ability_modifier(int(attrs["forca"]))) * 5) * 2,
-        "proficiencies": [],
-        "spells": [],
-        "powers": [],
-        "key_ability": key_ability,
-        "updated_at": _now_iso(),
-    }
-
-
-def _normalize_sheet_data(sheet: JsonObject) -> JsonObject:
-    attrs = sheet.get("attributes")
-    if not isinstance(attrs, dict):
-        attrs = {}
-    raw_attr_values = [value for value in attrs.values() if isinstance(value, (int, float))]
-    attrs_are_modifiers = bool(raw_attr_values) and all(-5 <= float(value) <= 10 for value in raw_attr_values)
-
-    def _score_value(*keys: str) -> int:
-        for key in keys:
-            raw = attrs.get(key)
-            if isinstance(raw, (int, float)):
-                if attrs_are_modifiers:
-                    return int(10 + int(raw) * 2)
-                return int(raw)
-        return 0
-
-    normalized_attrs = {
-        "forca": _score_value("forca", "strength"),
-        "destreza": _score_value("destreza", "dexterity"),
-        "constituicao": _score_value("constituicao", "constitution"),
-        "inteligencia": _score_value("inteligencia", "intelligence"),
-        "sabedoria": _score_value("sabedoria", "wisdom"),
-        "carisma": _score_value("carisma", "charisma"),
-    }
-    modifiers = sheet.get("modifiers")
-    if not isinstance(modifiers, dict):
-        modifiers = {key: normalized_attrs[key] for key in normalized_attrs}
-
-    derived = sheet.get("derived")
-    if not isinstance(derived, dict):
-        derived = {}
-
-    normalized: JsonObject = dict(sheet)
-    normalized["builder"] = str(normalized.get("builder") or "fallback")
-    normalized["system"] = str(normalized.get("system") or "tormenta20-base")
-    normalized["attributes"] = normalized_attrs
-    normalized["modifiers"] = {
-        "forca": int(modifiers.get("forca", normalized_attrs["forca"]) or 0),
-        "destreza": int(modifiers.get("destreza", normalized_attrs["destreza"]) or 0),
-        "constituicao": int(modifiers.get("constituicao", normalized_attrs["constituicao"]) or 0),
-        "inteligencia": int(modifiers.get("inteligencia", normalized_attrs["inteligencia"]) or 0),
-        "sabedoria": int(modifiers.get("sabedoria", normalized_attrs["sabedoria"]) or 0),
-        "carisma": int(modifiers.get("carisma", normalized_attrs["carisma"]) or 0),
-    }
-    normalized["derived"] = {
-        "pv": derived.get("pv"),
-        "pm": derived.get("pm"),
-        "defense": derived.get("defense"),
-        "initiative": derived.get("initiative"),
-        "perception": derived.get("perception"),
-        "attack_base": derived.get("attack_base"),
-        "resistances": derived.get("resistances", {}),
-    }
-    for key in ("trained_skills", "top_skills", "attacks", "build_steps", "recommended_skills", "proficiencies", "spells", "powers"):
-        normalized[key] = _json_list(normalized.get(key))
-    if not isinstance(normalized.get("serialized_character"), dict):
-        normalized["serialized_character"] = {}
-    normalized["displacement"] = int(normalized.get("displacement", 9) or 9)
-    normalized["current_cargo"] = int(normalized.get("current_cargo", 0) or 0)
-    normalized["max_cargo"] = int(normalized.get("max_cargo", 0) or 0)
-    normalized["carry_capacity"] = int(normalized.get("carry_capacity", 0) or 0)
-    normalized["updated_at"] = str(normalized.get("updated_at") or _now_iso())
-    return normalized
-
-
-def _build_tormenta20_sheet_markdown(sheet: JsonObject) -> str:
-    attrs = sheet["attributes"]
-    mods = sheet["modifiers"]
-    derived = sheet["derived"]
-    resistances = derived["resistances"]
-    skills = sheet["recommended_skills"]
-    return f"""# Ficha Tormenta20 Base - {sheet['name']}
-
-- Mundo: {sheet['world']}
-- Raca: {sheet['race']}
-- Classe: {sheet['class_name']}
-- Nivel: {sheet['level']}
-- Conceito: {sheet['concept']}
-- Atributo-chave sugerido: {sheet['key_ability']}
-
-## Atributos
-- Forca: {attrs['forca']} ({mods['forca']:+d})
-- Destreza: {attrs['destreza']} ({mods['destreza']:+d})
-- Constituicao: {attrs['constituicao']} ({mods['constituicao']:+d})
-- Inteligencia: {attrs['inteligencia']} ({mods['inteligencia']:+d})
-- Sabedoria: {attrs['sabedoria']} ({mods['sabedoria']:+d})
-- Carisma: {attrs['carisma']} ({mods['carisma']:+d})
-
-## Derivados
-- PV: {derived['pv']}
-- PM: {derived['pm']}
-- Defesa base: {derived['defense']}
-- Iniciativa base: {derived['initiative']}
-- Percepcao base: {derived['perception']}
-- Ataque base sugerido: {derived['attack_base']}
-
-## Resistencias
-- Fortitude: {resistances['fortitude']}
-- Reflexos: {resistances['reflexes']}
-- Vontade: {resistances['will']}
-
-## Pericias Recomendadas
-""" + "\n".join(f"- {skill}" for skill in skills) + """
-
-## Ajustes pendentes
-- Equipamentos, poderes e talentos dependem da construcao final.
-- Revise a ficha antes de uso em mesa.
-"""
-
-
 def _infer_character_session_notes(messages: list[dict[str, str]]) -> JsonObject:
     notes: JsonObject = {
         "summary": "",
@@ -3369,6 +5314,13 @@ def _get_rpg_index() -> RPGKnowledgeIndex:
     if RPG_KNOWLEDGE_INDEX is None:
         RPG_KNOWLEDGE_INDEX = RPGKnowledgeIndex(_rpg_db_path())
     return RPG_KNOWLEDGE_INDEX
+
+
+def _get_code_index() -> CodeKnowledgeIndex:
+    global CODE_KNOWLEDGE_INDEX
+    if CODE_KNOWLEDGE_INDEX is None:
+        CODE_KNOWLEDGE_INDEX = CodeKnowledgeIndex(_code_knowledge_db_path())
+    return CODE_KNOWLEDGE_INDEX
 
 
 def _normalize_whatsapp_to(raw_to: str) -> str:
@@ -3507,6 +5459,100 @@ def _upload_whatsapp_media(file_path: Path, mime_type: str = "audio/mpeg") -> tu
     return media_id, None
 
 
+def _action_domain(action_name: str) -> str | None:
+    domain = infer_action_domain(action_name)
+    if domain == "general":
+        return None
+    return domain
+
+
+def _integration_provider_for_action(action_name: str) -> str:
+    if action_name.startswith("codex_"):
+        return "codex_cli"
+    if action_name.startswith("code_"):
+        return "code_worker"
+    if action_name.startswith("spotify_"):
+        return "spotify_api"
+    if action_name.startswith("whatsapp_"):
+        return "whatsapp_api"
+    if action_name.startswith("thinq_") or action_name.startswith("ac_"):
+        return "lg_thinq"
+    if action_name.startswith("onenote_"):
+        return "onenote_graph"
+    if action_name.startswith("web_search_"):
+        return "gemini_google_search"
+    return "internal"
+
+
+def _ensure_result_envelope(
+    *,
+    result: ActionResult,
+    trace_id: str,
+    action_name: str,
+    started_at: str,
+    risk: str,
+    policy_decision: str,
+) -> ActionResult:
+    if not result.trace_id:
+        result.trace_id = trace_id
+    if not result.risk:
+        result.risk = risk
+    if not result.policy_decision:
+        result.policy_decision = policy_decision
+    if result.evidence is None:
+        result.evidence = {
+            "provider": _integration_provider_for_action(action_name),
+            "executed_at": _now_iso(),
+            "started_at": started_at,
+        }
+    if result.fallback_used is None and isinstance(result.data, dict):
+        model_route = result.data.get("model_route")
+        if isinstance(model_route, dict) and isinstance(model_route.get("fallback_used"), bool):
+            result.fallback_used = bool(model_route.get("fallback_used"))
+    if isinstance(result.data, dict):
+        result.data.setdefault(
+            "policy",
+            {
+                "risk": risk,
+                "decision": result.policy_decision,
+            },
+        )
+        result.data.setdefault(
+            "trace",
+            {
+                "trace_id": trace_id,
+                "started_at": started_at,
+            },
+        )
+    return result
+
+
+def _workspace_root() -> Path:
+    configured = str(os.getenv("JARVEZ_WORKSPACE_ROOT", "")).strip()
+    if configured:
+        return Path(configured).expanduser().resolve(strict=False)
+    return Path(__file__).resolve().parents[1]
+
+
+def _workspace_only_enforced() -> bool:
+    raw = str(os.getenv("JARVEZ_ENFORCE_WORKSPACE_ONLY", "0")).strip().lower()
+    return raw not in BOOL_FALSE_VALUES
+
+
+def _is_path_inside_workspace(raw_path: str) -> bool:
+    workspace_root = _workspace_root()
+    candidate = Path(raw_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = (workspace_root / candidate).resolve(strict=False)
+    else:
+        candidate = candidate.resolve(strict=False)
+    try:
+        candidate.relative_to(workspace_root)
+        return True
+    except ValueError:
+        return False
+
+
 def _policy_gate(name: str, params: JsonObject) -> ActionResult | None:
     if name == "call_service":
         domain = params.get("domain")
@@ -3523,7 +5569,171 @@ def _policy_gate(name: str, params: JsonObject) -> ActionResult | None:
                 message=f"Servico nao permitido: {domain}.{service}.",
                 error="service not in allowlist",
             )
+    if _workspace_only_enforced():
+        if name == "run_local_command":
+            working_directory = params.get("working_directory")
+            if isinstance(working_directory, str) and working_directory.strip():
+                if not _is_path_inside_workspace(working_directory):
+                    return ActionResult(
+                        success=False,
+                        message="Comando bloqueado: working_directory fora do workspace permitido.",
+                        error="workspace policy violation",
+                    )
+        if name in {"git_clone_repository", "github_clone_and_register"}:
+            destination = params.get("destination")
+            destination_root = params.get("destination_root")
+            if isinstance(destination, str) and destination.strip() and not _is_path_inside_workspace(destination):
+                return ActionResult(
+                    success=False,
+                    message="Clone bloqueado: destination fora do workspace permitido.",
+                    error="workspace policy violation",
+                )
+            if (
+                isinstance(destination_root, str)
+                and destination_root.strip()
+                and not _is_path_inside_workspace(destination_root)
+            ):
+                return ActionResult(
+                    success=False,
+                    message="Clone bloqueado: destination_root fora do workspace permitido.",
+                    error="workspace policy violation",
+                )
     return None
+
+
+NON_EXECUTION_ERRORS = {
+    "policy denied",
+    "not authenticated",
+    "workspace policy violation",
+    "rpg_mode_required",
+}
+
+
+def _record_domain_trust_from_result(*, action_name: str, result: ActionResult) -> None:
+    if action_name in {"confirm_action"}:
+        return
+    if result.data and isinstance(result.data, dict) and result.data.get("confirmation_required"):
+        return
+    if result.error and result.error in NON_EXECUTION_ERRORS:
+        return
+    domain = infer_action_domain(action_name)
+    if result.success:
+        record_domain_outcome(domain, "success")
+        return
+    if result.error and result.error.startswith("unknown action"):
+        return
+    record_domain_outcome(domain, "failure")
+
+
+def _build_trust_drift_autonomy_notice(
+    *,
+    domain: str,
+    policy_decision: str,
+    trust_drift: Any | None,
+) -> JsonObject | None:
+    if trust_drift is None or not getattr(trust_drift, "active", False):
+        return None
+    if policy_decision not in {"allow_with_log", "allow_with_guardrail", "require_confirmation", "deny"}:
+        return None
+    level = "warning"
+    if policy_decision == "deny":
+        level = "critical"
+    elif policy_decision == "require_confirmation":
+        level = "warning"
+    else:
+        level = "info"
+    domain_label = domain or "general"
+    spoken_message = (
+        f"Atencao. Reduzi a autonomia no dominio {domain_label} porque backend e cliente estao fora de sincronia."
+    )
+    if policy_decision == "deny":
+        spoken_message = (
+            f"Atencao. Bloqueei a autonomia no dominio {domain_label} porque backend e cliente estao fora de sincronia."
+        )
+    return {
+        "active": True,
+        "level": level,
+        "title": "Autonomia reduzida por trust drift",
+        "message": (
+            f"O dominio {domain_label} esta com drift entre confianca local e backend; "
+            f"a politica atual reduziu a autonomia para `{policy_decision}`."
+        ),
+        "domain": domain_label,
+        "scenario": "trust_drift_breach",
+        "decision": policy_decision,
+        "signature": f"trust_drift_breach:{domain_label}:{policy_decision}",
+        "spoken_message": spoken_message,
+    }
+
+
+async def _emit_autonomy_notice_event(ctx: ActionContext, notice: JsonObject | None) -> None:
+    if notice is None or notice.get("active") is False:
+        return
+    await _publish_agent_event(
+        ctx,
+        {
+            "type": "autonomy_notice",
+            "notice": notice,
+            "timestamp": _now_iso(),
+        },
+    )
+
+
+def record_autonomy_notice_delivery(
+    *,
+    participant_identity: str,
+    room: str,
+    trace_id: str | None,
+    signature: str | None,
+    channel: str,
+    level: str | None = None,
+    domain: str | None = None,
+    scenario: str | None = None,
+) -> None:
+    payload = {
+        "participant_identity": participant_identity,
+        "room": room,
+        "trace_id": trace_id,
+        "signature": signature,
+        "channel": channel,
+        "level": level,
+        "domain": domain,
+        "scenario": scenario,
+    }
+    try:
+        append_metric(
+            {
+                "type": "autonomy_notice_delivery",
+                "timestamp": _now_iso(),
+                "payload": payload,
+            }
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("failed to append autonomy_notice_delivery metric", exc_info=True)
+
+
+def _speak_autonomy_notice(ctx: ActionContext, notice: JsonObject | None) -> str | None:
+    if notice is None or notice.get("active") is False:
+        return None
+    spoken_message = str(notice.get("spoken_message", "")).strip()
+    if not spoken_message:
+        return None
+    session = ctx.session
+    if session is None:
+        return None
+    say = getattr(session, "say", None)
+    if not callable(say):
+        return None
+    try:
+        say(
+            spoken_message,
+            allow_interruptions=True,
+            add_to_chat_ctx=False,
+        )
+        return "agent_audio"
+    except Exception:  # noqa: BLE001
+        logger.warning("failed to speak autonomy notice", exc_info=True)
+        return None
 
 
 async def dispatch_action(
@@ -3532,19 +5742,86 @@ async def dispatch_action(
     ctx: ActionContext,
     *,
     skip_confirmation: bool = False,
+    bypass_auth: bool = False,
 ) -> ActionResult:
     started_at = time.perf_counter()
     started_at_iso = _now_iso()
+    trace_id = f"trace_{uuid.uuid4().hex[:12]}"
     spec = get_action(name)
+    risk = classify_action_risk(name)
+    action_domain = infer_action_domain(name)
+    domain_trust = get_domain_trust(action_domain)
+    trust_drift = get_trust_drift(ctx.participant_identity, ctx.room, action_domain)
+    autonomy_mode = get_autonomy_mode(ctx.participant_identity, ctx.room)
+    domain_autonomy_mode = get_domain_autonomy_mode(ctx.participant_identity, ctx.room, action_domain)
+    effective_autonomy_mode = get_effective_autonomy_mode(
+        ctx.participant_identity,
+        ctx.room,
+        domain=action_domain,
+    )
+    blocked, block_reason = is_blocked(domain=_action_domain(name))
+    policy_eval = evaluate_policy(
+        risk=risk,
+        mode=effective_autonomy_mode,
+        requires_confirmation=bool(spec.requires_confirmation) if spec is not None else False,
+        kill_switch_active=blocked,
+        kill_switch_reason=block_reason,
+        domain=action_domain,
+        domain_trust_score=domain_trust.score,
+        trust_drift_active=bool(trust_drift and trust_drift.active),
+        trust_drift_reason=trust_drift.reason if trust_drift is not None else None,
+    )
+    autonomy_notice = _build_trust_drift_autonomy_notice(
+        domain=action_domain,
+        policy_decision=policy_eval.decision,
+        trust_drift=trust_drift,
+    )
+    if autonomy_notice is not None:
+        autonomy_notice["trace_id"] = trace_id
+    if autonomy_notice is not None and autonomy_notice.get("level") in {"warning", "critical"}:
+        spoken_channel = _speak_autonomy_notice(ctx, autonomy_notice)
+        if spoken_channel is not None:
+            autonomy_notice["spoken_channel"] = spoken_channel
+        await _emit_autonomy_notice_event(ctx, autonomy_notice)
+
+    async def _finalize(result: ActionResult) -> ActionResult:
+        _record_domain_trust_from_result(action_name=name, result=result)
+        _persist_result_state(ctx, name, result)
+        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+        _log_action_result(
+            ctx=ctx,
+            action_name=name,
+            params=params,
+            started_at=started_at_iso,
+            elapsed_ms=elapsed_ms,
+            result=result,
+        )
+        await _publish_session_snapshot_for_context(ctx)
+        return result
 
     if spec is None:
         result = ActionResult(success=False, message="Action not allowed", error=f"unknown action '{name}'")
-        _log_action_result(ctx=ctx, action_name=name, params=params, started_at=started_at_iso, elapsed_ms=0, result=result)
-        return result
+        result = _ensure_result_envelope(
+            result=result,
+            trace_id=trace_id,
+            action_name=name,
+            started_at=started_at_iso,
+            risk=risk,
+            policy_decision="deny",
+        )
+        return await _finalize(result)
 
     valid, validation_error = validate_params(params, spec.params_schema)
     if not valid:
         result = ActionResult(success=False, message="Invalid parameters", error=validation_error)
+        result = _ensure_result_envelope(
+            result=result,
+            trace_id=trace_id,
+            action_name=name,
+            started_at=started_at_iso,
+            risk=risk,
+            policy_decision=policy_eval.decision,
+        )
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         _log_action_result(
             ctx=ctx,
@@ -3556,18 +5833,48 @@ async def dispatch_action(
         )
         return result
 
+    if policy_eval.decision == "deny":
+        result = ActionResult(
+            success=False,
+            message=policy_eval.reason,
+            error="policy denied",
+            data={
+                "policy": {
+                    "mode": autonomy_mode,
+                    "effective_mode": effective_autonomy_mode,
+                    "domain_autonomy_mode": domain_autonomy_mode,
+                    "domain": action_domain,
+                    "domain_trust_score": round(domain_trust.score, 4),
+                    "trust_drift_active": bool(trust_drift and trust_drift.active),
+                    "trust_drift": trust_drift.to_payload() if trust_drift is not None else None,
+                    "risk": risk,
+                    "decision": policy_eval.decision,
+                    "reason": policy_eval.reason,
+                }
+                | ({"autonomy_notice": autonomy_notice} if autonomy_notice is not None else {})
+            },
+        )
+        result = _ensure_result_envelope(
+            result=result,
+            trace_id=trace_id,
+            action_name=name,
+            started_at=started_at_iso,
+            risk=risk,
+            policy_decision=policy_eval.decision,
+        )
+        return await _finalize(result)
+
     gate_result = _policy_gate(name, params)
     if gate_result is not None:
-        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-        _log_action_result(
-            ctx=ctx,
-            action_name=name,
-            params=params,
-            started_at=started_at_iso,
-            elapsed_ms=elapsed_ms,
+        gate_result = _ensure_result_envelope(
             result=gate_result,
+            trace_id=trace_id,
+            action_name=name,
+            started_at=started_at_iso,
+            risk=risk,
+            policy_decision=policy_eval.decision,
         )
-        return gate_result
+        return await _finalize(gate_result)
 
     if name.startswith("rpg_"):
         current_mode = get_persona_mode(ctx.participant_identity, ctx.room)
@@ -3581,18 +5888,17 @@ async def dispatch_action(
                 },
                 error="rpg_mode_required",
             )
-            elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-            _log_action_result(
-                ctx=ctx,
-                action_name=name,
-                params=params,
-                started_at=started_at_iso,
-                elapsed_ms=elapsed_ms,
+            result = _ensure_result_envelope(
                 result=result,
+                trace_id=trace_id,
+                action_name=name,
+                started_at=started_at_iso,
+                risk=risk,
+                policy_decision=policy_eval.decision,
             )
-            return result
+            return await _finalize(result)
 
-    if spec.requires_auth and not _is_authenticated(ctx.participant_identity, ctx.room):
+    if spec.requires_auth and not bypass_auth and not _is_authenticated(ctx.participant_identity, ctx.room):
         result = ActionResult(
             success=False,
             message="Esta acao exige modo privado. So peca PIN quando o usuario realmente quiser acessar algo privado ou sensivel.",
@@ -3603,60 +5909,87 @@ async def dispatch_action(
             },
             error="not authenticated",
         )
-        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-        _log_action_result(
-            ctx=ctx,
-            action_name=name,
-            params=params,
-            started_at=started_at_iso,
-            elapsed_ms=elapsed_ms,
+        result = _ensure_result_envelope(
             result=result,
+            trace_id=trace_id,
+            action_name=name,
+            started_at=started_at_iso,
+            risk=risk,
+            policy_decision=policy_eval.decision,
         )
-        return result
+        return await _finalize(result)
 
-    if spec.requires_auth:
+    if spec.requires_auth and not bypass_auth:
         _touch_authenticated(ctx.participant_identity)
 
-    if spec.requires_confirmation and not skip_confirmation and name != "confirm_action":
+    requires_confirmation = spec.requires_confirmation or policy_eval.decision == "require_confirmation"
+    if requires_confirmation and not skip_confirmation and name != "confirm_action":
         pending = _store_confirmation(name, params, ctx)
+        confirmation_message = _build_confirmation_message(name, params)
         result = ActionResult(
             success=False,
-            message=f"Confirma executar {name} com os parametros informados?",
+            message=confirmation_message,
             data={
                 "confirmation_required": True,
                 "confirmation_token": pending.token,
                 "expires_in": _remaining_seconds(pending.expires_at),
                 "action_name": pending.action_name,
                 "params": pending.params,
+                "policy": {
+                    "mode": autonomy_mode,
+                    "effective_mode": effective_autonomy_mode,
+                    "domain_autonomy_mode": domain_autonomy_mode,
+                    "domain": action_domain,
+                    "domain_trust_score": round(domain_trust.score, 4),
+                    "trust_drift_active": bool(trust_drift and trust_drift.active),
+                    "trust_drift": trust_drift.to_payload() if trust_drift is not None else None,
+                    "risk": risk,
+                    "decision": policy_eval.decision,
+                    "reason": policy_eval.reason,
+                },
+                **({"autonomy_notice": autonomy_notice} if autonomy_notice is not None else {}),
             },
         )
-        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-        _log_action_result(
-            ctx=ctx,
-            action_name=name,
-            params=params,
-            started_at=started_at_iso,
-            elapsed_ms=elapsed_ms,
+        result = _ensure_result_envelope(
             result=result,
+            trace_id=trace_id,
+            action_name=name,
+            started_at=started_at_iso,
+            risk=risk,
+            policy_decision="require_confirmation",
         )
-        return result
+        return await _finalize(result)
 
     try:
         result = await spec.handler(params, ctx)
     except Exception as error:  # noqa: BLE001
         logger.exception("action dispatch failed", extra={"action": name})
         result = ActionResult(success=False, message="Action execution failed", error=str(error))
-
-    elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-    _log_action_result(
-        ctx=ctx,
-        action_name=name,
-        params=params,
-        started_at=started_at_iso,
-        elapsed_ms=elapsed_ms,
+    result = _ensure_result_envelope(
         result=result,
+        trace_id=trace_id,
+        action_name=name,
+        started_at=started_at_iso,
+        risk=risk,
+        policy_decision=policy_eval.decision,
     )
-    return result
+    if autonomy_notice is not None and result.data is None:
+        result.data = {"autonomy_notice": autonomy_notice}
+    if isinstance(result.data, dict):
+        policy_payload = result.data.get("policy")
+        if isinstance(policy_payload, dict):
+            policy_payload.setdefault("mode", autonomy_mode)
+            policy_payload.setdefault("effective_mode", effective_autonomy_mode)
+            policy_payload.setdefault("domain_autonomy_mode", domain_autonomy_mode)
+            policy_payload.setdefault("domain", action_domain)
+            policy_payload.setdefault("domain_trust_score", round(domain_trust.score, 4))
+            policy_payload.setdefault("trust_drift_active", bool(trust_drift and trust_drift.active))
+            policy_payload.setdefault("trust_drift", trust_drift.to_payload() if trust_drift is not None else None)
+            policy_payload.setdefault("reason", policy_eval.reason)
+        if autonomy_notice is not None:
+            result.data.setdefault("autonomy_notice", autonomy_notice)
+
+    return await _finalize(result)
 
 
 def _log_action_result(
@@ -3668,6 +6001,28 @@ def _log_action_result(
     elapsed_ms: int,
     result: ActionResult,
 ) -> None:
+    canary_state = _canary_state_payload(ctx.participant_identity, ctx.room)
+    trust_drift_active = False
+    trust_drift_domain: str | None = None
+    trust_drift_signature: str | None = None
+    autonomy_notice_active = False
+    autonomy_notice_level: str | None = None
+    autonomy_notice_channel: str | None = None
+    autonomy_notice_domain: str | None = None
+    if isinstance(result.data, dict):
+        policy_payload = result.data.get("policy")
+        if isinstance(policy_payload, dict):
+            trust_drift_active = bool(policy_payload.get("trust_drift_active"))
+            trust_drift = policy_payload.get("trust_drift")
+            if isinstance(trust_drift, dict):
+                trust_drift_domain = str(trust_drift.get("domain") or "").strip() or None
+                trust_drift_signature = str(trust_drift.get("signature") or "").strip() or None
+        autonomy_notice = result.data.get("autonomy_notice")
+        if isinstance(autonomy_notice, dict):
+            autonomy_notice_active = bool(autonomy_notice.get("active"))
+            autonomy_notice_level = str(autonomy_notice.get("level") or "").strip() or None
+            autonomy_notice_channel = str(autonomy_notice.get("spoken_channel") or "").strip() or None
+            autonomy_notice_domain = str(autonomy_notice.get("domain") or "").strip().lower() or None
     payload = {
         "job_id": ctx.job_id,
         "room": ctx.room,
@@ -3678,8 +6033,34 @@ def _log_action_result(
         "duration_ms": elapsed_ms,
         "success": result.success,
         "error": result.error,
+        "trace_id": result.trace_id,
+        "risk": result.risk,
+        "policy_decision": result.policy_decision,
+        "fallback_used": result.fallback_used,
+        "evidence_provider": result.evidence.get("provider") if isinstance(result.evidence, dict) else None,
+        "canary_active": bool(canary_state.get("active")),
+        "canary_cohort": str(canary_state.get("cohort") or "stable"),
+        "canary_global_enabled": bool(canary_state.get("global_enabled")),
+        "canary_session_enrolled": bool(canary_state.get("session_enrolled")),
+        "trust_drift_active": trust_drift_active,
+        "trust_drift_domain": trust_drift_domain,
+        "trust_drift_signature": trust_drift_signature,
+        "autonomy_notice_active": autonomy_notice_active,
+        "autonomy_notice_level": autonomy_notice_level,
+        "autonomy_notice_channel": autonomy_notice_channel,
+        "autonomy_notice_domain": autonomy_notice_domain,
     }
     logger.info("tool_call %s", json.dumps(payload, ensure_ascii=False))
+    try:
+        append_metric(
+            {
+                "type": "action_result",
+                "timestamp": _now_iso(),
+                "payload": payload,
+            }
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("failed to append local metrics", exc_info=True)
 
 
 async def _turn_light_on(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -3768,6 +6149,239 @@ async def _confirm_action(params: JsonObject, ctx: ActionContext) -> ActionResul
 
     _pop_confirmation(token)
     return await dispatch_action(pending.action_name, pending.params, ctx, skip_confirmation=True)
+
+
+def _browser_task_payload(
+    *,
+    task_id: str,
+    status: str,
+    request: str,
+    allowed_domains: list[str],
+    read_only: bool,
+    summary: str | None = None,
+    error: str | None = None,
+    started_at: str | None = None,
+    finished_at: str | None = None,
+) -> JsonObject:
+    payload: JsonObject = {
+        "task_id": task_id,
+        "status": status,
+        "request": request,
+        "allowed_domains": allowed_domains,
+        "read_only": read_only,
+        "started_at": started_at or _now_iso(),
+    }
+    if summary is not None:
+        payload["summary"] = summary
+    if error is not None:
+        payload["error"] = error
+    if finished_at is not None:
+        payload["finished_at"] = finished_at
+    return payload
+
+
+async def _browser_agent_run(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    request = str(params.get("request") or "").strip()
+    allowed_domains = params.get("allowed_domains", [])
+    read_only = bool(params.get("read_only", True))
+    task_id = f"browser_{uuid.uuid4().hex[:10]}"
+    from browser_agent.runner import run_browser_task
+
+    browser_task_state, ok, error_code = run_browser_task(
+        task_id=task_id,
+        request=request,
+        allowed_domains=allowed_domains if isinstance(allowed_domains, list) else [],
+        read_only=read_only,
+        mcp_url=str(os.getenv("JARVEZ_PLAYWRIGHT_MCP_URL", "")).strip(),
+    )
+    browser_task = browser_task_state.to_payload()
+    if not ok:
+        _persist_event_namespace(ctx.participant_identity, ctx.room, "browser_tasks", browser_task)
+        await _publish_agent_event(ctx, {"type": "browser_task_failed", "browser_task": browser_task})
+        return ActionResult(
+            success=False,
+            message=str(browser_task.get("summary") or "Browser agent indisponivel."),
+            data={"browser_task": browser_task},
+            error=error_code or "browser_agent_error",
+        )
+
+    _persist_event_namespace(ctx.participant_identity, ctx.room, "browser_tasks", browser_task)
+    await _publish_agent_event(ctx, {"type": "browser_task_started", "browser_task": browser_task})
+    return ActionResult(
+        success=True,
+        message="Browser agent enfileirado com guardrails de dominio.",
+        data={"browser_task": browser_task},
+    )
+
+
+async def _browser_agent_status(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    _ = params
+    browser_task = _load_event_namespace(ctx.participant_identity, ctx.room, "browser_tasks")
+    return ActionResult(
+        success=True,
+        message="Status do browser agent carregado.",
+        data={"browser_task": browser_task if isinstance(browser_task, dict) else None},
+    )
+
+
+async def _browser_agent_cancel(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    _ = params
+    current = _load_event_namespace(ctx.participant_identity, ctx.room, "browser_tasks")
+    if not isinstance(current, dict):
+        return ActionResult(success=False, message="Nenhuma tarefa de browser ativa.", error="browser_task_missing")
+    current = dict(current)
+    current["status"] = "cancelled"
+    current["finished_at"] = _now_iso()
+    current["summary"] = "Cancelada pelo usuario."
+    _persist_event_namespace(ctx.participant_identity, ctx.room, "browser_tasks", current)
+    await _publish_agent_event(ctx, {"type": "browser_task_failed", "browser_task": current})
+    return ActionResult(success=True, message="Tarefa de browser cancelada.", data={"browser_task": current})
+
+
+def _workflow_state_payload(
+    *,
+    workflow_id: str,
+    workflow_type: str,
+    status: str,
+    summary: str,
+    project_id: str | None = None,
+    project_name: str | None = None,
+    current_step: str | None = None,
+    started_at: str | None = None,
+    finished_at: str | None = None,
+    error: str | None = None,
+) -> JsonObject:
+    payload: JsonObject = {
+        "workflow_id": workflow_id,
+        "workflow_type": workflow_type,
+        "status": status,
+        "summary": summary,
+        "started_at": started_at or _now_iso(),
+    }
+    if project_id is not None:
+        payload["project_id"] = project_id
+    if project_name is not None:
+        payload["project_name"] = project_name
+    if current_step is not None:
+        payload["current_step"] = current_step
+    if finished_at is not None:
+        payload["finished_at"] = finished_at
+    if error is not None:
+        payload["error"] = error
+    return payload
+
+
+async def _workflow_run(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    request = str(params.get("request") or "").strip()
+    if not request:
+        return ActionResult(success=False, message="Pedido do workflow ausente.", error="missing request")
+
+    workflow_id = f"wf_{uuid.uuid4().hex[:10]}"
+    active_project = get_active_project(ctx.participant_identity, ctx.room)
+    from workflows.engine import build_idea_to_code_workflow
+
+    workflow_state_obj, task_plan = build_idea_to_code_workflow(
+        workflow_id=workflow_id,
+        request=request,
+        project_id=active_project.project_id if active_project is not None else None,
+        project_name=active_project.name if active_project is not None else None,
+    )
+    workflow_state = workflow_state_obj.to_payload()
+    _persist_event_namespace(ctx.participant_identity, ctx.room, "workflow_state", workflow_state)
+    await _publish_agent_event(
+        ctx,
+        {
+            "type": "workflow_started",
+            "workflow_state": workflow_state,
+        },
+    )
+    return ActionResult(
+        success=True,
+        message="Workflow planejado com checkpoint antes de escrever codigo.",
+        data={
+            "workflow_state": workflow_state,
+            "orchestration": {
+                "request": request,
+                "task_plan": task_plan,
+            },
+        },
+    )
+
+
+async def _workflow_status(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    _ = params
+    workflow_state = _load_event_namespace(ctx.participant_identity, ctx.room, "workflow_state")
+    return ActionResult(
+        success=True,
+        message="Status do workflow carregado.",
+        data={"workflow_state": workflow_state if isinstance(workflow_state, dict) else None},
+    )
+
+
+async def _workflow_cancel(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    _ = params
+    workflow_state = _load_event_namespace(ctx.participant_identity, ctx.room, "workflow_state")
+    if not isinstance(workflow_state, dict):
+        return ActionResult(success=False, message="Nenhum workflow ativo.", error="workflow_missing")
+    from workflows.state import cancel_workflow_state
+
+    next_state = cancel_workflow_state(workflow_state)
+    _persist_event_namespace(ctx.participant_identity, ctx.room, "workflow_state", next_state)
+    await _publish_agent_event(ctx, {"type": "workflow_failed", "workflow_state": next_state})
+    return ActionResult(success=True, message="Workflow cancelado.", data={"workflow_state": next_state})
+
+
+async def _whatsapp_channel_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    from actions_domains.whatsapp_channel import build_whatsapp_channel_status
+
+    status = build_whatsapp_channel_status()
+    return ActionResult(
+        success=True,
+        message="Status do canal WhatsApp carregado.",
+        data={"whatsapp_channel": status},
+    )
+
+
+async def _automation_status(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    _ = params
+    automation_state = _load_event_namespace(ctx.participant_identity, ctx.room, "automation_state")
+    research_schedules = _load_event_namespace(ctx.participant_identity, ctx.room, "research_schedules")
+    return ActionResult(
+        success=True,
+        message="Estado das automacoes carregado.",
+        data={
+            "automation_state": automation_state if isinstance(automation_state, dict) else None,
+            "research_schedules": research_schedules if isinstance(research_schedules, list) else [],
+        },
+    )
+
+
+async def _automation_run_now(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    automation_type = str(params.get("automation_type") or "manual").strip().lower()
+    summary = "Execucao manual solicitada."
+    if automation_type == "daily_briefing":
+        schedules = _load_event_namespace(ctx.participant_identity, ctx.room, "research_schedules")
+        if not isinstance(schedules, list) or not schedules:
+            return ActionResult(
+                success=False,
+                message="Nenhum briefing diario configurado para executar agora.",
+                error="research_schedule_missing",
+            )
+        summary = "Briefing diario enfileirado para execucao manual."
+    automation_state = {
+        "automation_id": f"auto_{uuid.uuid4().hex[:10]}",
+        "automation_type": automation_type,
+        "status": "scheduled",
+        "summary": summary,
+        "dry_run": bool(params.get("dry_run", True)),
+        "last_run_at": _now_iso(),
+    }
+    _persist_event_namespace(ctx.participant_identity, ctx.room, "automation_state", automation_state)
+    return ActionResult(
+        success=True,
+        message=summary,
+        data={"automation_state": automation_state},
+    )
 
 
 async def _authenticate_identity(params: JsonObject, ctx: ActionContext) -> ActionResult:
@@ -4098,6 +6712,719 @@ async def _rpg_clear_character_mode(params: JsonObject, ctx: ActionContext) -> A
     )
 
 
+async def _thinq_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    route_payload, route_error = _thinq_api_request("GET", "route", require_auth=False)
+    devices, devices_error = _thinq_list_devices_payload()
+    if route_error is not None and devices_error is not None:
+        return devices_error
+
+    return ActionResult(
+        success=True,
+        message="ThinQ configurado." if devices_error is None else "ThinQ parcialmente configurado.",
+        data={
+            "thinq_configured": bool(_thinq_pat()),
+            "country": _thinq_country(),
+            "api_base": _thinq_api_base(),
+            "route": route_payload if route_error is None else None,
+            "devices_count": len(devices or []),
+            "devices_error": devices_error.error if devices_error is not None else None,
+        },
+    )
+
+
+async def _thinq_list_devices(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    devices, error = _thinq_list_devices_payload()
+    if error is not None:
+        return error
+    simplified = [_thinq_simplify_device(item) for item in devices or []]
+    return ActionResult(
+        success=True,
+        message=f"Encontrei {len(simplified)} dispositivo(s) no ThinQ.",
+        data={"devices": simplified},
+    )
+
+
+async def _thinq_get_device_profile(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    device, error = _thinq_find_device(
+        device_name=_coerce_optional_str(params.get("device_name")),
+        device_id=_coerce_optional_str(params.get("device_id")),
+    )
+    if error is not None:
+        return error
+    assert device is not None
+    payload, request_error = _thinq_api_request("GET", f"devices/{quote(_thinq_extract_device_id(device), safe='')}/profile")
+    if request_error is not None:
+        return request_error
+    return ActionResult(
+        success=True,
+        message=f"Perfil carregado para {_thinq_extract_device_alias(device)}.",
+        data={
+            "device": _thinq_simplify_device(device),
+            "profile": payload if isinstance(payload, dict) else {"raw": payload},
+        },
+    )
+
+
+async def _thinq_get_device_state(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    device, error = _thinq_find_device(
+        device_name=_coerce_optional_str(params.get("device_name")),
+        device_id=_coerce_optional_str(params.get("device_id")),
+    )
+    if error is not None:
+        return error
+    assert device is not None
+    payload, request_error = _thinq_api_request("GET", f"devices/{quote(_thinq_extract_device_id(device), safe='')}/state")
+    if request_error is not None:
+        return request_error
+    return ActionResult(
+        success=True,
+        message=f"Estado carregado para {_thinq_extract_device_alias(device)}.",
+        data={
+            "device": _thinq_simplify_device(device),
+            "state": payload if isinstance(payload, dict) else {"raw": payload},
+        },
+    )
+
+
+async def _thinq_control_device(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    device, error = _thinq_find_device(
+        device_name=_coerce_optional_str(params.get("device_name")),
+        device_id=_coerce_optional_str(params.get("device_id")),
+    )
+    if error is not None:
+        return error
+    assert device is not None
+
+    command = params.get("command")
+    if not isinstance(command, dict) or not command:
+        return ActionResult(
+            success=False,
+            message="Comando ThinQ invalido.",
+            error="missing or invalid command object",
+        )
+
+    conditional = bool(params.get("conditional"))
+    _, request_error = _thinq_api_request(
+        "POST",
+        f"devices/{quote(_thinq_extract_device_id(device), safe='')}/control",
+        body=command,
+        extra_headers={"x-conditional-control": "true"} if conditional else None,
+    )
+    if request_error is not None:
+        return request_error
+
+    return ActionResult(
+        success=True,
+        message=f"Comando enviado para {_thinq_extract_device_alias(device)}.",
+        data={
+            "device": _thinq_simplify_device(device),
+            "conditional": conditional,
+            "command": command,
+        },
+    )
+
+
+async def _ac_get_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    device, error = _thinq_find_device(
+        device_name=_coerce_optional_str(params.get("device_name")),
+        device_id=_coerce_optional_str(params.get("device_id")),
+        require_air=True,
+    )
+    if error is not None:
+        return error
+    assert device is not None
+    payload, request_error = _thinq_api_request("GET", f"devices/{quote(_thinq_extract_device_id(device), safe='')}/state")
+    if request_error is not None:
+        return request_error
+    return ActionResult(
+        success=True,
+        message=f"Estado do ar carregado para {_thinq_extract_device_alias(device)}.",
+        data={
+            "device": _thinq_simplify_device(device),
+            "state": payload if isinstance(payload, dict) else {"raw": payload},
+        },
+    )
+
+
+async def _ac_send_command(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    device, error = _thinq_find_device(
+        device_name=_coerce_optional_str(params.get("device_name")),
+        device_id=_coerce_optional_str(params.get("device_id")),
+        require_air=True,
+    )
+    if error is not None:
+        return error
+    assert device is not None
+
+    command = params.get("command")
+    if not isinstance(command, dict) or not command:
+        return ActionResult(
+            success=False,
+            message="Comando do ar invalido.",
+            error="missing or invalid command object",
+        )
+
+    conditional = bool(params.get("conditional"))
+    _, request_error = _thinq_api_request(
+        "POST",
+        f"devices/{quote(_thinq_extract_device_id(device), safe='')}/control",
+        body=command,
+        extra_headers={"x-conditional-control": "true"} if conditional else None,
+    )
+    if request_error is not None:
+        return request_error
+
+    return ActionResult(
+        success=True,
+        message=f"Comando enviado para o ar {_thinq_extract_device_alias(device)}.",
+        data={
+            "device": _thinq_simplify_device(device),
+            "conditional": conditional,
+            "command": command,
+        },
+    )
+
+
+def _thinq_build_air_command(*, section: str, payload: JsonObject) -> JsonObject:
+    return {section: payload}
+
+
+def _normalize_ac_mode(value: str) -> str:
+    normalized = _normalize_spotify_device_label(value)
+    mapping = {
+        "auto": "AUTO",
+        "automatico": "AUTO",
+        "automatic": "AUTO",
+        "secar": "AIR_DRY",
+        "dry": "AIR_DRY",
+        "desumidificar": "AIR_DRY",
+        "aquecer": "HEAT",
+        "heat": "HEAT",
+        "ventilar": "FAN",
+        "fan": "FAN",
+        "frio": "COOL",
+        "cool": "COOL",
+        "refrigerar": "COOL",
+    }
+    return mapping.get(normalized.replace(" ", ""), mapping.get(normalized, value.strip().upper()))
+
+
+def _normalize_ac_fan_speed(value: str) -> str:
+    normalized = _normalize_spotify_device_label(value)
+    mapping = {
+        "auto": "AUTO",
+        "automatico": "AUTO",
+        "baixo": "LOW",
+        "low": "LOW",
+        "medio": "MID",
+        "medio alto": "MID_HIGH",
+        "mid": "MID",
+        "mid high": "MID_HIGH",
+        "alto": "HIGH",
+        "high": "HIGH",
+        "natural": "NATURE",
+        "nature": "NATURE",
+        "baixo medio": "LOW_MID",
+        "low mid": "LOW_MID",
+    }
+    compact = normalized.replace(" ", "")
+    return mapping.get(compact, mapping.get(normalized, value.strip().upper()))
+
+
+async def _ac_turn_on(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    return await _ac_send_command(
+        {
+            "device_name": params.get("device_name"),
+            "device_id": params.get("device_id"),
+            "conditional": params.get("conditional"),
+            "command": _thinq_build_air_command(section="operation", payload={"airConOperationMode": "POWER_ON"}),
+        },
+        ctx,
+    )
+
+
+async def _ac_turn_off(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    return await _ac_send_command(
+        {
+            "device_name": params.get("device_name"),
+            "device_id": params.get("device_id"),
+            "conditional": params.get("conditional"),
+            "command": _thinq_build_air_command(section="operation", payload={"airConOperationMode": "POWER_OFF"}),
+        },
+        ctx,
+    )
+
+
+async def _ac_set_mode(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    raw_mode = _coerce_optional_str(params.get("mode"))
+    if not raw_mode:
+        return ActionResult(success=False, message="Informe o modo do ar.", error="missing mode")
+    mode = _normalize_ac_mode(raw_mode)
+    return await _ac_send_command(
+        {
+            "device_name": params.get("device_name"),
+            "device_id": params.get("device_id"),
+            "conditional": params.get("conditional"),
+            "command": _thinq_build_air_command(section="airConJobMode", payload={"currentJobMode": mode}),
+        },
+        ctx,
+    )
+
+
+async def _ac_set_fan_speed(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    raw_speed = _coerce_optional_str(params.get("fan_speed"))
+    if not raw_speed:
+        return ActionResult(success=False, message="Informe a velocidade do vento.", error="missing fan_speed")
+    speed = _normalize_ac_fan_speed(raw_speed)
+    detail = bool(params.get("detail"))
+    key = "windStrengthDetail" if detail else "windStrength"
+    return await _ac_send_command(
+        {
+            "device_name": params.get("device_name"),
+            "device_id": params.get("device_id"),
+            "conditional": params.get("conditional"),
+            "command": _thinq_build_air_command(section="airFlow", payload={key: speed}),
+        },
+        ctx,
+    )
+
+
+async def _ac_set_temperature(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    device, error = _thinq_find_device(
+        device_name=_coerce_optional_str(params.get("device_name")),
+        device_id=_coerce_optional_str(params.get("device_id")),
+        require_air=True,
+    )
+    if error is not None:
+        return error
+    assert device is not None
+
+    temperature = params.get("temperature")
+    if not isinstance(temperature, (int, float)):
+        return ActionResult(success=False, message="Informe a temperatura alvo.", error="missing temperature")
+
+    profile_payload, profile_error = _thinq_api_request(
+        "GET",
+        f"devices/{quote(_thinq_extract_device_id(device), safe='')}/profile",
+    )
+    if profile_error is not None:
+        return profile_error
+
+    profile = profile_payload if isinstance(profile_payload, dict) else {}
+    temperature_property = (
+        ((profile.get("property") or {}).get("temperature") or {})
+        if isinstance(profile.get("property"), dict)
+        else {}
+    )
+    target_schema = temperature_property.get("targetTemperature") if isinstance(temperature_property, dict) else {}
+    range_info = (target_schema.get("value") or {}).get("w", {}) if isinstance(target_schema, dict) else {}
+    min_value = float(range_info.get("min", 18))
+    max_value = float(range_info.get("max", 30))
+    step = float(range_info.get("step", 0.5))
+
+    desired = max(min_value, min(max_value, float(temperature)))
+    if step > 0:
+        desired = round(round((desired - min_value) / step) * step + min_value, 2)
+
+    unit = _coerce_optional_str(params.get("unit")) or "C"
+    return await _ac_send_command(
+        {
+            "device_name": _thinq_extract_device_alias(device),
+            "device_id": _thinq_extract_device_id(device),
+            "conditional": params.get("conditional"),
+            "command": _thinq_build_air_command(
+                section="temperature",
+                payload={"targetTemperature": desired, "unit": unit.upper()},
+            ),
+        },
+        ctx,
+    )
+
+
+async def _ac_set_swing(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    enabled = params.get("enabled")
+    if not isinstance(enabled, bool):
+        return ActionResult(success=False, message="Informe se a oscilacao fica ligada ou desligada.", error="missing enabled")
+    return await _ac_send_command(
+        {
+            "device_name": params.get("device_name"),
+            "device_id": params.get("device_id"),
+            "conditional": params.get("conditional"),
+            "command": _thinq_build_air_command(section="windDirection", payload={"rotateUpDown": enabled}),
+        },
+        ctx,
+    )
+
+
+def _thinq_profile_write_enum_values(profile: JsonObject, section: str, key: str) -> set[str]:
+    properties = profile.get("property")
+    if not isinstance(properties, dict):
+        return set()
+    section_payload = properties.get(section)
+    if not isinstance(section_payload, dict):
+        return set()
+    entry = section_payload.get(key)
+    if not isinstance(entry, dict):
+        return set()
+    value = entry.get("value")
+    if not isinstance(value, dict):
+        return set()
+    writable = value.get("w")
+    if not isinstance(writable, list):
+        return set()
+    return {str(item).strip() for item in writable if str(item).strip()}
+
+
+async def _ac_set_sleep_timer(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    hours = params.get("hours", 0)
+    minutes = params.get("minutes", 0)
+    target_name = params.get("device_name") or _thinq_default_ac_name()
+    target_id = params.get("device_id")
+    try:
+        total_minutes = max(0, int(hours) * 60 + int(minutes))
+    except Exception:
+        return ActionResult(success=False, message="Timer invalido.", error="invalid timer")
+
+    profile_result = await _thinq_get_device_profile(
+        {"device_name": target_name, "device_id": target_id},
+        ctx,
+    )
+    profile = (profile_result.data or {}).get("profile") if profile_result.success and isinstance(profile_result.data, dict) else {}
+    writable_values = _thinq_profile_write_enum_values(profile if isinstance(profile, dict) else {}, "sleepTimer", "relativeStopTimer")
+
+    if total_minutes == 0:
+        payload = {"relativeStopTimer": "UNSET"}
+        message = "Timer de desligamento removido."
+    else:
+        if writable_values and "SET" not in writable_values:
+            return ActionResult(
+                success=False,
+                message="Este modelo de ar nao suporta programar timer de desligamento pela API ThinQ.",
+                error="sleep timer set unsupported",
+            )
+        payload = {
+            "relativeStopTimer": "SET",
+            "relativeHourToStop": total_minutes // 60,
+            "relativeMinuteToStop": total_minutes % 60,
+        }
+        message = f"Timer de desligamento ajustado para {total_minutes // 60}h {total_minutes % 60}min."
+
+    result = await _ac_send_command(
+        {
+            "device_name": target_name,
+            "device_id": target_id,
+            "conditional": params.get("conditional"),
+            "command": _thinq_build_air_command(section="sleepTimer", payload=payload),
+        },
+        ctx,
+    )
+    if result.success:
+        result.message = message
+    return result
+
+
+async def _ac_set_start_timer(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    hours = params.get("hours", 0)
+    minutes = params.get("minutes", 0)
+    target_name = params.get("device_name") or _thinq_default_ac_name()
+    target_id = params.get("device_id")
+    try:
+        total_minutes = max(0, int(hours) * 60 + int(minutes))
+    except Exception:
+        return ActionResult(success=False, message="Timer de ligar invalido.", error="invalid timer")
+
+    profile_result = await _thinq_get_device_profile(
+        {"device_name": target_name, "device_id": target_id},
+        ctx,
+    )
+    profile = (profile_result.data or {}).get("profile") if profile_result.success and isinstance(profile_result.data, dict) else {}
+    writable_values = _thinq_profile_write_enum_values(profile if isinstance(profile, dict) else {}, "timer", "relativeStartTimer")
+
+    if total_minutes == 0:
+        payload = {"relativeStartTimer": "UNSET"}
+        message = "Timer de ligamento removido."
+    else:
+        if writable_values and "SET" not in writable_values:
+            return ActionResult(
+                success=False,
+                message="Este modelo de ar nao suporta programar timer de ligamento pela API ThinQ.",
+                error="start timer set unsupported",
+            )
+        payload = {
+            "relativeStartTimer": "SET",
+            "relativeHourToStart": total_minutes // 60,
+            "relativeMinuteToStart": total_minutes % 60,
+        }
+        message = f"Timer de ligamento ajustado para {total_minutes // 60}h {total_minutes % 60}min."
+
+    result = await _ac_send_command(
+        {
+            "device_name": target_name,
+            "device_id": target_id,
+            "conditional": params.get("conditional"),
+            "command": _thinq_build_air_command(section="timer", payload=payload),
+        },
+        ctx,
+    )
+    if result.success:
+        result.message = message
+    return result
+
+
+async def _ac_set_power_save(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    enabled = params.get("enabled")
+    if not isinstance(enabled, bool):
+        return ActionResult(success=False, message="Informe se o modo economia fica ligado ou desligado.", error="missing enabled")
+    result = await _ac_send_command(
+        {
+            "device_name": params.get("device_name"),
+            "device_id": params.get("device_id"),
+            "conditional": params.get("conditional"),
+            "command": _thinq_build_air_command(section="powerSave", payload={"powerSaveEnabled": enabled}),
+        },
+        ctx,
+    )
+    if result.success:
+        result.message = "Modo economia ligado." if enabled else "Modo economia desligado."
+    return result
+
+
+async def _ac_apply_preset(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    preset_raw = _coerce_optional_str(params.get("preset"))
+    if not preset_raw:
+        return ActionResult(success=False, message="Informe qual preset aplicar.", error="missing preset")
+
+    preset = _normalize_spotify_device_label(preset_raw)
+    base_params = {
+        "device_name": params.get("device_name"),
+        "device_id": params.get("device_id"),
+        "conditional": params.get("conditional"),
+    }
+
+    if preset in {"modo dormir", "dormir", "sleep"}:
+        sequence = [
+            ("modo", await _ac_set_mode({**base_params, "mode": "COOL"}, ctx)),
+            ("temperatura", await _ac_set_temperature({**base_params, "temperature": 23}, ctx)),
+            ("vento", await _ac_set_fan_speed({**base_params, "fan_speed": "LOW"}, ctx)),
+            ("timer", await _ac_set_sleep_timer({**base_params, "hours": 8}, ctx)),
+        ]
+    elif preset in {"gelar sala", "turbo", "resfriar rapido", "resfriar rapido"}:
+        sequence = [
+            ("modo", await _ac_set_mode({**base_params, "mode": "COOL"}, ctx)),
+            ("temperatura", await _ac_set_temperature({**base_params, "temperature": 18}, ctx)),
+            ("vento", await _ac_set_fan_speed({**base_params, "fan_speed": "HIGH"}, ctx)),
+        ]
+    elif preset in {"modo visita", "visita"}:
+        sequence = [
+            ("ligar", await _ac_turn_on(base_params, ctx)),
+            ("modo", await _ac_set_mode({**base_params, "mode": "COOL"}, ctx)),
+            ("temperatura", await _ac_set_temperature({**base_params, "temperature": 22}, ctx)),
+            ("vento", await _ac_set_fan_speed({**base_params, "fan_speed": "MID"}, ctx)),
+            ("oscilacao", await _ac_set_swing({**base_params, "enabled": True}, ctx)),
+        ]
+    elif preset in {"economia", "eco", "modo economia"}:
+        sequence = [
+            ("ligar", await _ac_turn_on(base_params, ctx)),
+            ("modo", await _ac_set_mode({**base_params, "mode": "AUTO"}, ctx)),
+            ("temperatura", await _ac_set_temperature({**base_params, "temperature": 24}, ctx)),
+            ("vento", await _ac_set_fan_speed({**base_params, "fan_speed": "AUTO"}, ctx)),
+            ("economia", await _ac_set_power_save({**base_params, "enabled": True}, ctx)),
+        ]
+    elif preset in {"ventilar leve", "ventilar", "brisa"}:
+        sequence = [
+            ("ligar", await _ac_turn_on(base_params, ctx)),
+            ("modo", await _ac_set_mode({**base_params, "mode": "FAN"}, ctx)),
+            ("vento", await _ac_set_fan_speed({**base_params, "fan_speed": "LOW"}, ctx)),
+            ("oscilacao", await _ac_set_swing({**base_params, "enabled": True}, ctx)),
+        ]
+    else:
+        return ActionResult(
+            success=False,
+            message="Preset desconhecido.",
+            error="unsupported preset; use 'modo dormir', 'gelar sala', 'modo visita', 'economia' ou 'ventilar leve'",
+        )
+
+    failed = [f"{label}: {result.error or result.message}" for label, result in sequence if not result.success]
+    if failed:
+        return ActionResult(
+            success=False,
+            message="Preset executado parcialmente.",
+            data={"steps": [{"label": label, "success": result.success, "message": result.message} for label, result in sequence]},
+            error="; ".join(failed),
+        )
+
+    return ActionResult(
+        success=True,
+        message=f"Preset aplicado: {preset_raw}.",
+        data={"steps": [{"label": label, "success": result.success, "message": result.message} for label, result in sequence]},
+    )
+
+
+def _ac_current_temperature_from_status(status_data: JsonObject) -> float | None:
+    state = status_data.get("state")
+    if not isinstance(state, dict):
+        return None
+    temperature = state.get("temperature")
+    if not isinstance(temperature, dict):
+        return None
+    current = temperature.get("currentTemperature")
+    if isinstance(current, (int, float)):
+        return float(current)
+    return None
+
+
+def _resolve_ac_arrival_prefs(params: JsonObject) -> JsonObject:
+    stored = _load_ac_arrival_prefs()
+    defaults: JsonObject = {
+        "desired_temperature": 23.0,
+        "hot_threshold": 28.0,
+        "vent_only_threshold": 25.0,
+        "eta_minutes": 20,
+        "enable_swing": True,
+        "device_name": _thinq_default_ac_name(),
+    }
+    resolved = {**defaults, **(stored if isinstance(stored, dict) else {})}
+    for key in ("desired_temperature", "hot_threshold", "vent_only_threshold"):
+        value = params.get(key)
+        if isinstance(value, (int, float)):
+            resolved[key] = float(value)
+    eta = params.get("eta_minutes")
+    if isinstance(eta, int) and eta >= 0:
+        resolved["eta_minutes"] = eta
+    if isinstance(params.get("enable_swing"), bool):
+        resolved["enable_swing"] = params["enable_swing"]
+    device_name = _coerce_optional_str(params.get("device_name"))
+    if device_name:
+        resolved["device_name"] = device_name
+    return resolved
+
+
+async def _ac_configure_arrival_prefs(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    prefs = _resolve_ac_arrival_prefs(params)
+    if float(prefs["vent_only_threshold"]) > float(prefs["hot_threshold"]):
+        return ActionResult(
+            success=False,
+            message="O limite de ventilacao nao pode ser maior que o limite de calor forte.",
+            error="invalid thresholds",
+        )
+    _save_ac_arrival_prefs(prefs)
+    return ActionResult(
+        success=True,
+        message="Preferencias de chegada em casa salvas.",
+        data={"preferences": prefs},
+    )
+
+
+async def _ac_prepare_arrival(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    prefs = _resolve_ac_arrival_prefs(params)
+    target_name = _coerce_optional_str(params.get("device_name")) or _coerce_optional_str(prefs.get("device_name")) or _thinq_default_ac_name()
+    target_id = _coerce_optional_str(params.get("device_id"))
+    dry_run = bool(params.get("dry_run"))
+
+    status_result = await _ac_get_status({"device_name": target_name, "device_id": target_id}, ctx)
+    if not status_result.success:
+        return status_result
+
+    status_data = status_result.data if isinstance(status_result.data, dict) else {}
+    current_temperature = _ac_current_temperature_from_status(status_data)
+    if current_temperature is None:
+        return ActionResult(
+            success=False,
+            message="Nao consegui ler a temperatura atual do ambiente pelo ar.",
+            error="missing current temperature",
+        )
+
+    desired_temperature = float(prefs["desired_temperature"])
+    hot_threshold = float(prefs["hot_threshold"])
+    vent_only_threshold = float(prefs["vent_only_threshold"])
+    eta_minutes = int(prefs["eta_minutes"])
+    enable_swing = bool(prefs["enable_swing"])
+
+    if current_temperature >= hot_threshold:
+        strategy = "cool"
+        fan_speed = "HIGH" if current_temperature - desired_temperature >= 3 else "MID"
+        actions_to_run: list[tuple[str, Any]] = [
+            ("ligar", lambda: _ac_turn_on({"device_name": target_name, "device_id": target_id}, ctx)),
+            ("modo", lambda: _ac_set_mode({"device_name": target_name, "device_id": target_id, "mode": "COOL"}, ctx)),
+            (
+                "temperatura",
+                lambda: _ac_set_temperature(
+                    {"device_name": target_name, "device_id": target_id, "temperature": desired_temperature},
+                    ctx,
+                ),
+            ),
+            ("vento", lambda: _ac_set_fan_speed({"device_name": target_name, "device_id": target_id, "fan_speed": fan_speed}, ctx)),
+        ]
+        if enable_swing:
+            actions_to_run.append(("oscilacao", lambda: _ac_set_swing({"device_name": target_name, "device_id": target_id, "enabled": True}, ctx)))
+        message = (
+            f"Ambiente a {current_temperature:.1f}C: esta quente. "
+            f"Vou resfriar para {desired_temperature:.1f}C (ETA {eta_minutes} min)."
+        )
+    elif current_temperature >= vent_only_threshold:
+        strategy = "fan"
+        actions_to_run = [
+            ("ligar", lambda: _ac_turn_on({"device_name": target_name, "device_id": target_id}, ctx)),
+            ("modo", lambda: _ac_set_mode({"device_name": target_name, "device_id": target_id, "mode": "FAN"}, ctx)),
+            ("vento", lambda: _ac_set_fan_speed({"device_name": target_name, "device_id": target_id, "fan_speed": "LOW"}, ctx)),
+        ]
+        if enable_swing:
+            actions_to_run.append(("oscilacao", lambda: _ac_set_swing({"device_name": target_name, "device_id": target_id, "enabled": True}, ctx)))
+        message = (
+            f"Ambiente a {current_temperature:.1f}C: esta morno. "
+            f"So ventilar ja deve bastar (ETA {eta_minutes} min)."
+        )
+    else:
+        strategy = "hold"
+        actions_to_run = []
+        message = f"Ambiente a {current_temperature:.1f}C: temperatura aceitavel. Nao precisa mexer no ar agora."
+
+    if dry_run or not actions_to_run:
+        return ActionResult(
+            success=True,
+            message=message + (" (dry-run)" if dry_run else ""),
+            data={
+                "strategy": strategy,
+                "current_temperature": current_temperature,
+                "preferences": prefs,
+                "applied": False,
+                "device_name": target_name,
+            },
+        )
+
+    results: list[tuple[str, ActionResult]] = []
+    for label, runner in actions_to_run:
+        results.append((label, await runner()))
+
+    failed = [f"{label}: {result.error or result.message}" for label, result in results if not result.success]
+    if failed:
+        return ActionResult(
+            success=False,
+            message="Falha ao preparar a chegada em casa.",
+            error="; ".join(failed),
+            data={
+                "strategy": strategy,
+                "current_temperature": current_temperature,
+                "preferences": prefs,
+                "steps": [label for label, _ in results],
+                "device_name": target_name,
+            },
+        )
+
+    return ActionResult(
+        success=True,
+        message=message,
+        data={
+            "strategy": strategy,
+            "current_temperature": current_temperature,
+            "preferences": prefs,
+            "applied": True,
+            "steps": [label for label, _ in results],
+            "device_name": target_name,
+        },
+    )
+
+
 async def _set_memory_scope(params: JsonObject, ctx: ActionContext) -> ActionResult:
     scope = str(params.get("scope", "")).strip().lower()
     if scope not in {"public", "private"}:
@@ -4316,8 +7643,8 @@ async def _spotify_get_devices(params: JsonObject, ctx: ActionContext) -> Action
 
 
 async def _spotify_transfer_playback(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    requested_device_name = str(params.get("device_name", "")).strip() or None
-    requested_device_id = str(params.get("device_id", "")).strip() or None
+    requested_device_name = _coerce_optional_str(params.get("device_name"))
+    requested_device_id = _coerce_optional_str(params.get("device_id"))
     play_now = bool(params.get("play", True))
     device, error = _spotify_find_device(requested_device_name, requested_device_id)
     if error is not None:
@@ -4332,6 +7659,8 @@ async def _spotify_transfer_playback(params: JsonObject, ctx: ActionContext) -> 
     )
     if request_error is not None:
         return request_error
+    if requested_device_name:
+        _spotify_remember_device_alias(requested_device_name, str(device.get("id", "")).strip())
 
     return ActionResult(
         success=True,
@@ -4341,20 +7670,17 @@ async def _spotify_transfer_playback(params: JsonObject, ctx: ActionContext) -> 
 
 
 async def _spotify_play(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    requested_device_name = str(params.get("device_name", "")).strip() or str(
+    requested_device_name = _coerce_optional_str(params.get("device_name")) or _coerce_optional_str(
         os.getenv("SPOTIFY_DEFAULT_DEVICE_NAME", "")
-    ).strip() or None
-    requested_device_id = str(params.get("device_id", "")).strip() or None
+    )
+    requested_device_id = _coerce_optional_str(params.get("device_id"))
     query = str(params.get("query", "")).strip()
-    uri = str(params.get("uri", "")).strip()
-
+    uri = _normalize_spotify_uri(str(params.get("uri", "")))
+    target_device: JsonObject | None = None
     if requested_device_name or requested_device_id:
-        transfer_result = await _spotify_transfer_playback(
-            {"device_name": requested_device_name, "device_id": requested_device_id, "play": True},
-            ctx,
-        )
-        if not transfer_result.success:
-            return transfer_result
+        target_device, target_error = _spotify_find_device(requested_device_name, requested_device_id)
+        if target_error is not None:
+            return target_error
 
     resolved_uri = uri
     resolved_title = None
@@ -4380,17 +7706,47 @@ async def _spotify_play(params: JsonObject, ctx: ActionContext) -> ActionResult:
 
     body: JsonObject | None = None
     if resolved_uri:
-        body = {"uris": [resolved_uri]}
+        if resolved_uri.startswith("spotify:track:"):
+            body = {"uris": [resolved_uri]}
+        else:
+            body = {"context_uri": resolved_uri}
 
-    _, play_error = _spotify_api_request("PUT", "me/player/play", body=body)
+    play_params: JsonObject | None = None
+    if target_device and target_device.get("id"):
+        play_params = {"device_id": str(target_device.get("id"))}
+
+    _, play_error = _spotify_api_request("PUT", "me/player/play", params=play_params, body=body)
     if play_error is not None:
+        if target_device and _is_spotify_restriction_error(play_error):
+            fallback_body = {"device_ids": [str(target_device.get("id"))], "play": True}
+            _, transfer_error = _spotify_api_request("PUT", "me/player", body=fallback_body)
+            if transfer_error is None:
+                if requested_device_name:
+                    _spotify_remember_device_alias(requested_device_name, str(target_device.get("id", "")).strip())
+                return ActionResult(
+                    success=True,
+                    message=f"Playback transferido e retomado em {target_device.get('name', 'device desconhecido')}.",
+                    data={
+                        "device_id": target_device.get("id"),
+                        "device_name": target_device.get("name"),
+                        "uri": resolved_uri,
+                        "title": resolved_title,
+                    },
+                )
         return play_error
 
     if resolved_uri:
+        if requested_device_name and target_device:
+            _spotify_remember_device_alias(requested_device_name, str(target_device.get("id", "")).strip())
         return ActionResult(
             success=True,
             message=f"Tocando agora: {resolved_title or resolved_uri}.",
-            data={"uri": resolved_uri, "title": resolved_title},
+            data={
+                "uri": resolved_uri,
+                "title": resolved_title,
+                "device_id": target_device.get("id") if target_device else None,
+                "device_name": target_device.get("name") if target_device else None,
+            },
         )
     return ActionResult(success=True, message="Playback retomado no Spotify.")
 
@@ -4418,8 +7774,8 @@ async def _spotify_previous_track(params: JsonObject, ctx: ActionContext) -> Act
 
 async def _spotify_set_volume(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     volume = int(params.get("volume_percent", 50))
-    requested_device_name = str(params.get("device_name", "")).strip() or None
-    requested_device_id = str(params.get("device_id", "")).strip() or None
+    requested_device_name = _coerce_optional_str(params.get("device_name"))
+    requested_device_id = _coerce_optional_str(params.get("device_id"))
     request_params: JsonObject = {"volume_percent": volume}
 
     if requested_device_name or requested_device_id:
@@ -4432,6 +7788,8 @@ async def _spotify_set_volume(params: JsonObject, ctx: ActionContext) -> ActionR
     _, request_error = _spotify_api_request("PUT", "me/player/volume", params=request_params)
     if request_error is not None:
         return request_error
+    if requested_device_name and "device_id" in request_params:
+        _spotify_remember_device_alias(requested_device_name, str(request_params["device_id"]))
     return ActionResult(success=True, message=f"Volume do Spotify ajustado para {volume}%.")
 
 
@@ -4997,6 +8355,2986 @@ async def _rpg_search_knowledge(params: JsonObject, ctx: ActionContext) -> Actio
     )
 
 
+async def _code_reindex_repo(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    catalog = _get_project_catalog()
+    target_project_id = str(params.get("project_id", "")).strip()
+    records: list[ProjectRecord]
+    if target_project_id:
+        record = catalog.get_project(target_project_id)
+        if record is None:
+            return ActionResult(success=False, message="Projeto nao encontrado para reindexacao.", error="unknown project")
+        records = [record]
+    else:
+        records = catalog.list_projects()
+        if not records:
+            catalog.scan()
+            records = catalog.list_projects()
+
+    summaries: list[JsonObject] = []
+    for record in records:
+        root = Path(record.root_path).resolve(strict=False)
+        if not root.exists():
+            summaries.append({"project_id": record.project_id, "name": record.name, "status": "missing_root"})
+            continue
+        summary = _get_code_index().index_project(
+            record.project_id,
+            root,
+            project_name=record.name,
+            aliases=record.aliases,
+        )
+        catalog.update_last_indexed(record.project_id)
+        summaries.append(
+            {
+                "project_id": record.project_id,
+                "name": record.name,
+                "summary": summary,
+                "knowledge_stats": _get_code_index().stats(project_id=record.project_id),
+            }
+        )
+
+    return ActionResult(
+        success=True,
+        message="Indice global de codigo atualizado.",
+        data={
+            "projects_reindexed": summaries,
+            "knowledge_stats": _get_code_index().stats(),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _code_search_repo(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    query = str(params.get("query", "")).strip()
+    limit = int(params.get("limit", 5))
+    if not query:
+        return ActionResult(success=False, message="Informe uma consulta de codigo.", error="missing query")
+
+    active = get_active_project(ctx.participant_identity, ctx.room)
+    results = _get_code_index().search(query, limit=limit, project_id=active.project_id if active else None)
+    if not results:
+        return ActionResult(
+            success=False,
+            message="Nao encontrei trechos de codigo para essa pergunta.",
+            data={
+                "query": query,
+                "repo_root": str(_code_repo_root()),
+                **_active_project_payload(ctx.participant_identity, ctx.room),
+            },
+            error="not found",
+        )
+    return ActionResult(
+        success=True,
+        message=f"Encontrei {len(results)} trecho(s) relevantes do codigo.",
+        data={
+            "query": query,
+            "repo_root": str(_code_repo_root()),
+            "results": results,
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _project_list_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    include_inactive = bool(params.get("include_inactive", False))
+    projects = _get_project_catalog().list_projects(include_inactive=include_inactive)
+    return ActionResult(
+        success=True,
+        message=f"{len(projects)} projeto(s) no catalogo.",
+        data={
+            "projects": [_project_record_to_payload(item) for item in projects],
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _project_scan_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    discovered = _get_project_catalog().scan()
+    return ActionResult(
+        success=True,
+        message=f"Scan finalizado. {len(discovered)} projeto(s) detectado(s).",
+        data={
+            "projects": [_project_record_to_payload(item) for item in discovered],
+            "catalog_size": len(_get_project_catalog().list_projects(include_inactive=True)),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _project_update_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    project_id = str(params.get("project_id", "")).strip()
+    if not project_id:
+        return ActionResult(success=False, message="Informe o project_id para atualizar.", error="missing project_id")
+
+    catalog = _get_project_catalog()
+    record = catalog.get_project(project_id)
+    if record is None:
+        return ActionResult(success=False, message="Projeto nao encontrado para atualizacao.", error="unknown project")
+
+    updated = False
+    if "name" in params:
+        name = str(params.get("name", "")).strip()
+        if name:
+            catalog.rename_project(project_id, name)
+            updated = True
+    if "aliases" in params:
+        aliases = params.get("aliases", [])
+        if isinstance(aliases, list):
+            catalog.set_aliases(project_id, [str(item) for item in aliases if str(item).strip()])
+            updated = True
+    if "priority_score" in params:
+        catalog.set_priority(project_id, int(params.get("priority_score", 0) or 0))
+        updated = True
+    if "is_active" in params:
+        catalog.set_active(project_id, is_active=bool(params.get("is_active")))
+        updated = True
+
+    refreshed = catalog.get_project(project_id)
+    if refreshed is None:
+        return ActionResult(success=False, message="Projeto indisponivel apos atualizacao.", error="project missing after update")
+
+    if not refreshed.is_active:
+        active = get_active_project(ctx.participant_identity, ctx.room)
+        if active and active.project_id == project_id:
+            clear_active_project(ctx.participant_identity, ctx.room)
+    elif get_active_project(ctx.participant_identity, ctx.room) and get_active_project(ctx.participant_identity, ctx.room).project_id == project_id:
+        _set_active_project_from_record(refreshed, ctx, selection_reason="project_update", index_status=get_active_project(ctx.participant_identity, ctx.room).index_status)
+
+    return ActionResult(
+        success=True,
+        message="Projeto atualizado no catalogo." if updated else "Nenhuma mudanca aplicada ao projeto.",
+        data={
+            "project": _project_record_to_payload(refreshed),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _project_remove_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    project_id = str(params.get("project_id", "")).strip()
+    if not project_id:
+        return ActionResult(success=False, message="Informe o project_id para remover.", error="missing project_id")
+    removed = _get_project_catalog().remove_project(project_id)
+    if removed is None:
+        return ActionResult(success=False, message="Projeto nao encontrado para remocao.", error="unknown project")
+    active = get_active_project(ctx.participant_identity, ctx.room)
+    if active and active.project_id == project_id:
+        clear_active_project(ctx.participant_identity, ctx.room)
+    return ActionResult(
+        success=True,
+        message=f"Projeto {removed.name} removido do catalogo.",
+        data={
+            "removed_project": _project_record_to_payload(removed),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _project_select_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+    active = get_active_project(ctx.participant_identity, ctx.room)
+    return ActionResult(
+        success=True,
+        message=f"Projeto ativo definido para {record.name}.",
+        data={
+            "selected_project": _project_record_to_payload(record),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+            "active_project": {
+                **(_active_project_payload(ctx.participant_identity, ctx.room).get("active_project") or {}),
+                "index_status": active.index_status if active else "unknown",
+            },
+        },
+    )
+
+
+async def _project_get_active_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    active = get_active_project(ctx.participant_identity, ctx.room)
+    if active is None:
+        return ActionResult(
+            success=False,
+            message="Nenhum projeto ativo na sessao.",
+            data=_active_project_payload(ctx.participant_identity, ctx.room),
+            error="no active project",
+        )
+    return ActionResult(
+        success=True,
+        message=f"Projeto ativo: {active.name}.",
+        data={**_active_project_payload(ctx.participant_identity, ctx.room)},
+    )
+
+
+async def _project_clear_active_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    clear_active_project(ctx.participant_identity, ctx.room)
+    return ActionResult(
+        success=True,
+        message="Projeto ativo removido da sessao.",
+        data={**_active_project_payload(ctx.participant_identity, ctx.room)},
+    )
+
+
+async def _project_refresh_index_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+    root = Path(record.root_path).resolve(strict=False)
+    if not root.exists():
+        return ActionResult(success=False, message="A raiz do projeto nao existe.", error="missing project root")
+    summary = _get_code_index().index_project(record.project_id, root, project_name=record.name, aliases=record.aliases)
+    _get_project_catalog().update_last_indexed(record.project_id)
+    _set_active_project_from_record(record, ctx, selection_reason="refresh_index", index_status="reindexed")
+    return ActionResult(
+        success=True,
+        message=f"Indice atualizado para {record.name}.",
+        data={
+            "project": _project_record_to_payload(record),
+            "ingest_summary": summary,
+            "knowledge_stats": _get_code_index().stats(project_id=record.project_id),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _project_search_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    query = str(params.get("query", "")).strip()
+    limit = int(params.get("limit", 5))
+    if not query:
+        return ActionResult(success=False, message="Informe o que devo procurar no projeto.", error="missing query")
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+    results = _get_code_index().search(query, limit=limit, project_id=record.project_id)
+    if not results:
+        return ActionResult(
+            success=False,
+            message=f"Nao encontrei trechos para '{query}' em {record.name}.",
+            data={"query": query, "project": _project_record_to_payload(record), **_active_project_payload(ctx.participant_identity, ctx.room)},
+            error="not found",
+        )
+    return ActionResult(
+        success=True,
+        message=f"Encontrei {len(results)} trecho(s) em {record.name}.",
+        data={
+            "query": query,
+            "project": _project_record_to_payload(record),
+            "results": results,
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _coding_mode_get_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return ActionResult(
+        success=True,
+        message="Modo funcional atual carregado.",
+        data={**_capability_payload(ctx.participant_identity, ctx.room), **_active_project_payload(ctx.participant_identity, ctx.room)},
+    )
+
+
+async def _coding_mode_set_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    mode = str(params.get("mode", "default")).strip()
+    applied = set_capability_mode(ctx.participant_identity, ctx.room, mode)
+    return ActionResult(
+        success=True,
+        message=f"Modo funcional alterado para {applied}.",
+        data={**_capability_payload(ctx.participant_identity, ctx.room), **_active_project_payload(ctx.participant_identity, ctx.room)},
+    )
+
+
+async def _run_codex_task(
+    *,
+    params: JsonObject,
+    ctx: ActionContext,
+    default_request: str,
+    review_mode: bool,
+) -> ActionResult:
+    user_request = (
+        str(params.get("request", "")).strip()
+        or str(params.get("query", "")).strip()
+        or str(params.get("prompt", "")).strip()
+        or default_request
+    )
+    if not user_request:
+        return ActionResult(success=False, message="Descreva a tarefa para o Codex.", error="missing request")
+
+    if not is_codex_available():
+        return ActionResult(success=False, message="Codex CLI nao esta disponivel neste ambiente.", error="codex unavailable")
+
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+
+    root = Path(record.root_path).resolve(strict=False)
+    if not root.exists():
+        return ActionResult(success=False, message="A raiz do projeto nao existe.", error="missing project root")
+
+    prompt = _build_codex_request_prompt(record=record, user_request=user_request, review_mode=review_mode)
+    command_preview = (
+        "codex exec --json --skip-git-repo-check --sandbox read-only "
+        f'--ephemeral -C "{root}" "<prompt>"'
+    )
+    task = ActiveCodexTask(
+        task_id=f"codex_{uuid.uuid4().hex[:12]}",
+        status="running",
+        project_id=record.project_id,
+        project_name=record.name,
+        working_directory=str(root),
+        request=user_request,
+        started_at=_now_iso(),
+        current_phase="starting",
+        command_preview=command_preview,
+    )
+    set_active_codex_task(ctx.participant_identity, ctx.room, task)
+    await _emit_codex_task_event(
+        ctx,
+        event_type="codex_task_started",
+        task=task,
+        phase="starting",
+        message=f"Iniciando Codex em {record.name}.",
+    )
+
+    async def on_progress(event: JsonObject) -> None:
+        task.current_phase = str(event.get("type", "")).strip() or "progress"
+        task.raw_last_event = event
+        task.summary = _codex_progress_message(event)
+        await _emit_codex_task_event(
+            ctx,
+            event_type="codex_task_progress",
+            task=task,
+            phase=task.current_phase,
+            message=task.summary,
+            raw_event_type=str(event.get("type", "")).strip() or None,
+        )
+
+    key = _codex_key(ctx.participant_identity, ctx.room)
+    try:
+        result = await run_exec_streaming(
+            prompt=prompt,
+            working_directory=root,
+            on_progress=on_progress,
+            process_registry=CODEX_RUNNING_PROCESSES,
+            registry_key=key,
+        )
+    except FileNotFoundError:
+        task.status = "failed"
+        task.finished_at = _now_iso()
+        task.current_phase = "missing_cli"
+        task.error = "codex unavailable"
+        task.summary = "Codex CLI nao esta disponivel neste ambiente."
+        _push_codex_history(ctx.participant_identity, ctx.room, task)
+        await _emit_codex_task_event(
+            ctx,
+            event_type="codex_task_failed",
+            task=task,
+            phase="missing_cli",
+            message=task.summary,
+        )
+        return ActionResult(success=False, message=task.summary, error=task.error)
+    except Exception as error:  # noqa: BLE001
+        task.status = "failed"
+        task.finished_at = _now_iso()
+        task.current_phase = "runtime_error"
+        task.error = str(error)
+        task.summary = "A tarefa do Codex falhou durante a execucao."
+        _push_codex_history(ctx.participant_identity, ctx.room, task)
+        await _emit_codex_task_event(
+            ctx,
+            event_type="codex_task_failed",
+            task=task,
+            phase="runtime_error",
+            message=task.summary,
+        )
+        return ActionResult(success=False, message=task.summary, error=str(error))
+
+    if task.status == "cancelled":
+        task.exit_code = result.exit_code
+        task.raw_last_event = result.last_event
+        return ActionResult(
+            success=False,
+            message="Tarefa do Codex cancelada.",
+            data={
+                "codex_task": _codex_task_to_payload(task),
+                "codex_history": _codex_history_payload(ctx.participant_identity, ctx.room),
+                **_active_project_payload(ctx.participant_identity, ctx.room),
+                **_capability_payload(ctx.participant_identity, ctx.room),
+            },
+            error="cancelled",
+        )
+
+    task.status = "completed" if result.success else "failed"
+    task.finished_at = _now_iso()
+    task.current_phase = "completed" if result.success else "failed"
+    task.summary = result.summary
+    task.exit_code = result.exit_code
+    task.raw_last_event = result.last_event
+    if not result.success:
+        task.error = result.stderr[:400] or f"exit code {result.exit_code}"
+    _push_codex_history(ctx.participant_identity, ctx.room, task)
+
+    await _emit_codex_task_event(
+        ctx,
+        event_type="codex_task_completed" if result.success else "codex_task_failed",
+        task=task,
+        phase=task.current_phase,
+        message=result.summary,
+        raw_event_type=str(result.last_event.get("type", "")).strip() if isinstance(result.last_event, dict) else None,
+    )
+
+    data = {
+        "codex_task": _codex_task_to_payload(task),
+        "codex_history": _codex_history_payload(ctx.participant_identity, ctx.room),
+        **_active_project_payload(ctx.participant_identity, ctx.room),
+        **_capability_payload(ctx.participant_identity, ctx.room),
+    }
+    if result.success:
+        return ActionResult(success=True, message=f"Codex concluiu a tarefa em {record.name}.", data=data)
+    return ActionResult(
+        success=False,
+        message=f"Codex falhou na tarefa em {record.name}.",
+        data=data,
+        error=task.error,
+    )
+
+
+async def _codex_exec_task_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    return await _run_codex_task(
+        params=params,
+        ctx=ctx,
+        default_request="Analise o projeto atual e explique o estado tecnico com proximos passos.",
+        review_mode=False,
+    )
+
+
+async def _codex_exec_review_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    return await _run_codex_task(
+        params=params,
+        ctx=ctx,
+        default_request="Revise o estado atual do projeto e destaque riscos e pontos de atencao sem editar arquivos.",
+        review_mode=True,
+    )
+
+
+async def _codex_exec_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    task = get_active_codex_task(ctx.participant_identity, ctx.room)
+    if task is None:
+        return ActionResult(
+            success=False,
+            message="Nenhuma tarefa do Codex na sessao.",
+            data={"codex_task": None, "codex_history": _codex_history_payload(ctx.participant_identity, ctx.room)},
+            error="no codex task",
+        )
+    return ActionResult(
+        success=True,
+        message=f"Tarefa do Codex em estado {task.status}.",
+        data={
+            "codex_task": _codex_task_to_payload(task),
+            "codex_history": _codex_history_payload(ctx.participant_identity, ctx.room),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _codex_cancel_task_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    key = _codex_key(ctx.participant_identity, ctx.room)
+    process = CODEX_RUNNING_PROCESSES.get(key)
+    task = get_active_codex_task(ctx.participant_identity, ctx.room)
+    if process is None or task is None or task.status != "running":
+        return ActionResult(success=False, message="Nenhuma tarefa do Codex em andamento.", error="no running task")
+
+    process.terminate()
+    task.status = "cancelled"
+    task.finished_at = _now_iso()
+    task.current_phase = "cancelled"
+    task.summary = "Tarefa cancelada pelo usuario."
+    task.error = None
+    CODEX_RUNNING_PROCESSES.pop(key, None)
+    _push_codex_history(ctx.participant_identity, ctx.room, task)
+    await _emit_codex_task_event(
+        ctx,
+        event_type="codex_task_cancelled",
+        task=task,
+        phase="cancelled",
+        message=task.summary,
+    )
+    return ActionResult(
+        success=True,
+        message="Tarefa do Codex cancelada.",
+        data={
+            "codex_task": _codex_task_to_payload(task),
+            "codex_history": _codex_history_payload(ctx.participant_identity, ctx.room),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _skills_list_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    feature_error = _require_feature("skills_v1")
+    if feature_error is not None:
+        return feature_error
+    query = str(params.get("query", "")).strip() or None
+    refresh = bool(params.get("refresh", False))
+    items = list_skills(query=query, refresh=refresh)
+    payload = [item.to_payload() for item in items]
+    return ActionResult(
+        success=True,
+        message=f"Encontrei {len(payload)} skill(s) disponiveis.",
+        data={
+            "skills": payload,
+            "skills_total": len(payload),
+            "query": query,
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _skills_read_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    feature_error = _require_feature("skills_v1")
+    if feature_error is not None:
+        return feature_error
+    skill_id = str(params.get("skill_id", "")).strip() or None
+    skill_name = str(params.get("skill_name", "")).strip() or None
+    doc = get_skill(skill_id=skill_id, skill_name=skill_name)
+    if doc is None:
+        return ActionResult(
+            success=False,
+            message="Skill nao encontrada. Use skills_list para conferir os ids.",
+            error="skill not found",
+        )
+    return ActionResult(
+        success=True,
+        message=f"Skill carregada: {doc.metadata.name}.",
+        data={
+            "skill_document": doc.to_payload(),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _orchestrate_task_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    feature_error = _require_feature("multi_model_router_v1")
+    if feature_error is not None:
+        return feature_error
+    request_text = (
+        str(params.get("request", "")).strip()
+        or str(params.get("query", "")).strip()
+        or str(params.get("prompt", "")).strip()
+    )
+    if not request_text:
+        return ActionResult(success=False, message="Descreva a tarefa para orquestrar.", error="missing request")
+
+    plan = build_task_plan(request_text)
+    task_type: TaskType = plan.task_type
+    risk = classify_action_risk(str(params.get("action_hint", "")).strip() or "orchestrate_task")
+    response_text, route_decision = route_orchestration(request=request_text, task_type=task_type, risk=risk)
+    orchestration_payload = {
+        "request": request_text,
+        "task_plan": plan.to_payload(),
+        "model_route": route_decision.to_payload(),
+        "response_preview": response_text,
+    }
+    return ActionResult(
+        success=True,
+        message=f"Tarefa orquestrada com provider {route_decision.used_provider}.",
+        data={
+            "orchestration": orchestration_payload,
+            "model_route": route_decision.to_payload(),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+        evidence={
+            "provider": route_decision.used_provider,
+            "request_id": route_decision.generated_at,
+            "executed_at": _now_iso(),
+        },
+        fallback_used=route_decision.fallback_used,
+    )
+
+
+async def _subagent_spawn_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    feature_error = _require_feature("subagents_v1")
+    if feature_error is not None:
+        return feature_error
+    request_text = str(params.get("request", "")).strip()
+    if not request_text:
+        return ActionResult(success=False, message="Descreva a tarefa do subagente.", error="missing request")
+    plan = build_task_plan(request_text)
+    risk = classify_action_risk(str(params.get("action_hint", "")).strip() or "subagent_spawn")
+    primary_provider, fallback_provider = preview_route(plan.task_type, risk)
+    state = spawn_subagent(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        request=request_text,
+        task_type=plan.task_type,
+        risk=risk,
+        route_provider=primary_provider,
+        initial_summary="Subagente iniciado.",
+    )
+    wait_for_completion_raw = params.get("wait_for_completion")
+    if isinstance(wait_for_completion_raw, bool):
+        wait_for_completion = wait_for_completion_raw
+    else:
+        wait_for_completion = bool(params.get("auto_complete", False))
+
+    route_payload: JsonObject = {
+        "task_type": plan.task_type,
+        "risk": risk,
+        "primary_provider": primary_provider,
+        "fallback_provider": fallback_provider,
+        "used_provider": primary_provider,
+        "fallback_used": False,
+        "reason": "Subagente enfileirado para execucao assincrona.",
+        "generated_at": _now_iso(),
+    }
+    fallback_used = False
+
+    async def _runner() -> str:
+        text, decision = route_orchestration(request=request_text, task_type=plan.task_type, risk=risk)
+        state.route_provider = decision.used_provider
+        state.updated_at = _now_iso()
+        return text[:1200]
+
+    if wait_for_completion:
+        response_text, route_decision = route_orchestration(request=request_text, task_type=plan.task_type, risk=risk)
+        state.route_provider = route_decision.used_provider
+        completed = complete_subagent(
+            participant_identity=ctx.participant_identity,
+            room=ctx.room,
+            subagent_id=state.subagent_id,
+            summary=response_text[:1200],
+        )
+        if completed is not None:
+            state = completed
+        route_payload = route_decision.to_payload()
+        fallback_used = route_decision.fallback_used
+    else:
+        start_subagent_task(
+            participant_identity=ctx.participant_identity,
+            room=ctx.room,
+            state=state,
+            runner=_runner,
+        )
+
+    return ActionResult(
+        success=True,
+        message=f"Subagente {state.subagent_id} em estado {state.status}.",
+        data={
+            "subagent_state": state.to_payload(),
+            "subagent_states": [item.to_payload() for item in list_subagents(participant_identity=ctx.participant_identity, room=ctx.room)],
+            "model_route": route_payload,
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+        evidence={
+            "provider": state.route_provider or primary_provider,
+            "request_id": state.subagent_id,
+            "executed_at": _now_iso(),
+        },
+        fallback_used=fallback_used,
+    )
+
+
+async def _subagent_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    feature_error = _require_feature("subagents_v1")
+    if feature_error is not None:
+        return feature_error
+    subagent_id = str(params.get("subagent_id", "")).strip()
+    if subagent_id:
+        target = None
+        for item in list_subagents(participant_identity=ctx.participant_identity, room=ctx.room):
+            if item.subagent_id == subagent_id:
+                target = item
+                break
+        if target is None:
+            return ActionResult(success=False, message="Subagente nao encontrado.", error="subagent not found")
+        return ActionResult(
+            success=True,
+            message=f"Subagente {target.subagent_id} em estado {target.status}.",
+            data={"subagent_state": target.to_payload()},
+        )
+
+    states = [item.to_payload() for item in list_subagents(participant_identity=ctx.participant_identity, room=ctx.room)]
+    return ActionResult(
+        success=True,
+        message=f"{len(states)} subagente(s) neste contexto.",
+        data={"subagent_states": states},
+    )
+
+
+async def _subagent_cancel_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    feature_error = _require_feature("subagents_v1")
+    if feature_error is not None:
+        return feature_error
+    subagent_id = str(params.get("subagent_id", "")).strip()
+    if not subagent_id:
+        return ActionResult(success=False, message="Informe o subagent_id para cancelar.", error="missing subagent id")
+    cancelled = cancel_subagent(participant_identity=ctx.participant_identity, room=ctx.room, subagent_id=subagent_id)
+    if cancelled is None:
+        return ActionResult(success=False, message="Subagente nao encontrado.", error="subagent not found")
+    return ActionResult(
+        success=True,
+        message=f"Subagente {cancelled.subagent_id} cancelado.",
+        data={
+            "subagent_state": cancelled.to_payload(),
+            "subagent_states": [item.to_payload() for item in list_subagents(participant_identity=ctx.participant_identity, room=ctx.room)],
+        },
+    )
+
+
+async def _policy_explain_decision_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    feature_error = _require_feature("policy_v1")
+    if feature_error is not None:
+        return feature_error
+    action_name = str(params.get("action_name", "")).strip()
+    if not action_name:
+        return ActionResult(success=False, message="Informe o nome da action para analisar politica.", error="missing action name")
+    spec = get_action(action_name)
+    risk = classify_action_risk(action_name)
+    domain = infer_action_domain(action_name)
+    domain_trust = get_domain_trust(domain)
+    trust_drift = get_trust_drift(ctx.participant_identity, ctx.room, domain)
+    mode = get_autonomy_mode(ctx.participant_identity, ctx.room)
+    domain_details = get_domain_autonomy_details(ctx.participant_identity, ctx.room, domain) or {}
+    domain_mode = get_domain_autonomy_mode(ctx.participant_identity, ctx.room, domain)
+    effective_mode = get_effective_autonomy_mode(ctx.participant_identity, ctx.room, domain=domain)
+    blocked, reason = is_blocked(domain=_action_domain(action_name))
+    policy_eval = evaluate_policy(
+        risk=risk,
+        mode=effective_mode,
+        requires_confirmation=bool(spec.requires_confirmation) if spec is not None else False,
+        kill_switch_active=blocked,
+        kill_switch_reason=reason,
+        domain=domain,
+        domain_trust_score=domain_trust.score,
+        trust_drift_active=bool(trust_drift and trust_drift.active),
+        trust_drift_reason=trust_drift.reason if trust_drift is not None else None,
+    )
+    payload = {
+        "action_name": action_name,
+        "domain": domain,
+        "domain_trust": domain_trust.to_payload(),
+        "trust_drift": trust_drift.to_payload() if trust_drift is not None else None,
+        "risk": risk,
+        "autonomy_mode": mode,
+        "effective_autonomy_mode": effective_mode,
+        "domain_autonomy_mode": domain_mode,
+        "domain_autonomy_reason": str(domain_details.get("reason") or "") or None,
+        "domain_autonomy_source": str(domain_details.get("source") or "") or None,
+        "domain_autonomy_updated_at": str(domain_details.get("updated_at") or "") or None,
+        "decision": policy_eval.decision,
+        "reason": policy_eval.reason,
+        "kill_switch": get_killswitch_status().to_payload(),
+    }
+    return ActionResult(success=True, message=f"Politica para {action_name}: {policy_eval.decision}.", data={"policy": payload})
+
+
+async def _autonomy_set_mode_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    feature_error = _require_feature("policy_v1")
+    if feature_error is not None:
+        return feature_error
+    mode = str(params.get("mode", "")).strip().lower()
+    if not mode:
+        return ActionResult(success=False, message="Informe o modo de autonomia.", error="missing mode")
+    if mode not in ALLOWED_AUTONOMY_MODES:
+        return ActionResult(
+            success=False,
+            message=f"Modo invalido. Use: {', '.join(sorted(ALLOWED_AUTONOMY_MODES))}.",
+            error="invalid mode",
+        )
+    applied = set_autonomy_mode(ctx.participant_identity, ctx.room, mode)
+    return ActionResult(
+        success=True,
+        message=f"Modo de autonomia ajustado para {applied}.",
+        data={
+            "autonomy_mode": applied,
+            "kill_switch": get_killswitch_status().to_payload(),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _autonomy_killswitch_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    feature_error = _require_feature("policy_v1")
+    if feature_error is not None:
+        return feature_error
+    operation = str(params.get("operation", "status")).strip().lower()
+    domain = str(params.get("domain", "")).strip().lower()
+    reason = str(params.get("reason", "")).strip() or None
+    if operation == "enable":
+        state = set_killswitch_global(True, reason=reason)
+    elif operation == "disable":
+        state = set_killswitch_global(False, reason=None)
+    elif operation == "enable_domain":
+        if not domain:
+            return ActionResult(success=False, message="Informe `domain` para enable_domain.", error="missing domain")
+        state = set_killswitch_domain(domain, True, reason=reason)
+    elif operation == "disable_domain":
+        if not domain:
+            return ActionResult(success=False, message="Informe `domain` para disable_domain.", error="missing domain")
+        state = set_killswitch_domain(domain, False)
+    else:
+        state = get_killswitch_status()
+
+    return ActionResult(
+        success=True,
+        message="Kill switch atualizado.",
+        data={
+            "kill_switch": state.to_payload(),
+            "autonomy_mode": get_autonomy_mode(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _policy_action_risk_matrix_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    query = str(params.get("query", "")).strip().lower()
+    include_internal = bool(params.get("include_internal", False))
+    rows: list[JsonObject] = []
+    for spec in ACTION_REGISTRY.values():
+        if not include_internal and not spec.expose_to_model:
+            continue
+        risk = classify_action_risk(spec.name)
+        domain = infer_action_domain(spec.name)
+        domain_trust = get_domain_trust(domain)
+        row: JsonObject = {
+            "action_name": spec.name,
+            "risk": risk,
+            "requires_confirmation": spec.requires_confirmation,
+            "requires_auth": spec.requires_auth,
+            "expose_to_model": spec.expose_to_model,
+            "domain": domain,
+            "domain_trust_score": round(domain_trust.score, 4),
+        }
+        if query:
+            haystack = f"{spec.name} {risk} {domain}".lower()
+            if query not in haystack:
+                continue
+        rows.append(row)
+    rows.sort(key=lambda item: (str(item.get("risk", "")), str(item.get("action_name", ""))))
+    return ActionResult(
+        success=True,
+        message=f"Matriz de risco com {len(rows)} action(s).",
+        data={
+            "risk_matrix": rows,
+            "query": query or None,
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _policy_domain_trust_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    domain = str(params.get("domain", "")).strip().lower()
+    if domain:
+        snapshots = [get_domain_trust(domain)]
+    else:
+        snapshots = list_domain_trust()
+    drift_rows = {item.domain: item for item in list_trust_drift(ctx.participant_identity, ctx.room)}
+    domain_mode_rows = {
+        str(item.get("domain") or ""): item
+        for item in list_domain_autonomy_modes(ctx.participant_identity, ctx.room)
+        if isinstance(item, dict)
+    }
+    rows: list[JsonObject] = []
+    for snapshot in snapshots:
+        row = snapshot.to_payload()
+        drift = drift_rows.get(snapshot.domain)
+        domain_details = domain_mode_rows.get(snapshot.domain, {})
+        row["trust_drift_active"] = bool(drift and drift.active)
+        row["trust_drift"] = drift.to_payload() if drift is not None else None
+        row["autonomy_mode"] = get_autonomy_mode(ctx.participant_identity, ctx.room)
+        row["domain_autonomy_mode"] = str(domain_details.get("mode") or "") or None
+        row["effective_autonomy_mode"] = get_effective_autonomy_mode(
+            ctx.participant_identity,
+            ctx.room,
+            domain=snapshot.domain,
+        )
+        row["domain_autonomy_reason"] = str(domain_details.get("reason") or "") or None
+        row["domain_autonomy_source"] = str(domain_details.get("source") or "") or None
+        row["domain_autonomy_updated_at"] = str(domain_details.get("updated_at") or "") or None
+        rows.append(row)
+    return ActionResult(
+        success=True,
+        message=f"Trust score em {len(rows)} dominio(s).",
+        data={
+            "domain_trust": rows,
+            "domain": domain or None,
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _policy_trust_drift_report_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    rows_param = params.get("rows")
+    if rows_param is None:
+        rows: list[JsonObject] = []
+    elif isinstance(rows_param, list):
+        rows = [item for item in rows_param if isinstance(item, dict)]
+    else:
+        return ActionResult(
+            success=False,
+            message="`rows` precisa ser uma lista de objetos.",
+            error="invalid rows",
+        )
+    signature = str(params.get("signature", "")).strip() or None
+    updated = replace_trust_drift(
+        ctx.participant_identity,
+        ctx.room,
+        rows,
+        source="frontend",
+        signature=signature,
+    )
+    return ActionResult(
+        success=True,
+        message=f"Trust drift sincronizado para {len(updated)} dominio(s).",
+        data={
+            "trust_drift": [item.to_payload() for item in updated],
+            "signature": signature,
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _evals_list_scenarios_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    scenarios = [scenario.to_payload() for scenario in baseline_scenarios()]
+    return ActionResult(
+        success=True,
+        message=f"Suite baseline com {len(scenarios)} cenario(s).",
+        data={
+            "eval_scenarios": scenarios,
+            "eval_scenarios_total": len(scenarios),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _evals_run_baseline_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    feature_error = _require_feature("multi_model_router_v1")
+    if feature_error is not None:
+        return feature_error
+    task_type_raw = str(params.get("task_type", "unknown")).strip().lower()
+    forced_task_type: TaskType | None
+    if task_type_raw in {"chat", "code", "review", "research", "automation", "unknown"}:
+        forced_task_type = task_type_raw  # type: ignore[assignment]
+    else:
+        forced_task_type = None
+
+    executions: list[JsonObject] = []
+    success_count = 0
+    for scenario in baseline_scenarios():
+        task_plan = build_task_plan(scenario.prompt)
+        task_type = forced_task_type or task_plan.task_type
+        risk = "R1"
+        response_text, route_decision = route_orchestration(request=scenario.prompt, task_type=task_type, risk=risk)
+        passed = all(token in " ".join([response_text, json.dumps(route_decision.to_payload(), ensure_ascii=False)]) for token in scenario.expected)
+        if passed:
+            success_count += 1
+        executions.append(
+            {
+                "scenario_id": scenario.scenario_id,
+                "name": scenario.name,
+                "task_type": task_type,
+                "passed": passed,
+                "route": route_decision.to_payload(),
+                "response_preview": response_text[:280],
+            }
+        )
+
+    total = len(executions)
+    score = float(success_count) / float(total) if total else 0.0
+    summary = {
+        "total": total,
+        "passed": success_count,
+        "failed": max(total - success_count, 0),
+        "score": round(score, 4),
+        "ran_at": _now_iso(),
+    }
+    append_metric(
+        {
+            "type": "eval_baseline_run",
+            "summary": summary,
+            "executions": executions,
+            "participant_identity": ctx.participant_identity,
+            "room": ctx.room,
+        }
+    )
+    return ActionResult(
+        success=True,
+        message=f"Baseline executado: {success_count}/{total} cenarios passaram.",
+        data={
+            "eval_baseline_summary": summary,
+            "eval_baseline_results": executions,
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _evals_get_metrics_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    limit = int(params.get("limit", 30))
+    limit = max(1, min(limit, 200))
+    payload = read_metrics()
+    items = list(payload.get("items", []))[:limit]
+    return ActionResult(
+        success=True,
+        message=f"Retornei {len(items)} metrica(s).",
+        data={
+            "eval_metrics": items,
+            "eval_metrics_updated_at": payload.get("updated_at"),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _evals_metrics_summary_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    limit = int(params.get("limit", 300))
+    limit = max(10, min(limit, 1000))
+    payload = read_metrics()
+    items = list(payload.get("items", []))[:limit]
+    summary = summarize_action_metrics([item for item in items if isinstance(item, dict)])
+    return ActionResult(
+        success=True,
+        message="Resumo de metricas calculado.",
+        data={
+            "eval_metrics_summary": summary,
+            "eval_metrics_updated_at": payload.get("updated_at"),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _evals_slo_report_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    limit = int(params.get("limit", 400))
+    limit = max(20, min(limit, 1200))
+    payload = read_metrics()
+    items = list(payload.get("items", []))[:limit]
+    report = summarize_slo([item for item in items if isinstance(item, dict)])
+    return ActionResult(
+        success=True,
+        message="Relatorio de SLO calculado.",
+        data={
+            "slo_report": report,
+            "eval_metrics_updated_at": payload.get("updated_at"),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+def _collect_provider_health(*, include_ping: bool, ping_prompt: str) -> list[JsonObject]:
+    providers = build_provider_registry()
+    rows: list[JsonObject] = []
+    for provider_name, client in providers.items():
+        supports_tools = bool(getattr(client, "supports_tools", lambda: False)())
+        supports_realtime = bool(getattr(client, "supports_realtime", lambda: False)())
+        configured = provider_name == "local_mock"
+        if provider_name == "openai":
+            configured = bool(str(os.getenv("OPENAI_API_KEY", "")).strip())
+        elif provider_name == "anthropic":
+            configured = bool(str(os.getenv("ANTHROPIC_API_KEY", "")).strip())
+        elif provider_name == "google":
+            configured = bool(str(os.getenv("GOOGLE_API_KEY", "")).strip() or str(os.getenv("GEMINI_API_KEY", "")).strip())
+        health: JsonObject = {
+            "provider": provider_name,
+            "configured": configured,
+            "supports_tools": supports_tools,
+            "supports_realtime": supports_realtime,
+            "status": "ok" if configured else "missing_config",
+        }
+        if include_ping:
+            try:
+                response_text, error = client.generate_text(ping_prompt)  # type: ignore[attr-defined]
+                if response_text:
+                    health["ping_ok"] = True
+                    health["status"] = "ok"
+                    health["ping_preview"] = response_text[:120]
+                else:
+                    health["ping_ok"] = False
+                    health["status"] = "degraded"
+                    health["error"] = error or "empty response"
+            except Exception as error:  # noqa: BLE001
+                health["ping_ok"] = False
+                health["status"] = "degraded"
+                health["error"] = str(error)
+        rows.append(health)
+
+    rows.sort(key=lambda item: str(item.get("provider", "")))
+    return rows
+
+
+def _summarize_canary_cohorts(metrics_items: list[dict[str, Any]]) -> JsonObject:
+    cohorts: dict[str, dict[str, int]] = {
+        "canary": {"total": 0, "success": 0, "failed": 0},
+        "stable": {"total": 0, "success": 0, "failed": 0},
+    }
+    for item in metrics_items:
+        if item.get("type") != "action_result":
+            continue
+        payload = item.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        cohort = str(payload.get("canary_cohort") or "stable").strip().lower()
+        if cohort not in cohorts:
+            cohort = "stable"
+        success = bool(payload.get("success"))
+        entry = cohorts[cohort]
+        entry["total"] += 1
+        if success:
+            entry["success"] += 1
+        else:
+            entry["failed"] += 1
+
+    def _with_rate(entry: dict[str, int]) -> JsonObject:
+        total = int(entry.get("total", 0))
+        success = int(entry.get("success", 0))
+        rate = (float(success) / float(total)) if total else 0.0
+        return {
+            "total": total,
+            "success": success,
+            "failed": int(entry.get("failed", 0)),
+            "success_rate": round(rate, 4),
+        }
+
+    return {
+        "canary": _with_rate(cohorts["canary"]),
+        "stable": _with_rate(cohorts["stable"]),
+    }
+
+
+def _build_domain_autonomy_audit_rows(
+    *,
+    participant_identity: str,
+    room: str,
+    metrics_summary: JsonObject | None = None,
+    domain_mode_rows_override: list[JsonObject] | None = None,
+    autonomy_mode_override: str | None = None,
+) -> list[JsonObject]:
+    metrics_summary = metrics_summary if isinstance(metrics_summary, dict) else {}
+    autonomy_notice = (
+        metrics_summary.get("autonomy_notice")
+        if isinstance(metrics_summary.get("autonomy_notice"), dict)
+        else {}
+    )
+    unconfirmed_by_domain = (
+        autonomy_notice.get("unconfirmed_by_domain")
+        if isinstance(autonomy_notice.get("unconfirmed_by_domain"), dict)
+        else {}
+    )
+    trust_drift_by_domain = {
+        item.domain: item
+        for item in list_trust_drift(participant_identity, room)
+        if getattr(item, "domain", None)
+    }
+    domain_mode_rows = {
+        str(item.get("domain") or ""): item
+        for item in (
+            domain_mode_rows_override
+            if isinstance(domain_mode_rows_override, list)
+            else list_domain_autonomy_modes(participant_identity, room)
+        )
+        if isinstance(item, dict) and str(item.get("domain") or "")
+    }
+    known_domains = set(domain_mode_rows.keys()) | set(trust_drift_by_domain.keys()) | set(
+        str(key).strip().lower()
+        for key, value in dict(unconfirmed_by_domain).items()
+        if str(key).strip() and int(value or 0) > 0
+    )
+    known_domains.update(snapshot.domain for snapshot in list_domain_trust())
+    base_mode = autonomy_mode_override or get_autonomy_mode(participant_identity, room)
+    rows: list[JsonObject] = []
+    for domain in sorted(known_domains):
+        details = domain_mode_rows.get(domain, {})
+        trust_drift = trust_drift_by_domain.get(domain)
+        unconfirmed_total = int(dict(unconfirmed_by_domain).get(domain) or 0)
+        domain_mode = str(details.get("mode") or "").strip().lower() or None
+        if isinstance(domain_mode_rows_override, list) or autonomy_mode_override is not None:
+            if base_mode == "manual" or domain_mode == "manual":
+                effective_mode = "manual"
+            elif domain_mode == "safe":
+                effective_mode = "safe"
+            else:
+                effective_mode = base_mode
+        else:
+            effective_mode = get_effective_autonomy_mode(participant_identity, room, domain=domain)
+        reasons: list[str] = []
+        detail_reason = str(details.get("reason") or "").strip()
+        if detail_reason:
+            reasons.append(detail_reason)
+        if bool(trust_drift and trust_drift.active):
+            reasons.append("trust_drift_active")
+        if unconfirmed_total > 0:
+            reasons.append("autonomy_notice_delivery_unconfirmed")
+        if not reasons and effective_mode != base_mode:
+            reasons.append("global_autonomy_mode")
+        rows.append(
+            {
+                "domain": domain,
+                "autonomy_mode": base_mode,
+                "domain_autonomy_mode": domain_mode,
+                "effective_autonomy_mode": effective_mode,
+                "domain_autonomy_active": bool(domain_mode),
+                "containment_reason": reasons[0] if reasons else None,
+                "containment_reasons": reasons,
+                "containment_source": (
+                    str(details.get("source") or "").strip()
+                    or ("ops_auto_remediation" if unconfirmed_total > 0 else None)
+                    or ("policy" if bool(trust_drift and trust_drift.active) else None)
+                ),
+                "domain_autonomy_updated_at": str(details.get("updated_at") or "").strip() or None,
+                "trust_drift_active": bool(trust_drift and trust_drift.active),
+                "autonomy_notice_unconfirmed": unconfirmed_total,
+            }
+        )
+    return rows
+
+
+def _build_ops_incident_snapshot(
+    *,
+    participant_identity: str,
+    room: str,
+    include_ping: bool,
+    ping_prompt: str,
+    metrics_limit: int,
+) -> JsonObject:
+    metrics_limit = max(20, min(metrics_limit, 1200))
+    payload = read_metrics()
+    items = list(payload.get("items", []))[:metrics_limit]
+    metrics_items = [item for item in items if isinstance(item, dict)]
+    metrics_summary = summarize_action_metrics(metrics_items)
+    slo_report = summarize_slo(metrics_items)
+    providers_health = _collect_provider_health(include_ping=include_ping, ping_prompt=ping_prompt)
+    feature_flags = _feature_flags_snapshot()
+    kill_switch = get_killswitch_status().to_payload()
+    autonomy_mode = get_autonomy_mode(participant_identity, room)
+    domain_autonomy_modes = list_domain_autonomy_modes(participant_identity, room)
+    canary_state = _canary_state_payload(participant_identity, room)
+    canary_metrics = _summarize_canary_cohorts(metrics_items)
+    trust_drift_rows = [item.to_payload() for item in list_trust_drift(participant_identity, room)]
+    domain_autonomy_status = _build_domain_autonomy_audit_rows(
+        participant_identity=participant_identity,
+        room=room,
+        metrics_summary=metrics_summary,
+    )
+
+    alerts: list[str] = []
+    reliability = slo_report.get("reliability")
+    latency = slo_report.get("latency")
+    if isinstance(reliability, dict):
+        low_risk_success = float(reliability.get("low_risk_success_rate") or 0.0)
+        false_success_rate = float(reliability.get("false_success_proxy_rate") or 0.0)
+        autonomy_notice_browser_tts_rate = float(
+            reliability.get("autonomy_notice_browser_tts_rate") or 0.0
+        )
+        autonomy_notice_unconfirmed_rate = float(
+            reliability.get("autonomy_notice_unconfirmed_rate") or 0.0
+        )
+        if false_success_rate > 0.0:
+            alerts.append(
+                f"false_success_proxy_rate acima de 0 ({round(false_success_rate * 100, 2)}%)."
+            )
+        if low_risk_success < 0.95:
+            alerts.append(
+                f"low_risk_success_rate abaixo de 95% ({round(low_risk_success * 100, 2)}%)."
+            )
+        if autonomy_notice_browser_tts_rate > 0.0:
+            alerts.append(
+                "autonomy_notice entregue por browser_tts em "
+                f"{round(autonomy_notice_browser_tts_rate * 100, 2)}% dos casos."
+            )
+        if autonomy_notice_unconfirmed_rate > 0.0:
+            alerts.append(
+                "autonomy_notice sem confirmacao de entrega em "
+                f"{round(autonomy_notice_unconfirmed_rate * 100, 2)}% dos casos."
+            )
+    if isinstance(latency, dict):
+        fallback_p95 = int(latency.get("fallback_p95_ms") or 0)
+        if fallback_p95 > 3000:
+            alerts.append(f"fallback_p95_ms acima da meta ({fallback_p95}ms).")
+    if trust_drift_rows:
+        alerts.append(f"trust_drift ativo em {len(trust_drift_rows)} dominio(s).")
+    for row in providers_health:
+        if str(row.get("status") or "") != "ok":
+            alerts.append(
+                f"provider {str(row.get('provider') or 'unknown')} com status {str(row.get('status') or 'unknown')}."
+            )
+    canary_row = canary_metrics.get("canary")
+    if isinstance(canary_row, dict):
+        canary_total = int(canary_row.get("total") or 0)
+        canary_success_rate = float(canary_row.get("success_rate") or 0.0)
+        if canary_total >= 10 and canary_success_rate < 0.9:
+            alerts.append(
+                f"canary success_rate abaixo de 90% ({round(canary_success_rate * 100, 2)}%)."
+            )
+
+    return {
+        "generated_at": _now_iso(),
+        "autonomy_mode": autonomy_mode,
+        "domain_autonomy_modes": domain_autonomy_modes,
+        "domain_autonomy_status": domain_autonomy_status,
+        "feature_flags": feature_flags,
+        "canary_state": canary_state,
+        "canary_metrics": canary_metrics,
+        "kill_switch": kill_switch,
+        "providers_health": providers_health,
+        "trust_drift": {
+            "active_total": len(trust_drift_rows),
+            "domains": trust_drift_rows,
+        },
+        "autonomy_notice": metrics_summary.get("autonomy_notice"),
+        "metrics_summary": metrics_summary,
+        "slo_report": slo_report,
+        "alerts": alerts,
+    }
+
+
+async def _providers_health_check_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    include_ping = bool(params.get("include_ping", False))
+    ping_prompt = str(params.get("ping_prompt", "")).strip() or "Responda apenas: ok"
+    rows = _collect_provider_health(include_ping=include_ping, ping_prompt=ping_prompt)
+    return ActionResult(
+        success=True,
+        message=f"Health check de {len(rows)} provider(s) concluido.",
+        data={
+            "providers_health": rows,
+            "feature_flags": _feature_flags_snapshot(),
+            "canary_state": _canary_state_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _ops_incident_snapshot_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    include_ping = bool(params.get("include_ping", False))
+    ping_prompt = str(params.get("ping_prompt", "")).strip() or "Responda apenas: ok"
+    metrics_limit = int(params.get("metrics_limit", 300))
+    snapshot = _build_ops_incident_snapshot(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        include_ping=include_ping,
+        ping_prompt=ping_prompt,
+        metrics_limit=metrics_limit,
+    )
+    return ActionResult(
+        success=True,
+        message="Snapshot operacional gerado.",
+        data={
+            "ops_incident_snapshot": snapshot,
+            "canary_state": snapshot.get("canary_state"),
+            "autonomy_mode": snapshot.get("autonomy_mode"),
+            "feature_flags": snapshot.get("feature_flags"),
+            "kill_switch": snapshot.get("kill_switch"),
+            "providers_health": snapshot.get("providers_health"),
+            "eval_metrics_summary": snapshot.get("metrics_summary"),
+            "slo_report": snapshot.get("slo_report"),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _ops_canary_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    metrics_limit = int(params.get("metrics_limit", 300))
+    snapshot = _build_ops_incident_snapshot(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        include_ping=False,
+        ping_prompt="Responda apenas: ok",
+        metrics_limit=metrics_limit,
+    )
+    canary_state = snapshot.get("canary_state") if isinstance(snapshot.get("canary_state"), dict) else {}
+    return ActionResult(
+        success=True,
+        message=(
+            f"Canario {'ativo' if bool(canary_state.get('active')) else 'inativo'} "
+            f"para a sessao ({str(canary_state.get('cohort') or 'stable')})."
+        ),
+        data={
+            "canary_state": canary_state,
+            "ops_incident_snapshot": snapshot,
+            "feature_flags": snapshot.get("feature_flags"),
+            "eval_metrics_summary": snapshot.get("metrics_summary"),
+            "slo_report": snapshot.get("slo_report"),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _ops_canary_set_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    operation = str(params.get("operation", "")).strip().lower()
+    allowed = {"enroll", "unenroll", "enable_global", "disable_global"}
+    if operation not in allowed:
+        return ActionResult(
+            success=False,
+            message=f"Operacao invalida. Opcoes: {', '.join(sorted(allowed))}.",
+            error="invalid operation",
+        )
+
+    if operation == "enroll":
+        _set_canary_session_enrollment(ctx.participant_identity, ctx.room, enrolled=True)
+    elif operation == "unenroll":
+        _set_canary_session_enrollment(ctx.participant_identity, ctx.room, enrolled=False)
+    elif operation == "enable_global":
+        _set_runtime_feature_override("canary_v1", True)
+    elif operation == "disable_global":
+        _set_runtime_feature_override("canary_v1", False)
+
+    snapshot = _build_ops_incident_snapshot(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        include_ping=False,
+        ping_prompt="Responda apenas: ok",
+        metrics_limit=300,
+    )
+    canary_state = snapshot.get("canary_state") if isinstance(snapshot.get("canary_state"), dict) else {}
+    return ActionResult(
+        success=True,
+        message=f"Canario atualizado via `{operation}`.",
+        data={
+            "canary_state": canary_state,
+            "ops_incident_snapshot": snapshot,
+            "feature_flags": snapshot.get("feature_flags"),
+            "eval_metrics_summary": snapshot.get("metrics_summary"),
+            "slo_report": snapshot.get("slo_report"),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+def _rollout_step_percent(current: int, *, direction: str) -> int:
+    ladder = [0, 10, 25, 50, 100]
+    normalized = max(0, min(100, int(current)))
+    if direction == "up":
+        for target in ladder:
+            if target > normalized:
+                return target
+        return 100
+    for target in reversed(ladder):
+        if target < normalized:
+            return target
+    return 0
+
+
+async def _ops_canary_rollout_set_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    operation = str(params.get("operation", "")).strip().lower()
+    percent_param = params.get("percent")
+    dry_run = bool(params.get("dry_run", False))
+    allowed = {"set_percent", "step_up", "step_down", "pause", "resume"}
+    if operation not in allowed:
+        return ActionResult(
+            success=False,
+            message=f"Operacao invalida. Opcoes: {', '.join(sorted(allowed))}.",
+            error="invalid operation",
+        )
+
+    current_percent = _get_canary_rollout_percent()
+    next_percent = current_percent
+    before_enabled = _is_feature_enabled("canary_v1", default=False)
+    next_enabled = before_enabled
+
+    if operation == "set_percent":
+        if not isinstance(percent_param, int):
+            return ActionResult(success=False, message="Informe `percent` (0..100).", error="missing percent")
+        next_percent = max(0, min(100, int(percent_param)))
+        if next_percent > 0:
+            next_enabled = True
+    elif operation == "step_up":
+        next_percent = _rollout_step_percent(current_percent, direction="up")
+        if next_percent > 0:
+            next_enabled = True
+    elif operation == "step_down":
+        next_percent = _rollout_step_percent(current_percent, direction="down")
+    elif operation == "pause":
+        next_enabled = False
+    elif operation == "resume":
+        next_enabled = True
+        if current_percent <= 0:
+            next_percent = 10
+
+    if not dry_run:
+        _set_canary_rollout_percent(next_percent)
+        _set_runtime_feature_override("canary_v1", next_enabled)
+
+    snapshot = _build_ops_incident_snapshot(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        include_ping=False,
+        ping_prompt="Responda apenas: ok",
+        metrics_limit=300,
+    )
+    canary_state = snapshot.get("canary_state") if isinstance(snapshot.get("canary_state"), dict) else {}
+    report: JsonObject = {
+        "playbook": "canary_rollout",
+        "dry_run": dry_run,
+        "applied": not dry_run,
+        "changes": [
+            {
+                "type": "canary_rollout",
+                "target": "rollout_percent",
+                "from": current_percent,
+                "to": next_percent,
+                "note": f"Operacao {operation}",
+            },
+            {
+                "type": "feature_flag_override",
+                "target": "canary_v1",
+                "from": before_enabled,
+                "to": next_enabled if dry_run else bool(_is_feature_enabled("canary_v1", default=False)),
+                "note": "Controle global de canario.",
+            },
+        ],
+        "generated_at": _now_iso(),
+    }
+    return ActionResult(
+        success=True,
+        message=f"Rollout canario {'simulado' if dry_run else 'atualizado'} via `{operation}`.",
+        data={
+            "ops_playbook_report": report,
+            "canary_state": canary_state,
+            "ops_incident_snapshot": snapshot,
+            "feature_flags": snapshot.get("feature_flags"),
+            "eval_metrics_summary": snapshot.get("metrics_summary"),
+            "slo_report": snapshot.get("slo_report"),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+def _ops_slo_signal(snapshot: JsonObject) -> JsonObject:
+    providers = snapshot.get("providers_health")
+    slo_report = snapshot.get("slo_report")
+    canary_metrics = snapshot.get("canary_metrics")
+    trust_drift = snapshot.get("trust_drift")
+    metrics_summary = snapshot.get("metrics_summary")
+    provider_outage = False
+    if isinstance(providers, list):
+        for row in providers:
+            if isinstance(row, dict) and str(row.get("status") or "ok") in {"degraded", "missing_config"}:
+                provider_outage = True
+                break
+
+    reliability_breach = False
+    latency_spike = False
+    canary_degraded = False
+    trust_drift_breach = False
+    autonomy_notice_delivery_breach = False
+    autonomy_notice_unconfirmed_rate = 0.0
+    autonomy_notice_delivery_domains: list[str] = []
+    trust_drift_active_domains: list[str] = []
+    reasons: list[str] = []
+    if isinstance(slo_report, dict):
+        reliability = slo_report.get("reliability")
+        latency = slo_report.get("latency")
+        if isinstance(reliability, dict):
+            false_success = float(reliability.get("false_success_proxy_rate") or 0.0)
+            low_risk = float(reliability.get("low_risk_success_rate") or 0.0)
+            autonomy_notice_unconfirmed_rate = float(
+                reliability.get("autonomy_notice_unconfirmed_rate") or 0.0
+            )
+            if false_success > 0.0:
+                reliability_breach = True
+                reasons.append(f"false_success_proxy_rate={round(false_success, 4)}")
+            if low_risk < 0.95:
+                reliability_breach = True
+                reasons.append(f"low_risk_success_rate={round(low_risk, 4)}")
+            if autonomy_notice_unconfirmed_rate > 0.0:
+                autonomy_notice_delivery_breach = True
+                reliability_breach = True
+                reasons.append(
+                    "autonomy_notice_unconfirmed_rate="
+                    f"{round(autonomy_notice_unconfirmed_rate, 4)}"
+                )
+        if isinstance(latency, dict):
+            fallback_p95 = int(latency.get("fallback_p95_ms") or 0)
+            if fallback_p95 > 3000:
+                latency_spike = True
+                reasons.append(f"fallback_p95_ms={fallback_p95}")
+    if isinstance(trust_drift, dict):
+        active_total = int(trust_drift.get("active_total") or 0)
+        domains = trust_drift.get("domains")
+        if isinstance(domains, list):
+            trust_drift_active_domains = [
+                str(row.get("domain") or "").strip()
+                for row in domains
+                if isinstance(row, dict) and str(row.get("domain") or "").strip()
+            ]
+        trust_drift_rate = 0.0
+        if isinstance(slo_report, dict):
+            reliability = slo_report.get("reliability")
+            if isinstance(reliability, dict):
+                trust_drift_rate = float(reliability.get("trust_drift_active_rate") or 0.0)
+        if active_total > 0:
+            trust_drift_breach = True
+            reasons.append(f"trust_drift_active_total={active_total}")
+            if trust_drift_rate > 0.0:
+                reasons.append(f"trust_drift_active_rate={round(trust_drift_rate, 4)}")
+    if isinstance(metrics_summary, dict):
+        autonomy_notice = metrics_summary.get("autonomy_notice")
+        if isinstance(autonomy_notice, dict):
+            unconfirmed_by_domain = autonomy_notice.get("unconfirmed_by_domain")
+            if isinstance(unconfirmed_by_domain, dict):
+                autonomy_notice_delivery_domains = sorted(
+                    [
+                        str(domain).strip().lower()
+                        for domain, total in unconfirmed_by_domain.items()
+                        if str(domain).strip() and int(total or 0) > 0
+                    ]
+                )
+    if isinstance(canary_metrics, dict):
+        row = canary_metrics.get("canary")
+        if isinstance(row, dict):
+            total = int(row.get("total") or 0)
+            success_rate = float(row.get("success_rate") or 0.0)
+            if total >= 10 and success_rate < 0.9:
+                canary_degraded = True
+                reasons.append(f"canary_success_rate={round(success_rate, 4)}")
+
+    scenario: str | None = None
+    if provider_outage:
+        scenario = "provider_outage"
+    elif trust_drift_breach:
+        scenario = "trust_drift_breach"
+    elif reliability_breach or canary_degraded:
+        scenario = "reliability_breach"
+    elif latency_spike:
+        scenario = "latency_spike"
+
+    return {
+        "provider_outage": provider_outage,
+        "reliability_breach": reliability_breach,
+        "latency_spike": latency_spike,
+        "canary_degraded": canary_degraded,
+        "trust_drift_breach": trust_drift_breach,
+        "autonomy_notice_delivery_breach": autonomy_notice_delivery_breach,
+        "autonomy_notice_unconfirmed_rate": round(autonomy_notice_unconfirmed_rate, 4),
+        "autonomy_notice_delivery_domains": autonomy_notice_delivery_domains,
+        "trust_drift_active_domains": trust_drift_active_domains,
+        "recommended_scenario": scenario,
+        "reasons": reasons,
+    }
+
+
+async def _ops_auto_remediate_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    dry_run = bool(params.get("dry_run", True))
+    force = bool(params.get("force", False))
+    domain = str(params.get("domain", "")).strip().lower()
+    metrics_limit = int(params.get("metrics_limit", 400))
+    cooldown_seconds = int(
+        params.get("cooldown_seconds", int(str(os.getenv("JARVEZ_AUTO_REMEDIATION_COOLDOWN_SECONDS", "180"))))
+    )
+    cooldown_seconds = max(30, min(cooldown_seconds, 3600))
+
+    snapshot = _build_ops_incident_snapshot(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        include_ping=False,
+        ping_prompt="Responda apenas: ok",
+        metrics_limit=metrics_limit,
+    )
+    signal = _ops_slo_signal(snapshot)
+    scenario = str(signal.get("recommended_scenario") or "").strip()
+    signal_domains = signal.get("trust_drift_active_domains") if isinstance(signal.get("trust_drift_active_domains"), list) else []
+    notice_delivery_domains = (
+        signal.get("autonomy_notice_delivery_domains")
+        if isinstance(signal.get("autonomy_notice_delivery_domains"), list)
+        else []
+    )
+    resolved_domain = domain
+    if (
+        not resolved_domain
+        and scenario == "trust_drift_breach"
+        and len(signal_domains) == 1
+        and isinstance(signal_domains[0], str)
+        and signal_domains[0].strip()
+    ):
+        resolved_domain = str(signal_domains[0]).strip().lower()
+    if (
+        not resolved_domain
+        and scenario == "reliability_breach"
+        and bool(signal.get("autonomy_notice_delivery_breach"))
+        and len(notice_delivery_domains) == 1
+        and isinstance(notice_delivery_domains[0], str)
+        and notice_delivery_domains[0].strip()
+    ):
+        resolved_domain = str(notice_delivery_domains[0]).strip().lower()
+    now_ts = time.time()
+    room_key = _canary_key(ctx.participant_identity, ctx.room)
+    last_run = float(AUTO_REMEDIATION_LAST_EXECUTION.get(room_key, 0.0))
+    remaining_cooldown = max(0, int(cooldown_seconds - (now_ts - last_run)))
+
+    if not scenario and not force:
+        return ActionResult(
+            success=True,
+            message="Sem violacao de SLO para auto-remediacao.",
+            data={
+                "ops_auto_remediation": {
+                    "executed": False,
+                    "dry_run": dry_run,
+                    "reason": "no signal",
+                    "signal": signal,
+                    "cooldown_remaining_seconds": remaining_cooldown,
+                    "generated_at": _now_iso(),
+                },
+                "ops_incident_snapshot": snapshot,
+                "canary_state": snapshot.get("canary_state"),
+                "feature_flags": snapshot.get("feature_flags"),
+                "kill_switch": snapshot.get("kill_switch"),
+                "eval_metrics_summary": snapshot.get("metrics_summary"),
+                "slo_report": snapshot.get("slo_report"),
+                **_capability_payload(ctx.participant_identity, ctx.room),
+            },
+        )
+
+    if force and not scenario:
+        scenario = "reliability_breach"
+
+    if not dry_run and remaining_cooldown > 0:
+        return ActionResult(
+            success=False,
+            message=f"Cooldown ativo para auto-remediacao ({remaining_cooldown}s).",
+            data={
+                "ops_auto_remediation": {
+                    "executed": False,
+                    "dry_run": dry_run,
+                    "reason": "cooldown",
+                    "signal": signal,
+                    "cooldown_remaining_seconds": remaining_cooldown,
+                    "generated_at": _now_iso(),
+                },
+                "ops_incident_snapshot": snapshot,
+                "canary_state": snapshot.get("canary_state"),
+                "feature_flags": snapshot.get("feature_flags"),
+                "kill_switch": snapshot.get("kill_switch"),
+                **_capability_payload(ctx.participant_identity, ctx.room),
+            },
+            error="auto remediation cooldown",
+        )
+
+    rollback = await _ops_rollback_scenario_action(
+        {
+            "scenario": scenario,
+            "dry_run": dry_run,
+            "domain": resolved_domain,
+            "containment_strategy": (
+                "domain_autonomy"
+                if scenario == "reliability_breach"
+                and bool(signal.get("autonomy_notice_delivery_breach"))
+                and bool(resolved_domain)
+                else "default"
+            ),
+            "reason": "auto remediation",
+        },
+        ctx,
+    )
+    if not rollback.success:
+        return rollback
+
+    if not dry_run:
+        AUTO_REMEDIATION_LAST_EXECUTION[room_key] = now_ts
+
+    rollback_data = rollback.data if isinstance(rollback.data, dict) else {}
+    return ActionResult(
+        success=True,
+        message=f"Auto-remediacao {'simulada' if dry_run else 'aplicada'} via `{scenario}`.",
+        data={
+            **rollback_data,
+            "ops_auto_remediation": {
+                "executed": True,
+                "dry_run": dry_run,
+                "scenario": scenario,
+                "signal": signal,
+                "cooldown_remaining_seconds": 0 if not dry_run else remaining_cooldown,
+                "generated_at": _now_iso(),
+            },
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+def _ops_canary_gate_report(
+    *,
+    snapshot: JsonObject,
+    min_samples: int,
+    success_rate_min: float,
+    max_regression_vs_stable: float,
+    require_no_alerts: bool,
+) -> JsonObject:
+    canary_state = snapshot.get("canary_state") if isinstance(snapshot.get("canary_state"), dict) else {}
+    canary_metrics = snapshot.get("canary_metrics") if isinstance(snapshot.get("canary_metrics"), dict) else {}
+    alerts = snapshot.get("alerts") if isinstance(snapshot.get("alerts"), list) else []
+    signal = _ops_slo_signal(snapshot)
+
+    canary_row = canary_metrics.get("canary") if isinstance(canary_metrics.get("canary"), dict) else {}
+    stable_row = canary_metrics.get("stable") if isinstance(canary_metrics.get("stable"), dict) else {}
+    canary_total = int(canary_row.get("total") or 0)
+    canary_success_rate = float(canary_row.get("success_rate") or 0.0)
+    stable_total = int(stable_row.get("total") or 0)
+    stable_success_rate = float(stable_row.get("success_rate") or 0.0)
+    current_rollout = int(canary_state.get("rollout_percent") or 0)
+
+    passed = True
+    reasons: list[str] = []
+    if current_rollout >= 100:
+        passed = False
+        reasons.append("rollout ja esta em 100%.")
+    if canary_total < int(min_samples):
+        passed = False
+        reasons.append(f"amostragem canario insuficiente ({canary_total} < {int(min_samples)}).")
+    if canary_success_rate < float(success_rate_min):
+        passed = False
+        reasons.append(
+            f"taxa de sucesso canario abaixo do minimo ({round(canary_success_rate, 4)} < {round(float(success_rate_min), 4)})."
+        )
+    if stable_total >= int(min_samples):
+        threshold = stable_success_rate - float(max_regression_vs_stable)
+        if canary_success_rate < threshold:
+            passed = False
+            reasons.append(
+                "canario regrediu acima do permitido vs stable "
+                f"({round(canary_success_rate, 4)} < {round(threshold, 4)})."
+            )
+    if require_no_alerts and alerts:
+        passed = False
+        reasons.append(f"snapshot possui {len(alerts)} alerta(s).")
+    if require_no_alerts and signal.get("recommended_scenario"):
+        passed = False
+        reasons.append(f"sinal operacional pede `{str(signal.get('recommended_scenario'))}`.")
+
+    return {
+        "passed": passed,
+        "reasons": reasons,
+        "signal": signal,
+        "current_rollout_percent": current_rollout,
+        "next_rollout_percent": _rollout_step_percent(current_rollout, direction="up"),
+        "canary": {
+            "total": canary_total,
+            "success_rate": round(canary_success_rate, 4),
+        },
+        "stable": {
+            "total": stable_total,
+            "success_rate": round(stable_success_rate, 4),
+        },
+    }
+
+
+async def _ops_canary_promote_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    dry_run = bool(params.get("dry_run", True))
+    force = bool(params.get("force", False))
+    step_if_passed = bool(params.get("step_if_passed", True))
+    rollback_on_fail = bool(params.get("rollback_on_fail", False))
+    min_samples = int(params.get("min_samples", 20))
+    min_samples = max(5, min(min_samples, 200))
+    success_rate_min = float(params.get("success_rate_min", 0.95))
+    success_rate_min = max(0.5, min(success_rate_min, 1.0))
+    max_regression_vs_stable = float(params.get("max_regression_vs_stable", 0.03))
+    max_regression_vs_stable = max(0.0, min(max_regression_vs_stable, 0.4))
+    require_no_alerts = bool(params.get("require_no_alerts", True))
+    metrics_limit = int(params.get("metrics_limit", 400))
+    cooldown_seconds = int(
+        params.get("cooldown_seconds", int(str(os.getenv("JARVEZ_CANARY_PROMOTION_COOLDOWN_SECONDS", "600"))))
+    )
+    cooldown_seconds = max(30, min(cooldown_seconds, 7200))
+
+    snapshot = _build_ops_incident_snapshot(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        include_ping=False,
+        ping_prompt="Responda apenas: ok",
+        metrics_limit=metrics_limit,
+    )
+    gate = _ops_canary_gate_report(
+        snapshot=snapshot,
+        min_samples=min_samples,
+        success_rate_min=success_rate_min,
+        max_regression_vs_stable=max_regression_vs_stable,
+        require_no_alerts=require_no_alerts,
+    )
+
+    now_ts = time.time()
+    room_key = _canary_key(ctx.participant_identity, ctx.room)
+    last_run = float(CANARY_PROMOTION_LAST_EXECUTION.get(room_key, 0.0))
+    remaining_cooldown = max(0, int(cooldown_seconds - (now_ts - last_run)))
+    if not dry_run and remaining_cooldown > 0 and not force:
+        return ActionResult(
+            success=False,
+            message=f"Cooldown ativo para promocao de canario ({remaining_cooldown}s).",
+            data={
+                "ops_canary_promotion": {
+                    "executed": False,
+                    "promoted": False,
+                    "dry_run": dry_run,
+                    "reason": "cooldown",
+                    "gate": gate,
+                    "cooldown_remaining_seconds": remaining_cooldown,
+                    "generated_at": _now_iso(),
+                },
+                "ops_incident_snapshot": snapshot,
+                "canary_state": snapshot.get("canary_state"),
+                "feature_flags": snapshot.get("feature_flags"),
+                "slo_report": snapshot.get("slo_report"),
+                **_capability_payload(ctx.participant_identity, ctx.room),
+            },
+            error="canary promotion cooldown",
+        )
+
+    gate_passed = bool(gate.get("passed"))
+    if force:
+        gate_passed = True
+
+    rollback_result: ActionResult | None = None
+    promoted = False
+    rollout_result: ActionResult | None = None
+    if gate_passed and step_if_passed:
+        rollout_result = await _ops_canary_rollout_set_action(
+            {"operation": "step_up", "dry_run": dry_run},
+            ctx,
+        )
+        promoted = bool(rollout_result.success)
+        if rollout_result.success and not dry_run:
+            CANARY_PROMOTION_LAST_EXECUTION[room_key] = now_ts
+        if rollout_result.success and isinstance(rollout_result.data, dict):
+            maybe_snapshot = rollout_result.data.get("ops_incident_snapshot")
+            if isinstance(maybe_snapshot, dict):
+                snapshot = maybe_snapshot
+    elif (not gate_passed) and rollback_on_fail:
+        rollback_result = await _ops_rollback_scenario_action(
+            {
+                "scenario": "reliability_breach",
+                "dry_run": dry_run,
+                "reason": "canary promotion gate failed",
+            },
+            ctx,
+        )
+        if rollback_result.success and isinstance(rollback_result.data, dict):
+            maybe_snapshot = rollback_result.data.get("ops_incident_snapshot")
+            if isinstance(maybe_snapshot, dict):
+                snapshot = maybe_snapshot
+
+    report: JsonObject = {
+        "executed": True,
+        "promoted": promoted,
+        "dry_run": dry_run,
+        "force": force,
+        "step_if_passed": step_if_passed,
+        "rollback_on_fail": rollback_on_fail,
+        "gate": gate,
+        "cooldown_remaining_seconds": 0 if not dry_run else remaining_cooldown,
+        "generated_at": _now_iso(),
+    }
+    if rollout_result is not None:
+        report["rollout_status"] = {"success": rollout_result.success, "message": rollout_result.message}
+    if rollback_result is not None:
+        report["rollback_status"] = {"success": rollback_result.success, "message": rollback_result.message}
+
+    return ActionResult(
+        success=True,
+        message=(
+            "Promocao de canario aplicada."
+            if promoted and not dry_run
+            else "Promocao de canario simulada."
+            if promoted and dry_run
+            else "Gate de promocao nao aprovado."
+        ),
+        data={
+            "ops_canary_promotion": report,
+            "ops_playbook_report": (
+                rollout_result.data.get("ops_playbook_report") if rollout_result and isinstance(rollout_result.data, dict) else None
+            ) or (
+                rollback_result.data.get("ops_playbook_report") if rollback_result and isinstance(rollback_result.data, dict) else None
+            ),
+            "ops_incident_snapshot": snapshot,
+            "canary_state": snapshot.get("canary_state"),
+            "feature_flags": snapshot.get("feature_flags"),
+            "kill_switch": snapshot.get("kill_switch"),
+            "slo_report": snapshot.get("slo_report"),
+            "eval_metrics_summary": snapshot.get("metrics_summary"),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _ops_control_loop_tick_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    dry_run = bool(params.get("dry_run", True))
+    auto_remediate = bool(params.get("auto_remediate", True))
+    auto_promote_canary = bool(params.get("auto_promote_canary", True))
+    force_remediation = bool(params.get("force_remediation", False))
+    force_promotion = bool(params.get("force_promotion", False))
+    metrics_limit = int(params.get("metrics_limit", 400))
+    domain = str(params.get("domain", "")).strip().lower()
+    freeze_threshold = int(
+        params.get("freeze_threshold", int(str(os.getenv("JARVEZ_CONTROL_LOOP_FREEZE_THRESHOLD", "3"))))
+    )
+    freeze_window_seconds = int(
+        params.get("freeze_window_seconds", int(str(os.getenv("JARVEZ_CONTROL_LOOP_FREEZE_WINDOW_SECONDS", "900"))))
+    )
+    freeze_cooldown_seconds = int(
+        params.get("freeze_cooldown_seconds", int(str(os.getenv("JARVEZ_CONTROL_LOOP_FREEZE_COOLDOWN_SECONDS", "1800"))))
+    )
+    freeze_threshold = max(1, min(freeze_threshold, 20))
+    freeze_window_seconds = max(60, min(freeze_window_seconds, 86400))
+    freeze_cooldown_seconds = max(60, min(freeze_cooldown_seconds, 86400))
+
+    initial_snapshot = _build_ops_incident_snapshot(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        include_ping=False,
+        ping_prompt="Responda apenas: ok",
+        metrics_limit=metrics_limit,
+    )
+    remediation_result: ActionResult | None = None
+    promotion_result: ActionResult | None = None
+
+    if auto_remediate:
+        remediation_result = await _ops_auto_remediate_action(
+            {
+                "dry_run": dry_run,
+                "force": force_remediation,
+                "domain": domain,
+                "metrics_limit": metrics_limit,
+                },
+                ctx,
+            )
+
+    room_key = _canary_key(ctx.participant_identity, ctx.room)
+    now_ts = time.time()
+    initial_signal = _ops_slo_signal(initial_snapshot)
+    current_breach = str(initial_signal.get("recommended_scenario") or "").strip()
+    history = [
+        stamp
+        for stamp in CONTROL_LOOP_BREACH_HISTORY.get(room_key, [])
+        if (now_ts - float(stamp)) <= float(freeze_window_seconds)
+    ]
+    if current_breach:
+        history.append(now_ts)
+    CONTROL_LOOP_BREACH_HISTORY[room_key] = history
+
+    last_freeze = float(CONTROL_LOOP_FREEZE_LAST_TRIGGER.get(room_key, 0.0))
+    freeze_cooldown_remaining = max(0, int(freeze_cooldown_seconds - (now_ts - last_freeze)))
+    freeze_should_apply = bool(
+        len(history) >= freeze_threshold and (freeze_cooldown_remaining == 0)
+    )
+
+    remediation_data = remediation_result.data if remediation_result and isinstance(remediation_result.data, dict) else {}
+    auto_remediation_payload = remediation_data.get("ops_auto_remediation")
+    remediation_triggered = bool(isinstance(auto_remediation_payload, dict) and auto_remediation_payload.get("executed"))
+    remediation_scenario = (
+        str(auto_remediation_payload.get("scenario") or "")
+        if isinstance(auto_remediation_payload, dict)
+        else ""
+    ).strip()
+
+    skip_promotion_reason = ""
+    if auto_promote_canary:
+        if remediation_triggered and remediation_scenario in {"provider_outage", "reliability_breach", "latency_spike", "trust_drift_breach"}:
+            skip_promotion_reason = f"remediacao ativa em cenario `{remediation_scenario}`."
+        else:
+            promotion_result = await _ops_canary_promote_action(
+                {
+                    "dry_run": dry_run,
+                    "force": force_promotion,
+                    "step_if_passed": True,
+                    "rollback_on_fail": False,
+                    "metrics_limit": metrics_limit,
+                },
+                ctx,
+            )
+
+    final_snapshot = initial_snapshot
+    for result in [remediation_result, promotion_result]:
+        if result and isinstance(result.data, dict):
+            maybe_snapshot = result.data.get("ops_incident_snapshot")
+            if isinstance(maybe_snapshot, dict):
+                final_snapshot = maybe_snapshot
+
+    freeze_applied = False
+    freeze_reason = ""
+    if freeze_should_apply:
+        freeze_reason = (
+            "control_loop_freeze: "
+            f"{len(history)} breach(es) em {freeze_window_seconds}s "
+            f"(threshold={freeze_threshold})."
+        )
+        if dry_run:
+            freeze_reason = f"{freeze_reason} [dry-run]"
+        else:
+            set_killswitch_global(True, reason=freeze_reason)
+            _set_runtime_feature_override("canary_v1", False)
+            _set_canary_rollout_percent(0)
+            CONTROL_LOOP_FREEZE_LAST_TRIGGER[room_key] = now_ts
+            freeze_applied = True
+            final_snapshot = _build_ops_incident_snapshot(
+                participant_identity=ctx.participant_identity,
+                room=ctx.room,
+                include_ping=False,
+                ping_prompt="Responda apenas: ok",
+                metrics_limit=metrics_limit,
+            )
+
+    control_report: JsonObject = {
+        "executed": True,
+        "dry_run": dry_run,
+        "auto_remediate": auto_remediate,
+        "auto_promote_canary": auto_promote_canary,
+        "remediation_triggered": remediation_triggered,
+        "remediation_scenario": remediation_scenario or None,
+        "promotion_skipped_reason": skip_promotion_reason or None,
+        "initial_signal": initial_signal,
+        "breach_window": {
+            "count": len(history),
+            "threshold": freeze_threshold,
+            "window_seconds": freeze_window_seconds,
+        },
+        "freeze": {
+            "should_apply": freeze_should_apply,
+            "applied": freeze_applied,
+            "reason": freeze_reason or None,
+            "cooldown_remaining_seconds": max(0, freeze_cooldown_remaining),
+            "cooldown_seconds": freeze_cooldown_seconds,
+        },
+        "generated_at": _now_iso(),
+    }
+    if remediation_result is not None:
+        control_report["remediation_status"] = {
+            "success": remediation_result.success,
+            "message": remediation_result.message,
+        }
+    if promotion_result is not None:
+        control_report["promotion_status"] = {
+            "success": promotion_result.success,
+            "message": promotion_result.message,
+        }
+
+    return ActionResult(
+        success=True,
+        message="Tick operacional concluido.",
+        data={
+            "ops_control_tick": control_report,
+            "ops_auto_remediation": remediation_data.get("ops_auto_remediation"),
+            "ops_canary_promotion": (
+                promotion_result.data.get("ops_canary_promotion")
+                if promotion_result and isinstance(promotion_result.data, dict)
+                else None
+            ),
+            "ops_playbook_report": (
+                promotion_result.data.get("ops_playbook_report")
+                if promotion_result and isinstance(promotion_result.data, dict)
+                else remediation_data.get("ops_playbook_report")
+            ),
+            "ops_incident_snapshot": final_snapshot,
+            "canary_state": final_snapshot.get("canary_state"),
+            "feature_flags": final_snapshot.get("feature_flags"),
+            "kill_switch": final_snapshot.get("kill_switch"),
+            "slo_report": final_snapshot.get("slo_report"),
+            "eval_metrics_summary": final_snapshot.get("metrics_summary"),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _ops_feature_flags_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return ActionResult(
+        success=True,
+        message="Status das feature flags coletado.",
+        data={
+            "feature_flags": _feature_flags_snapshot(),
+            "canary_state": _canary_state_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _ops_feature_flags_set_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    feature_name = str(params.get("feature", "")).strip().lower()
+    if not feature_name:
+        return ActionResult(success=False, message="Informe `feature`.", error="missing feature")
+    enabled = bool(params.get("enabled", True))
+    FEATURE_FLAG_OVERRIDES[feature_name] = enabled
+    return ActionResult(
+        success=True,
+        message=f"Feature `{feature_name}` ajustada para {'on' if enabled else 'off'} (runtime).",
+        data={
+            "feature_flags": _feature_flags_snapshot(),
+            "canary_state": _canary_state_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+def _set_runtime_feature_override(flag: str, enabled: bool) -> bool:
+    normalized = flag.strip().lower()
+    previous = FEATURE_FLAG_OVERRIDES.get(normalized)
+    FEATURE_FLAG_OVERRIDES[normalized] = enabled
+    return previous != enabled
+
+
+def _predict_feature_values_from_overrides(overrides: dict[str, bool]) -> JsonObject:
+    values: JsonObject = {}
+    for flag in _known_feature_flags():
+        if flag in overrides:
+            values[flag] = bool(overrides[flag])
+        else:
+            values[flag] = _feature_value_from_env(flag, default=False if flag == "canary_v1" else True)
+    return values
+
+
+async def _ops_apply_playbook_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    playbook = str(params.get("playbook", "")).strip().lower()
+    dry_run = bool(params.get("dry_run", False))
+    domain = str(params.get("domain", "")).strip().lower()
+    reason = str(params.get("reason", "")).strip()
+    allowed = {
+        "provider_degradation",
+        "strict_guardrails",
+        "degrade_domain_autonomy",
+        "restore_domain_autonomy",
+        "block_domain",
+        "unblock_domain",
+        "restore_runtime_overrides",
+    }
+    if playbook not in allowed:
+        return ActionResult(
+            success=False,
+            message=f"Playbook invalido. Opcoes: {', '.join(sorted(allowed))}.",
+            error="invalid playbook",
+        )
+    if playbook in {"degrade_domain_autonomy", "restore_domain_autonomy", "block_domain", "unblock_domain"} and not domain:
+        return ActionResult(success=False, message="Informe `domain` para este playbook.", error="missing domain")
+
+    before_flags = _feature_flags_snapshot()
+    before_killswitch = get_killswitch_status().to_payload()
+    before_mode = get_autonomy_mode(ctx.participant_identity, ctx.room)
+    before_domain_mode = get_domain_autonomy_mode(ctx.participant_identity, ctx.room, domain) if domain else None
+    predicted_domain_modes: dict[str, str] = {
+        str(item.get("domain") or ""): str(item.get("mode") or "")
+        for item in list_domain_autonomy_modes(ctx.participant_identity, ctx.room)
+        if isinstance(item, dict) and str(item.get("domain") or "")
+    }
+
+    predicted_overrides: dict[str, bool] = {
+        str(key).strip().lower(): bool(value)
+        for key, value in dict(before_flags.get("overrides", {})).items()
+    }
+    predicted_killswitch = {
+        "global_enabled": bool(before_killswitch.get("global_enabled", False)),
+        "global_reason": before_killswitch.get("global_reason"),
+        "domains": dict(before_killswitch.get("domains", {})),
+    }
+    predicted_mode = before_mode
+    predicted_domain_mode = before_domain_mode
+    changes: list[JsonObject] = []
+
+    def _track_override(flag_name: str, enabled: bool, note: str) -> None:
+        normalized = flag_name.strip().lower()
+        previous_override = predicted_overrides.get(normalized)
+        previous_effective = (
+            bool(previous_override) if previous_override is not None else _feature_value_from_env(normalized)
+        )
+        changes.append(
+            {
+                "type": "feature_flag_override",
+                "target": normalized,
+                "from": previous_effective,
+                "to": enabled,
+                "note": note,
+            }
+        )
+        predicted_overrides[normalized] = enabled
+        if not dry_run:
+            _set_runtime_feature_override(normalized, enabled)
+
+    if playbook == "provider_degradation":
+        _track_override("multi_model_router_v1", False, "Desliga roteador multi-model para reduzir variacao.")
+        _track_override("subagents_v1", False, "Desliga subagentes para simplificar execucao.")
+        _track_override("policy_v1", True, "Mantem politica ativa durante degradacao.")
+        _track_override("skills_v1", True, "Mantem skills disponiveis para operacao manual assistida.")
+    elif playbook == "strict_guardrails":
+        changes.append(
+            {
+                "type": "autonomy_mode",
+                "target": f"{ctx.participant_identity}:{ctx.room}",
+                "from": before_mode,
+                "to": "safe",
+                "note": "Forca guardrails mais conservadores durante incidente.",
+            }
+        )
+        predicted_mode = "safe"
+        if not dry_run:
+            set_autonomy_mode(ctx.participant_identity, ctx.room, "safe")
+        _track_override("policy_v1", True, "Garante engine de politica habilitada.")
+    elif playbook == "degrade_domain_autonomy":
+        changes.append(
+            {
+                "type": "domain_autonomy_mode",
+                "target": domain,
+                "from": before_domain_mode,
+                "to": "safe",
+                "note": "Reduz autonomia apenas no dominio afetado.",
+            }
+        )
+        predicted_domain_mode = "safe"
+        predicted_domain_modes[domain] = "safe"
+        if not dry_run:
+            set_domain_autonomy_mode(
+                ctx.participant_identity,
+                ctx.room,
+                domain,
+                "safe",
+                reason=reason or "ops_playbook_degrade_domain_autonomy",
+                source="ops_playbook",
+            )
+    elif playbook == "restore_domain_autonomy":
+        changes.append(
+            {
+                "type": "domain_autonomy_mode",
+                "target": domain,
+                "from": before_domain_mode,
+                "to": None,
+                "note": "Remove floor de autonomia por dominio apos estabilizacao.",
+            }
+        )
+        predicted_domain_mode = None
+        predicted_domain_modes.pop(domain, None)
+        if not dry_run:
+            clear_domain_autonomy_mode(ctx.participant_identity, ctx.room, domain)
+    elif playbook == "block_domain":
+        previous_reason = str(predicted_killswitch["domains"].get(domain, "")) or None
+        applied_reason = reason or "blocked by ops playbook"
+        changes.append(
+            {
+                "type": "domain_killswitch",
+                "target": domain,
+                "from": previous_reason,
+                "to": applied_reason,
+                "note": "Bloqueia dominio para conter erro em acao real.",
+            }
+        )
+        predicted_killswitch["domains"][domain] = applied_reason
+        if not dry_run:
+            set_killswitch_domain(domain, True, applied_reason)
+    elif playbook == "unblock_domain":
+        previous_reason = str(predicted_killswitch["domains"].get(domain, "")) or None
+        changes.append(
+            {
+                "type": "domain_killswitch",
+                "target": domain,
+                "from": previous_reason,
+                "to": None,
+                "note": "Reabre dominio bloqueado apos estabilizacao.",
+            }
+        )
+        predicted_killswitch["domains"].pop(domain, None)
+        if not dry_run:
+            set_killswitch_domain(domain, False, None)
+    elif playbook == "restore_runtime_overrides":
+        existing = dict(FEATURE_FLAG_OVERRIDES)
+        changes.append(
+            {
+                "type": "feature_flag_override",
+                "target": "*",
+                "from": len(existing),
+                "to": 0,
+                "note": "Limpa overrides runtime e volta para estado de env.",
+            }
+        )
+        predicted_overrides = {}
+        if not dry_run:
+            FEATURE_FLAG_OVERRIDES.clear()
+
+    if dry_run:
+        after_flags = {
+            "values": _predict_feature_values_from_overrides(predicted_overrides),
+            "overrides": dict(predicted_overrides),
+        }
+        after_killswitch = {
+            "global_enabled": predicted_killswitch["global_enabled"],
+            "global_reason": predicted_killswitch["global_reason"],
+            "domains": dict(predicted_killswitch["domains"]),
+            "updated_at": _now_iso(),
+        }
+        after_mode = predicted_mode
+        after_domain_mode = predicted_domain_mode
+        after_domain_modes = [
+            {
+                "domain": item_domain,
+                "mode": item_mode,
+                "reason": reason if item_domain == domain and playbook == "degrade_domain_autonomy" else "",
+                "source": "ops_playbook" if item_domain == domain and playbook == "degrade_domain_autonomy" else "",
+                "updated_at": _now_iso() if item_domain == domain and playbook == "degrade_domain_autonomy" else "",
+            }
+            for item_domain, item_mode in sorted(predicted_domain_modes.items(), key=lambda item: item[0])
+        ]
+    else:
+        after_flags = _feature_flags_snapshot()
+        after_killswitch = get_killswitch_status().to_payload()
+        after_mode = get_autonomy_mode(ctx.participant_identity, ctx.room)
+        after_domain_mode = get_domain_autonomy_mode(ctx.participant_identity, ctx.room, domain) if domain else None
+        after_domain_modes = list_domain_autonomy_modes(ctx.participant_identity, ctx.room)
+
+    report = {
+        "playbook": playbook,
+        "dry_run": dry_run,
+        "applied": not dry_run,
+        "changes": changes,
+        "before": {
+            "feature_flags": before_flags,
+            "kill_switch": before_killswitch,
+            "autonomy_mode": before_mode,
+            "domain_autonomy_mode": before_domain_mode,
+            "domain_autonomy_modes": list_domain_autonomy_modes(ctx.participant_identity, ctx.room),
+        },
+        "after": {
+            "feature_flags": after_flags,
+            "kill_switch": after_killswitch,
+            "autonomy_mode": after_mode,
+            "domain_autonomy_mode": after_domain_mode,
+            "domain_autonomy_modes": after_domain_modes,
+        },
+        "generated_at": _now_iso(),
+    }
+
+    snapshot = _build_ops_incident_snapshot(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        include_ping=False,
+        ping_prompt="Responda apenas: ok",
+        metrics_limit=300,
+    )
+    snapshot["autonomy_mode"] = after_mode
+    snapshot["domain_autonomy_modes"] = after_domain_modes
+    snapshot["domain_autonomy_status"] = _build_domain_autonomy_audit_rows(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        metrics_summary=snapshot.get("metrics_summary") if isinstance(snapshot.get("metrics_summary"), dict) else None,
+        domain_mode_rows_override=after_domain_modes,
+        autonomy_mode_override=after_mode,
+    )
+    snapshot["feature_flags"] = after_flags
+    snapshot["kill_switch"] = after_killswitch
+
+    return ActionResult(
+        success=True,
+        message=f"Playbook `{playbook}` {'simulado' if dry_run else 'aplicado'} com {len(changes)} ajuste(s).",
+        data={
+            "ops_playbook_report": report,
+            "ops_incident_snapshot": snapshot,
+            "canary_state": snapshot.get("canary_state"),
+            "autonomy_mode": after_mode,
+            "domain_autonomy_mode": after_domain_mode,
+            "feature_flags": after_flags,
+            "kill_switch": after_killswitch,
+            "providers_health": snapshot.get("providers_health"),
+            "eval_metrics_summary": snapshot.get("metrics_summary"),
+            "slo_report": snapshot.get("slo_report"),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _ops_rollback_scenario_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    scenario = str(params.get("scenario", "")).strip().lower()
+    dry_run = bool(params.get("dry_run", False))
+    domain = str(params.get("domain", "")).strip().lower()
+    containment_strategy = str(params.get("containment_strategy", "default")).strip().lower() or "default"
+    reason = str(params.get("reason", "")).strip()
+    allowed = {"provider_outage", "latency_spike", "reliability_breach", "trust_drift_breach", "recover_to_stable"}
+    if scenario not in allowed:
+        return ActionResult(
+            success=False,
+            message=f"Cenario invalido. Opcoes: {', '.join(sorted(allowed))}.",
+            error="invalid scenario",
+        )
+
+    steps: list[JsonObject] = []
+    if scenario == "provider_outage":
+        steps = [{"playbook": "provider_degradation"}, {"playbook": "strict_guardrails"}]
+        if domain:
+            steps.append({"playbook": "block_domain", "domain": domain, "reason": reason or "provider outage containment"})
+    elif scenario == "latency_spike":
+        steps = [{"playbook": "provider_degradation"}]
+    elif scenario == "reliability_breach":
+        steps = [{"playbook": "strict_guardrails"}]
+        if domain:
+            if containment_strategy == "domain_autonomy":
+                steps.append(
+                    {
+                        "playbook": "degrade_domain_autonomy",
+                        "domain": domain,
+                        "reason": reason or "reliability containment via domain autonomy",
+                    }
+                )
+            else:
+                steps.append({"playbook": "block_domain", "domain": domain, "reason": reason or "reliability containment"})
+    elif scenario == "trust_drift_breach":
+        steps = [{"playbook": "strict_guardrails"}]
+        if domain:
+            steps.append({"playbook": "block_domain", "domain": domain, "reason": reason or "trust drift containment"})
+    elif scenario == "recover_to_stable":
+        steps = [{"playbook": "restore_runtime_overrides"}]
+        if domain:
+            steps.append({"playbook": "unblock_domain", "domain": domain})
+            steps.append({"playbook": "restore_domain_autonomy", "domain": domain})
+
+    before_flags = _feature_flags_snapshot()
+    before_killswitch = get_killswitch_status().to_payload()
+    before_mode = get_autonomy_mode(ctx.participant_identity, ctx.room)
+    before_rollout = _get_canary_rollout_percent()
+    before_canary_enabled = _is_feature_enabled("canary_v1", default=False)
+    step_reports: list[JsonObject] = []
+
+    for step in steps:
+        playbook_params: JsonObject = {"playbook": step.get("playbook"), "dry_run": dry_run}
+        if isinstance(step.get("domain"), str) and step.get("domain"):
+            playbook_params["domain"] = step.get("domain")
+        if isinstance(step.get("reason"), str) and step.get("reason"):
+            playbook_params["reason"] = step.get("reason")
+        step_result = await _ops_apply_playbook_action(playbook_params, ctx)
+        if not step_result.success:
+            return step_result
+        if isinstance(step_result.data, dict) and isinstance(step_result.data.get("ops_playbook_report"), dict):
+            step_reports.append(dict(step_result.data["ops_playbook_report"]))
+
+    mode_change: JsonObject | None = None
+    if scenario == "recover_to_stable":
+        if dry_run:
+            mode_change = {
+                "type": "autonomy_mode",
+                "target": f"{ctx.participant_identity}:{ctx.room}",
+                "from": before_mode,
+                "to": "aggressive",
+                "note": "Dry-run: retornaria autonomia para agressivo apos recuperacao.",
+            }
+        else:
+            after_set = set_autonomy_mode(ctx.participant_identity, ctx.room, "aggressive")
+            mode_change = {
+                "type": "autonomy_mode",
+                "target": f"{ctx.participant_identity}:{ctx.room}",
+                "from": before_mode,
+                "to": after_set,
+                "note": "Retorno para perfil padrao apos rollback.",
+            }
+    if mode_change is not None:
+        step_reports.append({"playbook": "autonomy_mode_adjustment", "changes": [mode_change], "dry_run": dry_run})
+
+    canary_changes: list[JsonObject] = []
+    if scenario in {"provider_outage", "latency_spike", "reliability_breach", "trust_drift_breach"}:
+        canary_changes.append(
+            {
+                "type": "feature_flag_override",
+                "target": "canary_v1",
+                "from": before_canary_enabled,
+                "to": False,
+                "note": "Congela canario durante rollback de incidente.",
+            }
+        )
+        canary_changes.append(
+            {
+                "type": "canary_rollout",
+                "target": "rollout_percent",
+                "from": before_rollout,
+                "to": 0,
+                "note": "Zera rollout para evitar expandir regressao.",
+            }
+        )
+        if not dry_run:
+            _set_runtime_feature_override("canary_v1", False)
+            _set_canary_rollout_percent(0)
+    elif scenario == "recover_to_stable":
+        canary_changes.append(
+            {
+                "type": "feature_flag_override",
+                "target": "canary_v1",
+                "from": before_canary_enabled,
+                "to": None,
+                "note": "Remove override manual de canario e volta para o default configurado.",
+            }
+        )
+        canary_changes.append(
+            {
+                "type": "canary_rollout",
+                "target": "rollout_percent",
+                "from": before_rollout,
+                "to": 10,
+                "note": "Retoma rollout em 10% apos recuperacao.",
+            }
+        )
+        if not dry_run:
+            FEATURE_FLAG_OVERRIDES.pop("canary_v1", None)
+            _set_canary_rollout_percent(10)
+    if canary_changes:
+        step_reports.append({"playbook": "canary_control", "changes": canary_changes, "dry_run": dry_run})
+
+    after_flags = _feature_flags_snapshot()
+    after_killswitch = get_killswitch_status().to_payload()
+    after_mode = get_autonomy_mode(ctx.participant_identity, ctx.room)
+    after_domain_modes = list_domain_autonomy_modes(ctx.participant_identity, ctx.room)
+    if dry_run:
+        mode_rank = {"aggressive": 0, "safe": 1, "manual": 2}
+        for step_report in step_reports:
+            after_payload = step_report.get("after") if isinstance(step_report, dict) else None
+            if not isinstance(after_payload, dict):
+                continue
+            if isinstance(after_payload.get("autonomy_mode"), str) and after_payload.get("autonomy_mode"):
+                candidate_mode = str(after_payload.get("autonomy_mode"))
+                if mode_rank.get(candidate_mode, 0) >= mode_rank.get(after_mode, 0):
+                    after_mode = candidate_mode
+            if isinstance(after_payload.get("domain_autonomy_modes"), list):
+                after_domain_modes = [
+                    item
+                    for item in after_payload.get("domain_autonomy_modes", [])
+                    if isinstance(item, dict)
+                ]
+
+    scenario_report: JsonObject = {
+        "playbook": f"rollback_scenario:{scenario}",
+        "dry_run": dry_run,
+        "applied": not dry_run,
+        "steps_executed": [str(step.get("playbook") or "") for step in steps],
+        "step_reports": step_reports,
+        "before": {
+            "feature_flags": before_flags,
+            "kill_switch": before_killswitch,
+            "autonomy_mode": before_mode,
+        },
+        "after": {
+            "feature_flags": after_flags,
+            "kill_switch": after_killswitch,
+            "autonomy_mode": after_mode,
+            "domain_autonomy_modes": after_domain_modes,
+        },
+        "notes": (
+            ["Dry-run em multiplos passos e nao transacional; revisar `step_reports` antes de aplicar."]
+            if dry_run and len(steps) > 1
+            else []
+        ),
+        "generated_at": _now_iso(),
+    }
+
+    snapshot = _build_ops_incident_snapshot(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        include_ping=False,
+        ping_prompt="Responda apenas: ok",
+        metrics_limit=300,
+    )
+    snapshot["autonomy_mode"] = after_mode
+    snapshot["domain_autonomy_modes"] = after_domain_modes
+    snapshot["domain_autonomy_status"] = _build_domain_autonomy_audit_rows(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        metrics_summary=snapshot.get("metrics_summary") if isinstance(snapshot.get("metrics_summary"), dict) else None,
+        domain_mode_rows_override=after_domain_modes,
+        autonomy_mode_override=after_mode,
+    )
+
+    return ActionResult(
+        success=True,
+        message=f"Rollback de cenario `{scenario}` {'simulado' if dry_run else 'aplicado'} com {len(steps)} passo(s).",
+        data={
+            "ops_playbook_report": scenario_report,
+            "ops_incident_snapshot": snapshot,
+            "canary_state": snapshot.get("canary_state"),
+            "feature_flags": snapshot.get("feature_flags"),
+            "kill_switch": snapshot.get("kill_switch"),
+            "autonomy_mode": snapshot.get("autonomy_mode"),
+            "domain_autonomy_modes": snapshot.get("domain_autonomy_modes"),
+            "providers_health": snapshot.get("providers_health"),
+            "eval_metrics_summary": snapshot.get("metrics_summary"),
+            "slo_report": snapshot.get("slo_report"),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _code_worker_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    response, worker_error = _code_worker_request("/health")
+    if worker_error is not None:
+        return ActionResult(
+            success=False,
+            message=worker_error.message,
+            data={
+                "worker_status": {"success": False, "message": worker_error.message},
+                **_active_project_payload(ctx.participant_identity, ctx.room),
+            },
+            error=worker_error.error,
+        )
+    return ActionResult(
+        success=True,
+        message="Code worker online.",
+        data={
+            "worker_status": {"success": True, "message": str(response.get("message", "Code worker online."))},
+            "worker_info": response.get("data"),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _code_read_file_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    path = str(params.get("path", "")).strip()
+    if not path:
+        return ActionResult(success=False, message="Informe o arquivo que devo ler.", error="missing path")
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+    worker_payload: JsonObject = {
+        "project_id": record.project_id,
+        "path": path,
+    }
+    if isinstance(params.get("start_line"), int):
+        worker_payload["start_line"] = params.get("start_line")
+    if isinstance(params.get("end_line"), int):
+        worker_payload["end_line"] = params.get("end_line")
+    response, worker_error = _code_worker_request("/read-file", worker_payload)
+    if worker_error is not None:
+        return worker_error
+    return ActionResult(
+        success=True,
+        message=f"Arquivo lido em {record.name}.",
+        data={
+            "project": _project_record_to_payload(record),
+            "file": response.get("data"),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _code_search_in_active_project_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    query = str(params.get("query", "")).strip()
+    if not query:
+        return ActionResult(success=False, message="Informe a busca de codigo.", error="missing query")
+    limit = int(params.get("limit", 5))
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+    indexed = _get_code_index().search(query, limit=limit, project_id=record.project_id)
+    worker_response, worker_error = _code_worker_request(
+        "/search-files",
+        {"project_id": record.project_id, "query": query, "limit": limit},
+    )
+    file_hits = [] if worker_error is not None else list((worker_response or {}).get("data", {}).get("results", []))
+    return ActionResult(
+        success=True,
+        message=f"Busca de codigo concluida em {record.name}.",
+        data={
+            "project": _project_record_to_payload(record),
+            "query": query,
+            "results": indexed,
+            "file_hits": file_hits,
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _code_git_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+    response, worker_error = _code_worker_request("/git-status", {"project_id": record.project_id})
+    if worker_error is not None:
+        return worker_error
+    return ActionResult(
+        success=True,
+        message=f"Git status coletado para {record.name}.",
+        data={
+            "project": _project_record_to_payload(record),
+            "git_status": response.get("data"),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _code_git_diff_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+    paths = params.get("paths", [])
+    worker_payload: JsonObject = {"project_id": record.project_id}
+    if isinstance(paths, list):
+        worker_payload["paths"] = [item for item in paths if isinstance(item, str) and item.strip()]
+    response, worker_error = _code_worker_request("/git-diff", worker_payload)
+    if worker_error is not None:
+        return worker_error
+    diff_data = response.get("data") if isinstance(response.get("data"), dict) else {}
+    diff_text = str(diff_data.get("stdout", "") or diff_data.get("stderr", "")).strip()
+    diff_summary = summarize_diff(project=_project_record_to_payload(record), diff_text=diff_text) if diff_text else None
+    return ActionResult(
+        success=True,
+        message=f"Git diff coletado para {record.name}.",
+        data={
+            "project": _project_record_to_payload(record),
+            "git_diff": diff_data,
+            "git_diff_summary": diff_summary,
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _code_explain_project_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    request_text = str(params.get("request", "")).strip() or str(params.get("query", "")).strip()
+    if not request_text:
+        return ActionResult(success=False, message="Descreva o que devo analisar no projeto.", error="missing request")
+    limit = int(params.get("limit", 4))
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+
+    snippets = _get_code_index().search(request_text, limit=limit, project_id=record.project_id)
+    extra_files: list[JsonObject] = []
+    read_paths = params.get("read_paths", [])
+    if isinstance(read_paths, list):
+        for item in read_paths[:2]:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            response, worker_error = _code_worker_request(
+                "/read-file",
+                {"project_id": record.project_id, "path": item},
+            )
+            if worker_error is None and isinstance(response.get("data"), dict):
+                file_payload = response.get("data") or {}
+                extra_files.append(
+                    {
+                        "path": file_payload.get("relative_path") or file_payload.get("path"),
+                        "content": file_payload.get("content", ""),
+                    }
+                )
+
+    explanation = explain_project_state(
+        user_request=request_text,
+        project=_project_record_to_payload(record),
+        snippets=snippets,
+        extra_files=extra_files,
+    )
+    return ActionResult(
+        success=True,
+        message=f"Analise preparada para {record.name}.",
+        data={
+            "project": _project_record_to_payload(record),
+            "project_analysis": explanation,
+            "context_results": snippets,
+            "context_files": extra_files,
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _code_propose_change_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    request_text = str(params.get("request", "")).strip() or str(params.get("query", "")).strip()
+    if not request_text:
+        return ActionResult(success=False, message="Descreva a mudanca ou pergunta de engenharia.", error="missing request")
+    limit = int(params.get("limit", 4))
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+
+    snippets = _get_code_index().search(request_text, limit=limit, project_id=record.project_id)
+    extra_files: list[JsonObject] = []
+    read_paths = params.get("read_paths", [])
+    if isinstance(read_paths, list):
+        for item in read_paths[:2]:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            response, worker_error = _code_worker_request(
+                "/read-file",
+                {"project_id": record.project_id, "path": item},
+            )
+            if worker_error is None and isinstance(response.get("data"), dict):
+                file_payload = response.get("data") or {}
+                extra_files.append(
+                    {
+                        "path": file_payload.get("relative_path") or file_payload.get("path"),
+                        "content": file_payload.get("content", ""),
+                    }
+                )
+
+    proposal = propose_patch_plan(
+        user_request=request_text,
+        project=_project_record_to_payload(record),
+        snippets=snippets,
+        extra_files=extra_files,
+    )
+    return ActionResult(
+        success=True,
+        message=f"Proposta de mudanca preparada para {record.name}.",
+        data={
+            "project": _project_record_to_payload(record),
+            "proposed_code_change": proposal,
+            "context_results": snippets,
+            "context_files": extra_files,
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+            **_capability_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _code_apply_patch_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    changes = params.get("changes", [])
+    if not isinstance(changes, list) or not changes:
+        return ActionResult(success=False, message="Envie ao menos uma mudanca para aplicar.", error="missing changes")
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+    response, worker_error = _code_worker_request(
+        "/apply-patch",
+        {"project_id": record.project_id, "changes": changes},
+    )
+    if worker_error is not None:
+        return worker_error
+    return ActionResult(
+        success=True,
+        message=f"Patch aplicado em {record.name}.",
+        data={
+            "project": _project_record_to_payload(record),
+            "patch_result": response.get("data"),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def _code_run_command_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    command = str(params.get("command", "")).strip()
+    arguments = params.get("arguments", [])
+    if not command:
+        return ActionResult(success=False, message="Informe o comando para validacao.", error="missing command")
+    if not isinstance(arguments, list) or any(not isinstance(item, str) for item in arguments):
+        return ActionResult(success=False, message="`arguments` precisa ser uma lista de textos.", error="invalid arguments")
+    record, error = _resolve_project_record(params, ctx)
+    if error is not None:
+        return error
+    assert record is not None
+    response, worker_error = _code_worker_request(
+        "/run-command",
+        {
+            "project_id": record.project_id,
+            "command": command,
+            "arguments": arguments,
+            "timeout_seconds": int(params.get("timeout_seconds", 60) or 60),
+        },
+    )
+    if worker_error is not None:
+        return worker_error
+    return ActionResult(
+        success=True,
+        message=f"Comando executado em {record.name}.",
+        data={
+            "project": _project_record_to_payload(record),
+            "command_execution": response.get("data"),
+            **_active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
 async def _rpg_get_knowledge_stats(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     index = _get_rpg_index()
     return ActionResult(success=True, message="Estatisticas da base RPG.", data={"knowledge_stats": index.stats()})
@@ -5025,29 +11363,16 @@ async def _rpg_save_lore_note(params: JsonObject, ctx: ActionContext) -> ActionR
 
 async def _rpg_create_character_sheet(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     name = str(params.get("name", "")).strip()
-    world = str(params.get("world", "tormenta20")).strip() or "tormenta20"
-    race = str(params.get("race", "")).strip() or "A definir"
-    class_name = str(params.get("class_name", "")).strip() or "A definir"
-    origin = str(params.get("origin", "acolyte")).strip() or "acolyte"
-    concept = str(params.get("concept", "")).strip() or "A definir"
-    level = int(params.get("level", 1))
     if not name:
         return ActionResult(success=False, message="Informe o nome do personagem.", error="missing name")
 
-    attrs = {
-        "forca": 10,
-        "destreza": 10,
-        "constituicao": 10,
-        "inteligencia": 10,
-        "sabedoria": 10,
-        "carisma": 10,
-    }
-    incoming_attrs = params.get("attributes")
-    if isinstance(incoming_attrs, dict):
-        for key, value in incoming_attrs.items():
-            if key in attrs and isinstance(value, int):
-                attrs[key] = max(1, min(30, value))
-
+    world = str(params.get("world", "tormenta20")).strip() or "tormenta20"
+    class_name = (
+        str(params.get("class_name", "")).strip()
+        or str(params.get("class", "")).strip()
+        or str(params.get("character_class", "")).strip()
+        or "A definir"
+    )
     safe_world = _safe_file_part(world)
     safe_name = _safe_file_part(name)
     target_dir = _rpg_characters_dir() / safe_world
@@ -5058,132 +11383,14 @@ async def _rpg_create_character_sheet(params: JsonObject, ctx: ActionContext) ->
     pdf_dir.mkdir(parents=True, exist_ok=True)
     pdf_path = pdf_dir / f"{safe_name}.pdf"
 
-    bridge_payload, bridge_error = _run_t20_sheet_builder(
-        {
-            "name": name,
-            "world": world,
-            "race": race,
-            "class_name": class_name,
-            "origin": origin,
-            "level": level,
-            "concept": concept,
-            "attributes": attrs,
-        }
-    )
-    builder_source = "fallback"
-    trained_names: list[str] = []
-    if bridge_payload is not None:
-        serialized_character = bridge_payload.get("serialized_character", {})
-        serialized_sheet = serialized_character.get("sheet", {}) if isinstance(serialized_character, dict) else {}
-        sheet_data = {
-            "system": str(bridge_payload.get("system", "tormenta20-t20-sheet-builder")),
-            "builder": str(bridge_payload.get("builder", "t20-sheet-builder")),
-            "name": name,
-            "world": world,
-            "race": race,
-            "class_name": class_name,
-            "origin": origin,
-            "level": int(bridge_payload.get("level", level) or level),
-            "concept": concept,
-            "attributes": bridge_payload.get("attributes", {}),
-            "modifiers": {
-                "forca": int((bridge_payload.get("attributes", {}) or {}).get("strength", 0) or 0),
-                "destreza": int((bridge_payload.get("attributes", {}) or {}).get("dexterity", 0) or 0),
-                "constituicao": int((bridge_payload.get("attributes", {}) or {}).get("constitution", 0) or 0),
-                "inteligencia": int((bridge_payload.get("attributes", {}) or {}).get("intelligence", 0) or 0),
-                "sabedoria": int((bridge_payload.get("attributes", {}) or {}).get("wisdom", 0) or 0),
-                "carisma": int((bridge_payload.get("attributes", {}) or {}).get("charisma", 0) or 0),
-            },
-            "derived": {
-                "pv": bridge_payload.get("life_points"),
-                "pm": bridge_payload.get("mana_points"),
-                "defense": bridge_payload.get("defense"),
-            },
-            "trained_skills": bridge_payload.get("trained_skills", []),
-            "top_skills": bridge_payload.get("top_skills", []),
-            "attacks": bridge_payload.get("attacks", []),
-            "build_steps": bridge_payload.get("build_steps", []),
-            "recommended_skills": [item.get("name") for item in bridge_payload.get("trained_skills", []) if isinstance(item, dict) and item.get("name")],
-            "serialized_character": serialized_character,
-            "displacement": serialized_sheet.get("displacement", 9) if isinstance(serialized_sheet, dict) else 9,
-            "current_cargo": int(serialized_sheet.get("money", 0) or 0) if isinstance(serialized_sheet, dict) else 0,
-            "max_cargo": 10 + max(0, int((bridge_payload.get("attributes", {}) or {}).get("strength", 0) or 0)) * 5,
-            "carry_capacity": (10 + max(0, int((bridge_payload.get("attributes", {}) or {}).get("strength", 0) or 0)) * 5) * 2,
-            "proficiencies": serialized_sheet.get("proficiencies", []) if isinstance(serialized_sheet, dict) else [],
-            "spells": serialized_sheet.get("spells", []) if isinstance(serialized_sheet, dict) else [],
-            "powers": (
-                _json_list(serialized_sheet.get("generalPowers")) +
-                _json_list(serialized_sheet.get("rolePowers")) +
-                _json_list(serialized_sheet.get("originPowers")) +
-                _json_list(serialized_sheet.get("grantedPowers"))
-            ) if isinstance(serialized_sheet, dict) else [],
-            "updated_at": _now_iso(),
-        }
-        trained_skills = sheet_data.get("trained_skills", [])
-        if isinstance(trained_skills, list):
-            for item in trained_skills[:12]:
-                if isinstance(item, dict):
-                    skill_name = str(item.get("name", "")).strip()
-                    total = item.get("total")
-                    if skill_name:
-                        trained_names.append(f"{skill_name} ({total})")
-        attacks = sheet_data.get("attacks", [])
-        attack_names = []
-        if isinstance(attacks, list):
-            for item in attacks[:4]:
-                if not isinstance(item, dict):
-                    continue
-                attack = item.get("attack", {})
-                if isinstance(attack, dict):
-                    attack_name = str(attack.get("name", "")).strip()
-                    if attack_name:
-                        attack_names.append(attack_name)
-        sheet_md = "\n".join(
-            [
-                f"# Ficha Tormenta20 - {name}",
-                "",
-                f"- Mundo: {world}",
-                f"- Raca: {race}",
-                f"- Classe: {class_name}",
-                f"- Origem: {origin}",
-                f"- Nivel: {sheet_data['level']}",
-                f"- Conceito: {concept}",
-                f"- Builder: {sheet_data['builder']}",
-                "",
-                "## Derivados",
-                f"- PV: {sheet_data['derived'].get('pv')}",
-                f"- PM: {sheet_data['derived'].get('pm')}",
-                f"- Defesa: {sheet_data['derived'].get('defense')}",
-                "",
-                "## Pericias Treinadas",
-                *(f"- {item}" for item in trained_names),
-                "",
-                "## Ataques",
-                *(f"- {item}" for item in attack_names),
-                "",
-                "## Build Steps",
-                *(
-                    f"- {str(step.get('action', {}).get('description', '')).strip()}"
-                    for step in sheet_data.get("build_steps", [])[:20]
-                    if isinstance(step, dict)
-                ),
-            ]
-        )
-        builder_source = "t20-sheet-builder"
-    else:
-        sheet_data = _build_tormenta20_sheet_data(
-            name=name,
-            world=world,
-            race=race,
-            class_name=class_name,
-            level=level,
-            concept=concept,
-            attrs=attrs,
-        )
-        sheet_data["origin"] = origin
-        sheet_data["bridge_error"] = f"bridge unsupported: {bridge_error}" if bridge_error else None
-        sheet_md = _build_tormenta20_sheet_markdown(sheet_data)
-    sheet_data = _normalize_sheet_data(sheet_data)
+    try:
+        generation = generate_character_sheet(params)
+    except InvalidCharacterBuildError as error:
+        return ActionResult(success=False, message=str(error), error=str(error))
+
+    sheet_data = generation.normalized_sheet
+    sheet_md = generation.markdown
+    builder_source = generation.source
     md_path.write_text(sheet_md, encoding="utf-8")
     json_path.write_text(
         json.dumps(sheet_data, ensure_ascii=False, indent=2),
@@ -5214,14 +11421,14 @@ async def _rpg_create_character_sheet(params: JsonObject, ctx: ActionContext) ->
     if target_page_id:
         skill_summary = sheet_data.get("recommended_skills")
         if not isinstance(skill_summary, list) or not skill_summary:
-            skill_summary = trained_names
+            skill_summary = []
         artifact_summary = (
             f"Arquivos locais: JSON {json_path.resolve()} | MD {md_path.resolve()} | "
             f"PDF {pdf_path.resolve() if pdf_exported else 'indisponivel'}."
         )
         append_text = (
-            f"Ficha Tormenta20 atualizada. Classe: {class_name}. Nivel: {level}. "
-            f"Builder: {builder_source}. "
+            f"Ficha Tormenta20 atualizada. Classe: {class_name}. Nivel: {sheet_data.get('level', 1)}. "
+            f"Builder: {builder_source}. Status: {generation.status}. "
             f"PV {sheet_data['derived']['pv']}, PM {sheet_data['derived']['pm']}, Defesa {sheet_data['derived']['defense']}. "
             f"Pericias recomendadas: {', '.join(str(item) for item in skill_summary[:6])}. "
             f"{artifact_summary}"
@@ -5246,6 +11453,7 @@ async def _rpg_create_character_sheet(params: JsonObject, ctx: ActionContext) ->
                 "character_name": name,
                 "world": world,
                 "builder_source": builder_source,
+                "generation_status": generation.status,
                 "pdf_status": pdf_status,
                 "pdf_error": pdf_error,
                 "one_note_sync_status": one_note_sync_status,
@@ -5267,7 +11475,11 @@ async def _rpg_create_character_sheet(params: JsonObject, ctx: ActionContext) ->
             "sheet_pdf_template_path": str(_tormenta20_pdf_template_path().resolve()) if _rpg_pdf_export_enabled() else None,
             "sheet_data": sheet_data,
             "sheet_builder_source": builder_source,
-            "sheet_builder_error": (f"bridge unsupported: {bridge_error}" if bridge_error else None),
+            "sheet_builder_error": "; ".join(generation.errors) if generation.errors else None,
+            "sheet_generation_status": generation.status,
+            "sheet_generation_warnings": generation.warnings,
+            "sheet_applied_choices": generation.applied_choices,
+            "sheet_unsupported_fields": generation.unsupported_fields,
             "template_references": existing_templates,
             "one_note_character_page_sync": one_note_sync_status,
             "one_note_character_page_error": one_note_sync_error,
@@ -5280,38 +11492,13 @@ async def _rpg_create_threat_sheet(params: JsonObject, ctx: ActionContext) -> Ac
     if not name:
         return ActionResult(success=False, message="Informe o nome da ameaça.", error="missing name")
 
-    challenge_level_raw = str(params.get("challenge_level", "")).strip()
-    if not challenge_level_raw:
-        return ActionResult(success=False, message="Informe o ND da ameaça.", error="missing challenge_level")
     try:
-        challenge_level, _ = _parse_threat_nd_value(challenge_level_raw)
-    except ValueError as error:
-        return ActionResult(success=False, message="ND inválido para a ameaça.", error=str(error))
+        generation = generate_threat_sheet(params)
+    except InvalidThreatDefinitionError as error:
+        return ActionResult(success=False, message=str(error), error=str(error))
 
-    world = str(params.get("world", "tormenta20")).strip() or "tormenta20"
-    threat_type = str(params.get("threat_type", "Monstro")).strip() or "Monstro"
-    size = str(params.get("size", "Grande")).strip() or "Grande"
-    role = str(params.get("role", "Solo")).strip() or "Solo"
-    concept = str(params.get("concept", "")).strip() or "A definir"
-    has_mana_points = bool(params.get("has_mana_points", True))
-    displacement = str(params.get("displacement", "9 m")).strip() or "9 m"
-    is_boss = bool(params.get("is_boss", False))
-    attributes = params.get("attributes") if isinstance(params.get("attributes"), dict) else None
-
-    threat_data = _build_tormenta20_threat_data(
-        name=name,
-        world=world,
-        threat_type=threat_type,
-        size=size,
-        role=role,
-        challenge_level=challenge_level,
-        concept=concept,
-        has_mana_points=has_mana_points,
-        displacement=displacement,
-        is_boss=is_boss,
-        attributes=attributes,
-    )
-
+    threat_data = generation.normalized_threat
+    world = str(threat_data.get("world", "tormenta20")).strip() or "tormenta20"
     safe_world = _safe_file_part(world)
     safe_name = _safe_file_part(name)
     target_dir = _rpg_threats_dir() / safe_world
@@ -5322,7 +11509,7 @@ async def _rpg_create_threat_sheet(params: JsonObject, ctx: ActionContext) -> Ac
     pdf_dir.mkdir(parents=True, exist_ok=True)
     pdf_path = pdf_dir / f"{safe_name}.pdf"
 
-    md_path.write_text(_build_tormenta20_threat_markdown(threat_data), encoding="utf-8")
+    md_path.write_text(generation.markdown, encoding="utf-8")
     json_path.write_text(json.dumps(threat_data, ensure_ascii=False, indent=2), encoding="utf-8")
     pdf_exported, pdf_error = _export_tormenta20_threat_pdf(threat_data, pdf_path)
     pdf_status = "created" if pdf_exported else "failed"
@@ -5333,9 +11520,10 @@ async def _rpg_create_threat_sheet(params: JsonObject, ctx: ActionContext) -> Ac
             {
                 "threat_name": name,
                 "world": world,
-                "challenge_level": challenge_level,
-                "role": role,
+                "challenge_level": threat_data.get("challenge_level"),
+                "role": threat_data.get("role"),
                 "builder_source": threat_data.get("builder"),
+                "generation_status": generation.status,
                 "pdf_status": pdf_status,
                 "pdf_error": pdf_error,
             },
@@ -5355,9 +11543,10 @@ async def _rpg_create_threat_sheet(params: JsonObject, ctx: ActionContext) -> Ac
             "threat_pdf_error": pdf_error,
             "threat_data": threat_data,
             "threat_builder_source": str(threat_data.get("builder", "jarvez-threat-generator")),
+            "threat_generation_status": generation.status,
+            "threat_generation_warnings": generation.warnings,
         },
     )
-
 
 async def _rpg_session_recording(params: JsonObject, ctx: ActionContext) -> ActionResult:
     mode = str(params.get("mode", "status")).strip().lower()
@@ -5779,6 +11968,1329 @@ def register_default_actions() -> None:
 
     register_action(
         ActionSpec(
+            name="code_reindex_repo",
+            description="Reindexa o codigo local do repositorio para busca semantica/FTS.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                    }
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_code_reindex_repo,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="code_search_repo",
+            description="Busca trechos no codigo local do repositorio por termos, arquivos, funcoes e implementacoes.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "minLength": 2, "maxLength": 300},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_code_search_repo,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="project_list",
+            description="Lista os projetos conhecidos no catalogo multi-repo do Jarvez.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "include_inactive": {"type": "boolean"},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_project_list_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="project_scan",
+            description="Faz um scan nas pastas configuradas e atualiza o catalogo de projetos.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_project_scan_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="github_list_repos",
+            description="Lista repositorios acessiveis no GitHub conectado. Pode filtrar por busca.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                    "visibility": {"type": "string", "enum": ["all", "public", "private"]},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_github_list_repos_action,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="github_find_repo",
+            description="Encontra um repositorio do GitHub por nome curto ou nome completo.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "repository": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "full_name": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "query": {"type": "string", "minLength": 1, "maxLength": 200},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_github_find_repo_action,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="github_clone_and_register",
+            description="Resolve um repositorio no GitHub, faz git clone localmente e registra o projeto no catalogo.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "repository": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "full_name": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "query": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "destination": {"type": "string", "minLength": 1, "maxLength": 500},
+                    "destination_root": {"type": "string", "minLength": 1, "maxLength": 500},
+                    "branch": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "depth": {"type": "integer", "minimum": 1, "maximum": 1000},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_github_clone_and_register_action,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="project_update",
+            description="Atualiza metadados de um projeto do catalogo (nome, aliases, prioridade e estado ativo).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "aliases": {"type": "array"},
+                    "priority_score": {"type": "integer", "minimum": -100, "maximum": 100},
+                    "is_active": {"type": "boolean"},
+                },
+                "required": ["project_id"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_project_update_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="project_remove",
+            description="Remove um projeto do catalogo sem apagar arquivos do disco.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                },
+                "required": ["project_id"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_project_remove_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="project_select",
+            description="Seleciona um projeto por project_id, nome, alias ou consulta aproximada e ativa ele na sessao.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "fuzzy_query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_project_select_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="project_get_active",
+            description="Retorna o projeto ativo no contexto atual.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_project_get_active_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="project_clear_active",
+            description="Limpa o projeto ativo da sessao atual.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_project_clear_active_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="project_refresh_index",
+            description="Reindexa explicitamente um projeto do catalogo.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_project_refresh_index_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="project_search",
+            description="Busca trechos no indice do projeto ativo ou de um projeto informado.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "query": {"type": "string", "minLength": 2, "maxLength": 300},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_project_search_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="coding_mode_get",
+            description="Retorna o modo funcional atual (default/coding).",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_coding_mode_get_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="coding_mode_set",
+            description="Ativa ou desativa o modo funcional de engenharia (coding/codex).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "mode": {"type": "string", "enum": ["default", "coding", "codex"]},
+                },
+                "required": ["mode"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_coding_mode_set_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="code_worker_status",
+            description="Verifica se o code worker local esta online e acessivel.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_code_worker_status_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="codex_exec_task",
+            description="Executa uma tarefa de analise, explicacao ou planejamento via Codex CLI no projeto ativo (ou informado).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "request": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "query": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "prompt": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_codex_exec_task_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="codex_exec_review",
+            description="Executa um review tecnico read-only via Codex CLI no projeto ativo (ou informado).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "request": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "query": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_codex_exec_review_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="codex_exec_status",
+            description="Retorna o estado da tarefa atual ou da ultima tarefa executada via Codex CLI.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_codex_exec_status_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="codex_cancel_task",
+            description="Cancela a tarefa atual do Codex CLI nesta sessao.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_codex_cancel_task_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="skills_list",
+            description="Lista skills disponiveis no workspace para carregar instrucoes sob demanda.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "refresh": {"type": "boolean"},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_skills_list_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="skills_read",
+            description="Le o SKILL.md de uma skill por id ou nome.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "skill_id": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "skill_name": {"type": "string", "minLength": 1, "maxLength": 200},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_skills_read_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="orchestrate_task",
+            description="Planeja uma tarefa, escolhe provider com fallback e retorna um resumo de execucao orquestrada.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "request": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "query": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "prompt": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "action_hint": {"type": "string", "minLength": 2, "maxLength": 120},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_orchestrate_task_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="subagent_spawn",
+            description="Dispara um subagente para tarefas longas e retorna o estado do run.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "request": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "action_hint": {"type": "string", "minLength": 2, "maxLength": 120},
+                    "auto_complete": {"type": "boolean"},
+                    "wait_for_completion": {"type": "boolean"},
+                },
+                "required": ["request"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_subagent_spawn_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="subagent_status",
+            description="Retorna o estado de um subagente especifico ou de todos os subagentes da sessao.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "subagent_id": {"type": "string", "minLength": 5, "maxLength": 120},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_subagent_status_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="subagent_cancel",
+            description="Cancela um subagente em execucao.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "subagent_id": {"type": "string", "minLength": 5, "maxLength": 120},
+                },
+                "required": ["subagent_id"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_subagent_cancel_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="policy_explain_decision",
+            description="Explica risco e decisao de politica para uma action especifica.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "action_name": {"type": "string", "minLength": 2, "maxLength": 180},
+                },
+                "required": ["action_name"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_policy_explain_decision_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="autonomy_set_mode",
+            description="Ajusta o modo de autonomia da sessao (safe/aggressive/manual).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "mode": {"type": "string", "enum": ["safe", "aggressive", "manual"]},
+                },
+                "required": ["mode"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_autonomy_set_mode_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="autonomy_killswitch",
+            description="Liga/desliga kill switch global ou por dominio para bloquear automacoes.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["status", "enable", "disable", "enable_domain", "disable_domain"],
+                    },
+                    "domain": {"type": "string", "minLength": 2, "maxLength": 60},
+                    "reason": {"type": "string", "minLength": 2, "maxLength": 240},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_autonomy_killswitch_action,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="policy_action_risk_matrix",
+            description="Lista as actions com risco/classificacao para governanca e auditoria.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "include_internal": {"type": "boolean"},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_policy_action_risk_matrix_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="policy_domain_trust_status",
+            description="Retorna trust score por dominio usado pela politica dinamica de autonomia.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "domain": {"type": "string", "minLength": 2, "maxLength": 80},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_policy_domain_trust_status_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="policy_trust_drift_report",
+            description="Sincroniza com o backend o drift de trust detectado no Trust Center do cliente.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "signature": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "rows": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "domain": {"type": "string", "minLength": 2, "maxLength": 80},
+                                "active": {"type": "boolean"},
+                                "state": {"type": "string", "minLength": 2, "maxLength": 40},
+                                "score_delta": {"type": "number"},
+                                "recommendation_delta_ms": {"type": "integer"},
+                                "retry_delta": {"type": "integer"},
+                            },
+                            "required": ["domain"],
+                            "additionalProperties": True,
+                        },
+                        "maxItems": 32,
+                    },
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_policy_trust_drift_report_action,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="evals_list_scenarios",
+            description="Lista cenarios de baseline para validacao de confiabilidade do Jarvez.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_evals_list_scenarios_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="evals_run_baseline",
+            description="Executa a suite baseline de cenarios e salva o resultado nas metricas locais.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "task_type": {"type": "string", "enum": ["chat", "code", "review", "research", "automation", "unknown"]},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_evals_run_baseline_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="evals_get_metrics",
+            description="Retorna metricas e resultados das execucoes de baseline/observabilidade.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_evals_get_metrics_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="evals_metrics_summary",
+            description="Resume metricas por provider e risco para acompanhar confiabilidade operacional.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 10, "maximum": 1000},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_evals_metrics_summary_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="evals_slo_report",
+            description="Calcula SLOs operacionais (p95, taxa de sucesso baixo risco e proxy de false-success).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 20, "maximum": 1200},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_evals_slo_report_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="providers_health_check",
+            description="Checa configuracao e estado dos providers multi-model; opcionalmente executa ping curto.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "include_ping": {"type": "boolean"},
+                    "ping_prompt": {"type": "string", "minLength": 2, "maxLength": 300},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_providers_health_check_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ops_incident_snapshot",
+            description="Gera snapshot operacional com saude de providers, flags, kill switch, autonomia, metrics e SLO.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "include_ping": {"type": "boolean"},
+                    "ping_prompt": {"type": "string", "minLength": 2, "maxLength": 300},
+                    "metrics_limit": {"type": "integer", "minimum": 20, "maximum": 1200},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ops_incident_snapshot_action,
+            expose_to_model=False,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ops_canary_status",
+            description="Retorna o estado do canario para a sessao e um resumo por coorte (canary/stable).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "metrics_limit": {"type": "integer", "minimum": 20, "maximum": 1200},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ops_canary_status_action,
+            expose_to_model=False,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ops_canary_set",
+            description="Controla canario por sessao (enroll/unenroll) e flag global canary_v1.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "operation": {"type": "string", "enum": ["enroll", "unenroll", "enable_global", "disable_global"]},
+                },
+                "required": ["operation"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_ops_canary_set_action,
+            expose_to_model=False,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ops_canary_rollout_set",
+            description="Ajusta rollout progressivo do canario (set_percent/step_up/step_down/pause/resume).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "operation": {"type": "string", "enum": ["set_percent", "step_up", "step_down", "pause", "resume"]},
+                    "percent": {"type": "integer", "minimum": 0, "maximum": 100},
+                    "dry_run": {"type": "boolean"},
+                },
+                "required": ["operation"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_ops_canary_rollout_set_action,
+            expose_to_model=False,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ops_canary_promote",
+            description="Avalia gates de canario e promove rollout para o proximo estagio quando aprovado.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "dry_run": {"type": "boolean"},
+                    "force": {"type": "boolean"},
+                    "step_if_passed": {"type": "boolean"},
+                    "rollback_on_fail": {"type": "boolean"},
+                    "min_samples": {"type": "integer", "minimum": 5, "maximum": 200},
+                    "success_rate_min": {"type": "number", "minimum": 0.5, "maximum": 1.0},
+                    "max_regression_vs_stable": {"type": "number", "minimum": 0.0, "maximum": 0.4},
+                    "require_no_alerts": {"type": "boolean"},
+                    "metrics_limit": {"type": "integer", "minimum": 20, "maximum": 1200},
+                    "cooldown_seconds": {"type": "integer", "minimum": 30, "maximum": 7200},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_ops_canary_promote_action,
+            expose_to_model=False,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ops_apply_playbook",
+            description="Aplica playbook operacional para degradacao controlada, guardrails estritos ou bloqueio de dominio.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "playbook": {
+                        "type": "string",
+                        "enum": [
+                            "provider_degradation",
+                            "strict_guardrails",
+                            "block_domain",
+                            "unblock_domain",
+                            "restore_runtime_overrides",
+                        ],
+                    },
+                    "domain": {"type": "string", "minLength": 2, "maxLength": 80},
+                    "reason": {"type": "string", "minLength": 2, "maxLength": 240},
+                    "dry_run": {"type": "boolean"},
+                },
+                "required": ["playbook"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_ops_apply_playbook_action,
+            expose_to_model=False,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ops_control_loop_tick",
+            description="Executa um tick de operacao: diagnostico, auto-remediacao e promocao de canario.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "dry_run": {"type": "boolean"},
+                    "auto_remediate": {"type": "boolean"},
+                    "auto_promote_canary": {"type": "boolean"},
+                    "force_remediation": {"type": "boolean"},
+                    "force_promotion": {"type": "boolean"},
+                    "domain": {"type": "string", "minLength": 2, "maxLength": 80},
+                    "metrics_limit": {"type": "integer", "minimum": 20, "maximum": 1200},
+                    "freeze_threshold": {"type": "integer", "minimum": 1, "maximum": 20},
+                    "freeze_window_seconds": {"type": "integer", "minimum": 60, "maximum": 86400},
+                    "freeze_cooldown_seconds": {"type": "integer", "minimum": 60, "maximum": 86400},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_ops_control_loop_tick_action,
+            expose_to_model=False,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ops_auto_remediate",
+            description="Avalia sinais de SLO e dispara rollback automatico por cenario com cooldown.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "dry_run": {"type": "boolean"},
+                    "force": {"type": "boolean"},
+                    "domain": {"type": "string", "minLength": 2, "maxLength": 80},
+                    "metrics_limit": {"type": "integer", "minimum": 20, "maximum": 1200},
+                    "cooldown_seconds": {"type": "integer", "minimum": 30, "maximum": 3600},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_ops_auto_remediate_action,
+            expose_to_model=False,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ops_rollback_scenario",
+            description="Executa rollback one-click por cenario operacional (provider_outage, latency_spike, reliability_breach, trust_drift_breach, recover_to_stable).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "scenario": {
+                        "type": "string",
+                        "enum": ["provider_outage", "latency_spike", "reliability_breach", "trust_drift_breach", "recover_to_stable"],
+                    },
+                    "domain": {"type": "string", "minLength": 2, "maxLength": 80},
+                    "reason": {"type": "string", "minLength": 2, "maxLength": 240},
+                    "dry_run": {"type": "boolean"},
+                },
+                "required": ["scenario"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_ops_rollback_scenario_action,
+            expose_to_model=False,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ops_feature_flags_status",
+            description="Retorna o estado atual das feature flags (env + overrides runtime).",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ops_feature_flags_status_action,
+            expose_to_model=False,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ops_feature_flags_set",
+            description="Liga/desliga feature flag em runtime para fallback ou rollback imediato sem deploy.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "feature": {"type": "string", "minLength": 2, "maxLength": 80},
+                    "enabled": {"type": "boolean"},
+                },
+                "required": ["feature", "enabled"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_ops_feature_flags_set_action,
+            expose_to_model=False,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="code_read_file",
+            description="Le um arquivo do projeto ativo ou de um projeto informado usando o code worker.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "path": {"type": "string", "minLength": 1, "maxLength": 500},
+                    "start_line": {"type": "integer", "minimum": 1, "maximum": 50000},
+                    "end_line": {"type": "integer", "minimum": 1, "maximum": 50000},
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_code_read_file_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="code_search_in_active_project",
+            description="Busca no indice e nos arquivos do projeto ativo (ou informado).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "query": {"type": "string", "minLength": 2, "maxLength": 300},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_code_search_in_active_project_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="code_explain_project",
+            description="Explica o estado de um projeto com base no indice, arquivos lidos e adaptador OpenAI.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "request": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "query": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "read_paths": {"type": "array"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 8},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_code_explain_project_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="code_git_status",
+            description="Consulta o git status do projeto ativo (ou informado).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_code_git_status_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="code_git_diff",
+            description="Consulta o git diff do projeto ativo (ou informado).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "paths": {"type": "array"},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_code_git_diff_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="code_propose_change",
+            description="Monta uma proposta de mudanca usando contexto real do projeto e o adaptador OpenAI.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "request": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "query": {"type": "string", "minLength": 2, "maxLength": 4000},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "read_paths": {"type": "array"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 8},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_code_propose_change_action,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="code_apply_patch",
+            description="Aplica um patch controlado em um ou mais arquivos do projeto ativo (ou informado).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "changes": {"type": "array"},
+                    "confirmation_summary": {"type": "string", "minLength": 8, "maxLength": 500},
+                },
+                "required": ["changes"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_code_apply_patch_action,
+            requires_auth=True,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="code_run_command",
+            description="Executa um comando allowlisted no projeto ativo (ou informado) via code worker.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "command": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "arguments": {"type": "array"},
+                    "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
+                    "confirmation_summary": {"type": "string", "minLength": 8, "maxLength": 500},
+                },
+                "required": ["command"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_code_run_command_action,
+            requires_auth=True,
+            expose_to_model=False,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="web_search_dashboard",
+            description=(
+                "Pesquisa na web, coleta os principais links publicos e devolve um dashboard estruturado "
+                "com resumo, sites e imagens de referencia."
+            ),
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "minLength": 2, "maxLength": 300},
+                    "max_results": {"type": "integer", "minimum": 3, "maximum": 8},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_web_search_dashboard,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="save_web_briefing_schedule",
+            description=(
+                "Salva uma rotina de briefing diario para o frontend disparar uma pesquisa web automatica "
+                "em horario fixo durante a sessao."
+            ),
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "minLength": 2, "maxLength": 300},
+                    "time_of_day": {"type": "string", "minLength": 5, "maxLength": 5},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_save_web_briefing_schedule,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="open_desktop_resource",
+            description=(
+                "Abre um site, pasta, arquivo ou aplicativo local no computador. "
+                "Aceita URL, caminho, alias de pasta (desktop, downloads, documents, repo) "
+                "ou alias de app (chrome, edge, firefox, explorer, vscode, terminal, cmd)."
+            ),
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "target_kind": {"type": "string", "enum": ["auto", "url", "path", "app"]},
+                },
+                "required": ["target"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_open_desktop_resource,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="run_local_command",
+            description=(
+                "Executa um comando local permitido por allowlist (ex.: git, python, node, pnpm, code). "
+                "Use para tarefas tecnicas no PC quando houver confirmacao explicita."
+            ),
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "minLength": 1, "maxLength": 260},
+                    "arguments": {"type": "array"},
+                    "working_directory": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "wait_for_exit": {"type": "boolean"},
+                    "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
+                },
+                "required": ["command"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_run_local_command,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="git_clone_repository",
+            description="Executa `git clone` para clonar um repositorio em uma pasta local opcional.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "repository_url": {"type": "string", "minLength": 8, "maxLength": 500},
+                    "destination": {"type": "string", "minLength": 1, "maxLength": 512},
+                    "branch": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "depth": {"type": "integer", "minimum": 1, "maximum": 1000},
+                },
+                "required": ["repository_url"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_git_clone_repository,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="git_commit_and_push_project",
+            description="Faz git add, cria um commit e executa git push no projeto ativo (ou informado).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string", "minLength": 3, "maxLength": 240},
+                    "commit_message": {"type": "string", "minLength": 3, "maxLength": 240},
+                    "summary": {"type": "string", "minLength": 3, "maxLength": 240},
+                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
+                    "query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "fuzzy_query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "confirmation_summary": {"type": "string", "minLength": 8, "maxLength": 500},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_git_commit_and_push_project_action,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
             name="rpg_save_lore_note",
             description="Salva nova informacao de lore em arquivo local e indexa automaticamente.",
             params_schema={
@@ -5807,10 +13319,15 @@ def register_default_actions() -> None:
                     "world": {"type": "string", "minLength": 1, "maxLength": 120},
                     "race": {"type": "string", "minLength": 1, "maxLength": 120},
                     "class_name": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "class": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "character_class": {"type": "string", "minLength": 1, "maxLength": 120},
                     "origin": {"type": "string", "minLength": 1, "maxLength": 120},
                     "level": {"type": "integer", "minimum": 1, "maximum": 20},
                     "concept": {"type": "string", "minLength": 1, "maxLength": 400},
                     "attributes": {"type": "object"},
+                    "build_choices": {"type": "object"},
+                    "generation_mode": {"type": "string", "enum": ["auto", "strict"]},
+                    "prefer_engine": {"type": "string", "enum": ["t20", "fallback", "auto"]},
                 },
                 "required": ["name"],
                 "additionalProperties": False,
@@ -5838,6 +13355,13 @@ def register_default_actions() -> None:
                     "is_boss": {"type": "boolean"},
                     "displacement": {"type": "string", "minLength": 1, "maxLength": 80},
                     "attributes": {"type": "object"},
+                    "attacks_override": {"type": "array"},
+                    "abilities_override": {"type": "array"},
+                    "spells_override": {"type": "array"},
+                    "special_qualities": {"type": "string", "minLength": 1, "maxLength": 1200},
+                    "equipment": {"type": "string", "minLength": 1, "maxLength": 1200},
+                    "treasure_level": {"type": "string", "minLength": 1, "maxLength": 80},
+                    "generation_mode": {"type": "string", "enum": ["suggested", "structured"]},
                 },
                 "required": ["name", "challenge_level"],
                 "additionalProperties": False,
@@ -6112,6 +13636,391 @@ def register_default_actions() -> None:
 
     register_action(
         ActionSpec(
+            name="thinq_status",
+            description="Verifica configuracao da API LG ThinQ e testa acesso basico a dispositivos.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_thinq_status,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="thinq_list_devices",
+            description="Lista dispositivos cadastrados na sua conta LG ThinQ.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_thinq_list_devices,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="thinq_get_device_profile",
+            description="Busca o perfil de um dispositivo ThinQ. Use primeiro para descobrir quais comandos o aparelho aceita.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_thinq_get_device_profile,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="thinq_get_device_state",
+            description="Consulta o estado atual de um dispositivo ThinQ.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_thinq_get_device_state,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="thinq_control_device",
+            description="Envia um comando bruto para um dispositivo ThinQ. Use apenas com payload derivado do perfil do dispositivo.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "conditional": {"type": "boolean"},
+                    "command": {"type": "object"},
+                },
+                "required": ["command"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_thinq_control_device,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_get_status",
+            description="Consulta o estado do seu ar-condicionado LG ThinQ. Se houver um unico ar visivel, resolve automaticamente.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_get_status,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_send_command",
+            description="Envia um comando bruto para o ar-condicionado LG ThinQ usando o payload exato do perfil do aparelho.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "conditional": {"type": "boolean"},
+                    "command": {"type": "object"},
+                },
+                "required": ["command"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_ac_send_command,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_turn_on",
+            description="Liga o ar-condicionado LG ThinQ.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "conditional": {"type": "boolean"},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_turn_on,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_turn_off",
+            description="Desliga o ar-condicionado LG ThinQ.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "conditional": {"type": "boolean"},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_turn_off,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_set_temperature",
+            description="Ajusta a temperatura alvo do ar-condicionado LG ThinQ.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "temperature": {"type": "number", "minimum": 16, "maximum": 30},
+                    "unit": {"type": "string", "minLength": 1, "maxLength": 2},
+                    "conditional": {"type": "boolean"},
+                },
+                "required": ["temperature"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_set_temperature,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_set_mode",
+            description="Ajusta o modo do ar-condicionado LG ThinQ (AUTO, AIR_DRY, HEAT, FAN, COOL).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "mode": {"type": "string", "minLength": 2, "maxLength": 32},
+                    "conditional": {"type": "boolean"},
+                },
+                "required": ["mode"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_set_mode,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_set_fan_speed",
+            description="Ajusta a ventilacao do ar-condicionado LG ThinQ (AUTO, LOW, MID, HIGH e variantes).",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "fan_speed": {"type": "string", "minLength": 2, "maxLength": 32},
+                    "detail": {"type": "boolean"},
+                    "conditional": {"type": "boolean"},
+                },
+                "required": ["fan_speed"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_set_fan_speed,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_set_swing",
+            description="Liga ou desliga a oscilacao vertical do ar-condicionado LG ThinQ.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "enabled": {"type": "boolean"},
+                    "conditional": {"type": "boolean"},
+                },
+                "required": ["enabled"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_set_swing,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_set_sleep_timer",
+            description="Programa o desligamento do ar em X horas e minutos. Use 0 para remover o timer.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "hours": {"type": "integer", "minimum": 0, "maximum": 23},
+                    "minutes": {"type": "integer", "minimum": 0, "maximum": 59},
+                    "conditional": {"type": "boolean"},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_set_sleep_timer,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_set_start_timer",
+            description="Programa o ligamento do ar em X horas e minutos. Use 0 para remover o timer de inicio.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "hours": {"type": "integer", "minimum": 0, "maximum": 23},
+                    "minutes": {"type": "integer", "minimum": 0, "maximum": 59},
+                    "conditional": {"type": "boolean"},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_set_start_timer,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_set_power_save",
+            description="Liga ou desliga o modo economia de energia do ar-condicionado LG ThinQ.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "enabled": {"type": "boolean"},
+                    "conditional": {"type": "boolean"},
+                },
+                "required": ["enabled"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_set_power_save,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_apply_preset",
+            description="Aplica um preset do ar. Presets atuais: 'modo dormir', 'gelar sala', 'modo visita', 'economia' e 'ventilar leve'.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "preset": {"type": "string", "minLength": 2, "maxLength": 64},
+                    "conditional": {"type": "boolean"},
+                },
+                "required": ["preset"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_apply_preset,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_configure_arrival_prefs",
+            description="Salva preferencias de chegada em casa para o ar: temperatura desejada, limites de calor e se deve oscilar.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "desired_temperature": {"type": "number", "minimum": 16, "maximum": 30},
+                    "hot_threshold": {"type": "number", "minimum": 18, "maximum": 40},
+                    "vent_only_threshold": {"type": "number", "minimum": 16, "maximum": 40},
+                    "eta_minutes": {"type": "integer", "minimum": 0, "maximum": 240},
+                    "enable_swing": {"type": "boolean"},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_configure_arrival_prefs,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="ac_prepare_arrival",
+            description="Lê a temperatura atual do ambiente e decide se deve resfriar, só ventilar ou não mexer no ar quando voce estiver chegando em casa.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "device_name": {"type": "string", "minLength": 2, "maxLength": 128},
+                    "device_id": {"type": "string", "minLength": 8, "maxLength": 256},
+                    "desired_temperature": {"type": "number", "minimum": 16, "maximum": 30},
+                    "hot_threshold": {"type": "number", "minimum": 18, "maximum": 40},
+                    "vent_only_threshold": {"type": "number", "minimum": 16, "maximum": 40},
+                    "eta_minutes": {"type": "integer", "minimum": 0, "maximum": 240},
+                    "enable_swing": {"type": "boolean"},
+                    "dry_run": {"type": "boolean"},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_ac_prepare_arrival,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
             name="spotify_status",
             description="Verifica status da conexao Spotify e dispositivos ativos.",
             params_schema={
@@ -6143,7 +14052,7 @@ def register_default_actions() -> None:
     register_action(
         ActionSpec(
             name="spotify_transfer_playback",
-            description="Troca o speaker ativo do Spotify para um device especifico.",
+            description="Troca o speaker ativo do Spotify para um device especifico. Use apenas quando o usuario quiser so mudar o device, sem pedir musica/artista/playlist.",
             params_schema={
                 "type": "object",
                 "properties": {
@@ -6156,14 +14065,14 @@ def register_default_actions() -> None:
             },
             requires_confirmation=False,
             handler=_spotify_transfer_playback,
-            requires_auth=True,
+            requires_auth=False,
         )
     )
 
     register_action(
         ActionSpec(
             name="spotify_play",
-            description="Toca musica no Spotify por busca textual ou URI; pode escolher speaker.",
+            description="Toca musica no Spotify por busca textual (query) ou URI; pode escolher speaker. Se o usuario citou musica, artista, album ou playlist, inclua query ou uri junto com device_name/device_id.",
             params_schema={
                 "type": "object",
                 "properties": {
@@ -6177,7 +14086,7 @@ def register_default_actions() -> None:
             },
             requires_confirmation=False,
             handler=_spotify_play,
-            requires_auth=True,
+            requires_auth=False,
         )
     )
 
@@ -6193,7 +14102,7 @@ def register_default_actions() -> None:
             },
             requires_confirmation=False,
             handler=_spotify_pause,
-            requires_auth=True,
+            requires_auth=False,
         )
     )
 
@@ -6209,7 +14118,7 @@ def register_default_actions() -> None:
             },
             requires_confirmation=False,
             handler=_spotify_next_track,
-            requires_auth=True,
+            requires_auth=False,
         )
     )
 
@@ -6225,7 +14134,7 @@ def register_default_actions() -> None:
             },
             requires_confirmation=False,
             handler=_spotify_previous_track,
-            requires_auth=True,
+            requires_auth=False,
         )
     )
 
@@ -6245,7 +14154,7 @@ def register_default_actions() -> None:
             },
             requires_confirmation=False,
             handler=_spotify_set_volume,
-            requires_auth=True,
+            requires_auth=False,
         )
     )
 
@@ -6410,6 +14319,134 @@ def register_default_actions() -> None:
             requires_confirmation=True,
             handler=_call_service,
             expose_to_model=False,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="whatsapp_channel_status",
+            description="Mostra o status do canal WhatsApp (MCP bidirecional e fallback legado).",
+            params_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            requires_confirmation=False,
+            handler=_whatsapp_channel_status,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="browser_agent_run",
+            description="Executa uma tarefa de browser automation com allowed_domains e modo read_only definidos.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "request": {"type": "string", "minLength": 3, "maxLength": 2000},
+                    "allowed_domains": {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 3, "maxLength": 255},
+                        "minItems": 1,
+                        "maxItems": 20,
+                    },
+                    "read_only": {"type": "boolean"},
+                },
+                "required": ["request", "allowed_domains"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_browser_agent_run,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="browser_agent_status",
+            description="Retorna o status mais recente do browser agent.",
+            params_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            requires_confirmation=False,
+            handler=_browser_agent_status,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="browser_agent_cancel",
+            description="Cancela a tarefa ativa do browser agent.",
+            params_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            requires_confirmation=True,
+            handler=_browser_agent_cancel,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="workflow_run",
+            description="Cria um workflow ideia para codigo com checkpoint antes de aplicar mudancas.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "request": {"type": "string", "minLength": 3, "maxLength": 4000},
+                },
+                "required": ["request"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_workflow_run,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="workflow_status",
+            description="Retorna o status do workflow atual.",
+            params_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            requires_confirmation=False,
+            handler=_workflow_status,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="workflow_cancel",
+            description="Cancela o workflow atual.",
+            params_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            requires_confirmation=True,
+            handler=_workflow_cancel,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="automation_status",
+            description="Retorna o estado resumido das automacoes persistidas.",
+            params_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            requires_confirmation=False,
+            handler=_automation_status,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="automation_run_now",
+            description="Dispara uma automacao de forma manual e controlada.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "automation_type": {"type": "string", "minLength": 2, "maxLength": 120},
+                    "dry_run": {"type": "boolean"},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_automation_run_now,
             requires_auth=True,
         )
     )
