@@ -30,7 +30,7 @@ Observacao:
 .\start-dev.ps1
 ```
 
-Isso abre duas janelas automaticamente (backend e frontend), mas a inicializacao e feita por um unico comando.
+Isso abre tres janelas automaticamente (backend, code worker e frontend), mas a inicializacao e feita por um unico comando.
 
 ## Acoes reais com Home Assistant
 
@@ -75,6 +75,20 @@ Configure no `backend/.env`:
 - `RPG_SESSION_LOGS_DIR` (padrao: `data/rpg_sessions`)
 - `RPG_CHARACTERS_DIR` (padrao: `data/rpg_characters`)
 - `RPG_CHARACTER_TEMPLATE_PDFS` (pdfs de ficha/regras para referencia)
+- `PROJECT_SCAN_ROOTS` (lista separada por `;` com pastas para procurar repositorios)
+- `PROJECT_SCAN_IGNORE_DIRS` (dirs ignorados extras, separados por `;`)
+- `PROJECT_SCAN_MAX_DEPTH` (padrao: `3`)
+- `PROJECT_CATALOG_PATH` (padrao: `backend/data/project_catalog.json`)
+- `PROJECT_INDEX_STALE_SECONDS` (padrao: `1800`)
+- `CODE_WORKER_HOST` (padrao: `127.0.0.1`)
+- `CODE_WORKER_PORT` (padrao: `8765`)
+- `CODE_WORKER_TOKEN` (padrao local; troque em producao)
+- `CODE_WORKER_MAX_RESPONSE_CHARS` (padrao: `12000`)
+- `OPENAI_API_KEY`
+- `OPENAI_CODEX_MODEL` (modelo de engenharia preferido)
+- `OPENAI_CODEX_FALLBACK_MODEL` (fallback de alta capacidade)
+- `OPENAI_CODE_MAX_CONTEXT_CHUNKS` (padrao: `4`)
+- `OPENAI_CODE_MAX_OUTPUT_TOKENS` (padrao: `900`)
 
 Exemplos de `entity_id`:
 
@@ -119,6 +133,16 @@ Comandos de voz suportados (MVP):
 - \"Jarvez, gravar sessao\" / \"Jarvez, parar gravacao da sessao\"
 - \"Jarvez, faz resumo da sessao e salva em arquivo\"
 - \"Jarvez, me da ideias para a proxima sessao\"
+- \"Jarvez, entra no modo codex\"
+- \"Jarvez, lista meus projetos\"
+- \"Jarvez, faz scan dos meus projetos\"
+- \"Jarvez, seleciona o projeto Jarvez\"
+- \"Jarvez, como esta a autenticacao nesse projeto?\"
+- \"Jarvez, leia o arquivo backend/actions.py\"
+- \"Jarvez, me explica este projeto\"
+- \"Jarvez, prepara uma mudanca para corrigir X\"
+- \"Jarvez, confirma aplicar o patch\"
+- \"Jarvez, rode pnpm test\"
 
 Importante para biometria:
 - Fale de 2 a 4 segundos antes de pedir `enroll_voice_profile` ou `verify_voice_identity`.
