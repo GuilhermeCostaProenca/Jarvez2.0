@@ -6,8 +6,10 @@ from actions import (
     AUTHENTICATED_SESSIONS,
     ActionContext,
     ActionResult,
+    MEMORY_SCOPE_OVERRIDES,
     PENDING_CONFIRMATIONS,
     PARTICIPANT_PENDING_TOKENS,
+    VOICE_STEP_UP_PENDING,
     _redact,
     dispatch_action,
     validate_params,
@@ -30,11 +32,37 @@ class _FakeSession:
         self.history = _FakeHistory(items)
 
 
+class _FakeVoiceStore:
+    def __init__(self, score: float):
+        self.score = score
+
+    def verify_identity(self, *, participant_identity: str):  # noqa: ARG002
+        class _Result:
+            def __init__(self, score: float):
+                self.score = score
+                self.profile_name = "Guilherme"
+
+        return _Result(self.score)
+
+
+class _FakeMemoryClient:
+    def __init__(self):
+        self.deleted_ids: list[str] = []
+
+    async def search(self, query, filters=None):  # noqa: ARG002
+        return {"results": [{"id": "m1", "memory": "segredo teste"}, {"id": "m2", "memory": "outra memoria"}]}
+
+    async def delete(self, memory_id):
+        self.deleted_ids.append(memory_id)
+
+
 class ActionsTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         PENDING_CONFIRMATIONS.clear()
         PARTICIPANT_PENDING_TOKENS.clear()
         AUTHENTICATED_SESSIONS.clear()
+        VOICE_STEP_UP_PENDING.clear()
+        MEMORY_SCOPE_OVERRIDES.clear()
 
     def test_validate_params_success(self):
         ok, err = validate_params(
@@ -197,6 +225,67 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
             result = await dispatch_action("authenticate_identity", {"pin": "1111"}, ctx)
         self.assertFalse(result.success)
         self.assertIn("Falha na autenticacao", result.message)
+
+    async def test_authenticate_identity_accepts_passphrase_only(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        with patch("actions.os.getenv") as getenv:
+            def _fake_getenv(key, default=""):
+                if key == "JARVEZ_SECURITY_PIN":
+                    return ""
+                if key == "JARVEZ_SECURITY_PASSPHRASE":
+                    return "tony"
+                return default
+
+            getenv.side_effect = _fake_getenv
+            result = await dispatch_action("authenticate_identity", {"passphrase": "Tony"}, ctx)
+        self.assertTrue(result.success)
+        self.assertEqual(result.data.get("auth_method"), "passphrase")
+
+    async def test_authenticate_identity_accepts_security_phrase_alias(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        with patch("actions.os.getenv") as getenv:
+            def _fake_getenv(key, default=""):
+                if key == "JARVEZ_SECURITY_PIN":
+                    return ""
+                if key == "JARVEZ_SECURITY_PASSPHRASE":
+                    return "tony"
+                return default
+
+            getenv.side_effect = _fake_getenv
+            result = await dispatch_action("authenticate_identity", {"security_phrase": "tony"}, ctx)
+        self.assertTrue(result.success)
+
+    async def test_verify_voice_identity_high_confidence_authenticates(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        with patch("actions.VOICE_PROFILE_STORE", _FakeVoiceStore(0.95)):
+            result = await dispatch_action("verify_voice_identity", {}, ctx)
+        self.assertTrue(result.success)
+        self.assertEqual(result.data.get("auth_method"), "voice")
+
+    async def test_verify_voice_identity_medium_confidence_requires_stepup(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        with patch("actions.VOICE_PROFILE_STORE", _FakeVoiceStore(0.8)):
+            result = await dispatch_action("verify_voice_identity", {}, ctx)
+        self.assertFalse(result.success)
+        self.assertTrue(result.data.get("step_up_required"))
+
+    async def test_set_memory_scope(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        result = await dispatch_action("set_memory_scope", {"scope": "private"}, ctx)
+        self.assertTrue(result.success)
+
+    async def test_forget_memory_public(self):
+        fake_memory = _FakeMemoryClient()
+        ctx = ActionContext(
+            job_id="j1",
+            room="room-a",
+            participant_identity="user-a",
+            memory_client=fake_memory,
+            user_id="user-a",
+        )
+        result = await dispatch_action("forget_memory", {"query": "segredo", "scope": "public", "limit": 1}, ctx)
+        self.assertTrue(result.success)
+        self.assertEqual(fake_memory.deleted_ids, ["m1"])
 
     async def test_auth_gate_blocks_sensitive_action_without_auth(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")

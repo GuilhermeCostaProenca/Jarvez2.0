@@ -4,3 +4,4 @@ livekit-plugins-noise-cancellation
 python-dotenv
 requests
 mem0ai
+cryptography

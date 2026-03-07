@@ -32,7 +32,12 @@ class MemoryScopeTests(unittest.TestCase):
                 _FakeItem("assistant", "Entendido, vou tratar como privado"),
             ]
         )
-        public_batch, private_batch = _prepare_memory_batches(chat_ctx, set())
+        public_batch, private_batch = _prepare_memory_batches(
+            chat_ctx,
+            set(),
+            participant_identity="user-a",
+            room="room-a",
+        )
         self.assertEqual(len(public_batch), 2)
         self.assertEqual(len(private_batch), 2)
         self.assertIn("PIN", private_batch[0]["content"])

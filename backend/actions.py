@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
 import requests
+from voice_biometrics import VoiceProfileStore
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,8 @@ class ActionContext:
     room: str
     participant_identity: str
     session: Any | None = None
+    memory_client: Any | None = None
+    user_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -91,12 +94,17 @@ class AuthenticatedSession:
     participant_identity: str
     room: str
     expires_at: datetime
+    auth_method: str
+    last_activity_at: datetime
 
 
 ACTION_REGISTRY: dict[str, ActionSpec] = {}
 PENDING_CONFIRMATIONS: dict[str, PendingConfirmation] = {}
 PARTICIPANT_PENDING_TOKENS: dict[str, str] = {}
 AUTHENTICATED_SESSIONS: dict[str, AuthenticatedSession] = {}
+VOICE_STEP_UP_PENDING: dict[str, float] = {}
+VOICE_PROFILE_STORE = VoiceProfileStore.from_env()
+MEMORY_SCOPE_OVERRIDES: dict[str, str] = {}
 
 
 def register_action(spec: ActionSpec) -> None:
@@ -115,6 +123,18 @@ def get_exposed_actions() -> list[ActionSpec]:
 
 def is_authenticated_session(participant_identity: str, room: str) -> bool:
     return _is_authenticated(participant_identity, room)
+
+
+def _memory_override_key(participant_identity: str, room: str) -> str:
+    return f"{participant_identity}:{room}"
+
+
+def set_memory_scope_override(participant_identity: str, room: str, scope: str) -> None:
+    MEMORY_SCOPE_OVERRIDES[_memory_override_key(participant_identity, room)] = scope
+
+
+def get_memory_scope_override(participant_identity: str, room: str) -> str | None:
+    return MEMORY_SCOPE_OVERRIDES.get(_memory_override_key(participant_identity, room))
 
 
 def action_spec_to_raw_schema(spec: ActionSpec) -> JsonObject:
@@ -250,16 +270,54 @@ def _security_passphrase() -> str:
     return os.getenv("JARVEZ_SECURITY_PASSPHRASE", "").strip()
 
 
+def _secure_idle_lock_seconds() -> int:
+    raw = os.getenv("JARVEZ_SECURE_IDLE_LOCK_SECONDS", "300").strip()
+    if not raw:
+        return 300
+    try:
+        return max(60, int(raw))
+    except ValueError:
+        return 300
+
+
+def _voice_threshold() -> float:
+    raw = os.getenv("JARVEZ_VOICE_MATCH_THRESHOLD", "0.78").strip()
+    try:
+        return max(0.0, min(1.0, float(raw)))
+    except ValueError:
+        return 0.78
+
+
+def _voice_stepup_threshold() -> float:
+    raw = os.getenv("JARVEZ_VOICE_REQUIRE_STEPUP_BELOW", "0.85").strip()
+    try:
+        return max(0.0, min(1.0, float(raw)))
+    except ValueError:
+        return 0.85
+
+
 def _clear_authentication(identity: str) -> None:
     AUTHENTICATED_SESSIONS.pop(identity, None)
+    VOICE_STEP_UP_PENDING.pop(identity, None)
 
 
-def _set_authenticated(identity: str, room: str) -> None:
+def _set_authenticated(identity: str, room: str, auth_method: str) -> None:
+    now = datetime.now(timezone.utc)
     AUTHENTICATED_SESSIONS[identity] = AuthenticatedSession(
         participant_identity=identity,
         room=room,
-        expires_at=datetime.now(timezone.utc) + timedelta(seconds=_security_ttl_seconds()),
+        expires_at=now + timedelta(seconds=_security_ttl_seconds()),
+        auth_method=auth_method,
+        last_activity_at=now,
     )
+    VOICE_STEP_UP_PENDING.pop(identity, None)
+
+
+def _touch_authenticated(identity: str) -> None:
+    session = AUTHENTICATED_SESSIONS.get(identity)
+    if session is None:
+        return
+    session.last_activity_at = datetime.now(timezone.utc)
 
 
 def _is_authenticated(identity: str, room: str) -> bool:
@@ -272,6 +330,10 @@ def _is_authenticated(identity: str, room: str) -> bool:
     if session.expires_at <= datetime.now(timezone.utc):
         _clear_authentication(identity)
         return False
+    idle_limit = timedelta(seconds=_secure_idle_lock_seconds())
+    if datetime.now(timezone.utc) - session.last_activity_at > idle_limit:
+        _clear_authentication(identity)
+        return False
     return True
 
 
@@ -279,11 +341,15 @@ def _security_status_payload(identity: str, room: str) -> JsonObject:
     authenticated = _is_authenticated(identity, room)
     session = AUTHENTICATED_SESSIONS.get(identity)
     expires_in = _remaining_seconds(session.expires_at) if session else 0
+    auth_method = session.auth_method if session else None
+    step_up_required = identity in VOICE_STEP_UP_PENDING
     return {
         "security_status": {
             "authenticated": authenticated,
             "identity_bound": bool(identity),
             "expires_in": expires_in,
+            "auth_method": auth_method,
+            "step_up_required": step_up_required,
         }
     }
 
@@ -536,6 +602,7 @@ async def dispatch_action(
             message="Sessao privada bloqueada. Confirme sua identidade com PIN para continuar.",
             data={
                 "authentication_required": True,
+                "step_up_required": ctx.participant_identity in VOICE_STEP_UP_PENDING,
                 **_security_status_payload(ctx.participant_identity, ctx.room),
             },
             error="not authenticated",
@@ -550,6 +617,9 @@ async def dispatch_action(
             result=result,
         )
         return result
+
+    if spec.requires_auth:
+        _touch_authenticated(ctx.participant_identity)
 
     if spec.requires_confirmation and not skip_confirmation and name != "confirm_action":
         pending = _store_confirmation(name, params, ctx)
@@ -738,11 +808,18 @@ async def _authenticate_identity(params: JsonObject, ctx: ActionContext) -> Acti
             error="invalid credentials",
         )
 
-    _set_authenticated(ctx.participant_identity, ctx.room)
+    step_up_pending = ctx.participant_identity in VOICE_STEP_UP_PENDING
+    auth_method = "pin" if pin_valid else "passphrase"
+    if step_up_pending:
+        auth_method = "voice+pin"
+    elif pin_valid and passphrase_valid:
+        auth_method = "voice+pin"
+
+    _set_authenticated(ctx.participant_identity, ctx.room, auth_method=auth_method)
     return ActionResult(
         success=True,
         message="Sessao autenticada. Modo privado liberado.",
-        data=_security_status_payload(ctx.participant_identity, ctx.room),
+        data={"auth_method": auth_method, "private_access_granted": True, **_security_status_payload(ctx.participant_identity, ctx.room)},
     )
 
 
@@ -762,6 +839,148 @@ async def _get_security_status(params: JsonObject, ctx: ActionContext) -> Action
     else:
         message = "Sessao nao autenticada."
     return ActionResult(success=True, message=message, data=status)
+
+
+async def _set_memory_scope(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    scope = str(params.get("scope", "")).strip().lower()
+    if scope not in {"public", "private"}:
+        return ActionResult(success=False, message="Escopo invalido. Use public ou private.", error="invalid scope")
+    set_memory_scope_override(ctx.participant_identity, ctx.room, scope)
+    return ActionResult(success=True, message=f"Ok, vou tratar o proximo contexto como {scope}.", data={"memory_scope": scope})
+
+
+async def _forget_memory(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    if ctx.memory_client is None or not ctx.user_id:
+        return ActionResult(success=False, message="Memoria indisponivel nesta sessao.", error="memory client not available")
+
+    query = str(params.get("query", "")).strip()
+    scope = str(params.get("scope", "all")).strip().lower()
+    limit = int(params.get("limit", 3))
+    if not query:
+        return ActionResult(success=False, message="Informe o que devo esquecer.", error="missing query")
+
+    allowed_scopes = ["public", "private"] if scope == "all" else [scope]
+    if scope not in {"all", "public", "private"}:
+        return ActionResult(success=False, message="Escopo invalido para esquecimento.", error="invalid scope")
+
+    if "private" in allowed_scopes and not _is_authenticated(ctx.participant_identity, ctx.room):
+        return ActionResult(
+            success=False,
+            message="Para esquecer memoria privada, autentique a sessao primeiro.",
+            data={"authentication_required": True, **_security_status_payload(ctx.participant_identity, ctx.room)},
+            error="not authenticated",
+        )
+
+    deleted: list[JsonObject] = []
+    for target_scope in allowed_scopes:
+        scoped_user_id = f"{ctx.user_id}::{target_scope}"
+        results = await ctx.memory_client.search(query, filters={"user_id": scoped_user_id})
+        candidates = results.get("results") if isinstance(results, dict) else results
+        if not isinstance(candidates, list):
+            continue
+        for item in candidates[: max(1, limit)]:
+            if not isinstance(item, dict):
+                continue
+            memory_id = item.get("id")
+            if not memory_id:
+                continue
+            await ctx.memory_client.delete(memory_id)
+            deleted.append(
+                {
+                    "id": memory_id,
+                    "scope": target_scope,
+                    "memory": str(item.get("memory", ""))[:120],
+                }
+            )
+
+    if not deleted:
+        return ActionResult(success=False, message="Nao encontrei memoria correspondente para esquecer.", error="not found")
+
+    return ActionResult(
+        success=True,
+        message=f"Esqueci {len(deleted)} memoria(s) correspondente(s).",
+        data={"deleted_count": len(deleted), "deleted": deleted},
+    )
+
+
+async def _enroll_voice_profile(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    if VOICE_PROFILE_STORE is None:
+        return ActionResult(success=False, message="Biometria de voz desativada.", error="voice biometrics disabled")
+
+    name = str(params.get("name", "")).strip()
+    if not name:
+        return ActionResult(success=False, message="Informe um nome para o perfil de voz.", error="missing name")
+
+    VOICE_PROFILE_STORE.enroll_profile(name=name, participant_identity=ctx.participant_identity)
+    return ActionResult(success=True, message=f"Perfil de voz '{name}' salvo com sucesso.")
+
+
+async def _list_voice_profiles(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    if VOICE_PROFILE_STORE is None:
+        return ActionResult(success=False, message="Biometria de voz desativada.", error="voice biometrics disabled")
+    profiles = VOICE_PROFILE_STORE.list_profiles()
+    return ActionResult(success=True, message=f"{len(profiles)} perfil(is) de voz encontrado(s).", data={"profiles": profiles})
+
+
+async def _delete_voice_profile(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    if VOICE_PROFILE_STORE is None:
+        return ActionResult(success=False, message="Biometria de voz desativada.", error="voice biometrics disabled")
+
+    name = str(params.get("name", "")).strip()
+    if not name:
+        return ActionResult(success=False, message="Informe o nome do perfil a remover.", error="missing name")
+    deleted = VOICE_PROFILE_STORE.delete_profile(name=name)
+    if not deleted:
+        return ActionResult(success=False, message="Perfil de voz nao encontrado.", error="not found")
+    return ActionResult(success=True, message=f"Perfil de voz '{name}' removido.")
+
+
+async def _verify_voice_identity(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    if VOICE_PROFILE_STORE is None:
+        return ActionResult(success=False, message="Biometria de voz desativada.", error="voice biometrics disabled")
+
+    verify = VOICE_PROFILE_STORE.verify_identity(participant_identity=ctx.participant_identity)
+    threshold = _voice_threshold()
+    stepup_limit = max(threshold, _voice_stepup_threshold())
+
+    if verify.score >= stepup_limit:
+        _set_authenticated(ctx.participant_identity, ctx.room, auth_method="voice")
+        return ActionResult(
+            success=True,
+            message="Identidade por voz validada com alta confianca.",
+            data={
+                "auth_method": "voice",
+                "voice_score": verify.score,
+                "private_access_granted": True,
+                "step_up_required": False,
+                "matched_profile": verify.profile_name,
+                **_security_status_payload(ctx.participant_identity, ctx.room),
+            },
+        )
+
+    if verify.score >= threshold:
+        VOICE_STEP_UP_PENDING[ctx.participant_identity] = verify.score
+        _clear_authentication(ctx.participant_identity)
+        return ActionResult(
+            success=False,
+            message="Voz reconhecida com confianca media. Confirme com PIN/frase para liberar acesso privado.",
+            data={
+                "authentication_required": True,
+                "step_up_required": True,
+                "voice_score": verify.score,
+                "matched_profile": verify.profile_name,
+                **_security_status_payload(ctx.participant_identity, ctx.room),
+            },
+            error="voice_step_up_required",
+        )
+
+    _clear_authentication(ctx.participant_identity)
+    return ActionResult(
+        success=False,
+        message="Nao consegui validar sua identidade por voz.",
+        data={"voice_score": verify.score, "step_up_required": True},
+        error="voice_not_matched",
+    )
 
 
 def register_default_actions() -> None:
@@ -795,7 +1014,7 @@ def register_default_actions() -> None:
                     "passphrase": {"type": "string", "minLength": 1, "maxLength": 128},
                     "security_phrase": {"type": "string", "minLength": 1, "maxLength": 128},
                 },
-                "required": ["pin"],
+                "required": [],
                 "additionalProperties": False,
             },
             requires_confirmation=False,
@@ -814,6 +1033,106 @@ def register_default_actions() -> None:
             },
             requires_confirmation=False,
             handler=_lock_private_mode,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="set_memory_scope",
+            description="Define preferencia de memoria para o contexto atual: public ou private.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "scope": {"type": "string", "enum": ["public", "private"]},
+                },
+                "required": ["scope"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_set_memory_scope,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="forget_memory",
+            description="Esquece memorias salvas que combinem com a consulta informada.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "minLength": 2, "maxLength": 256},
+                    "scope": {"type": "string", "enum": ["all", "public", "private"]},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_forget_memory,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="enroll_voice_profile",
+            description="Cadastra o perfil de voz local para a identidade atual.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "minLength": 2, "maxLength": 64},
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_enroll_voice_profile,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="verify_voice_identity",
+            description="Verifica identidade de voz e aplica step-up com PIN se necessario.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_verify_voice_identity,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="list_voice_profiles",
+            description="Lista perfis de voz cadastrados localmente.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_list_voice_profiles,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="delete_voice_profile",
+            description="Remove um perfil de voz cadastrado pelo nome.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "minLength": 2, "maxLength": 64},
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_delete_voice_profile,
         )
     )
 
