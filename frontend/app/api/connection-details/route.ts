@@ -24,8 +24,10 @@ const TOKEN_ALLOWED_ORIGINS = (process.env.TOKEN_ALLOWED_ORIGINS ?? '')
   .filter(Boolean);
 
 const ROOM_NAME_REGEX = /^[a-zA-Z0-9_-]{3,64}$/;
+const PARTICIPANT_IDENTITY_REGEX = /^[a-zA-Z0-9_-]{3,64}$/;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 30;
+const IDENTITY_COOKIE_NAME = 'jarvez_participant_identity';
 
 const globalRateLimitStore =
   (globalThis as { __jarvezRateLimitStore?: Map<string, RateLimitEntry> }).__jarvezRateLimitStore ??
@@ -54,9 +56,10 @@ export async function POST(req: Request) {
     const body = await req.json();
     const agentName: string | undefined = body?.room_config?.agents?.[0]?.agent_name;
     const requestedRoomName: string | undefined = body?.room_name;
+    const requestedIdentity: string | undefined = body?.participant_identity;
 
     const participantName = 'user';
-    const participantIdentity = `voice_assistant_user_${Math.floor(Math.random() * 1_000_000)}`;
+    const participantIdentity = resolveParticipantIdentity(req, requestedIdentity);
     const generatedRoomName = `voice_assistant_room_${Math.floor(Math.random() * 1_000_000)}`;
     const roomName = requestedRoomName ?? generatedRoomName;
 
@@ -81,6 +84,7 @@ export async function POST(req: Request) {
     return NextResponse.json(data, {
       headers: {
         'Cache-Control': 'no-store',
+        'Set-Cookie': `${IDENTITY_COOKIE_NAME}=${participantIdentity}; Path=/; Max-Age=31536000; SameSite=Lax`,
       },
     });
   } catch (error) {
@@ -92,17 +96,44 @@ export async function POST(req: Request) {
   }
 }
 
+function resolveParticipantIdentity(req: Request, requestedIdentity?: string): string {
+  const requested = requestedIdentity?.trim();
+  if (requested && PARTICIPANT_IDENTITY_REGEX.test(requested)) {
+    return requested;
+  }
+
+  const cookieHeader = req.headers.get('cookie') ?? '';
+  const cookieMatch = cookieHeader
+    .split(';')
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${IDENTITY_COOKIE_NAME}=`));
+  if (cookieMatch) {
+    const cookieValue = decodeURIComponent(cookieMatch.split('=').slice(1).join('=')).trim();
+    if (PARTICIPANT_IDENTITY_REGEX.test(cookieValue)) {
+      return cookieValue;
+    }
+  }
+
+  return `voice_assistant_user_${Math.floor(Math.random() * 1_000_000)}`;
+}
+
 function isAllowedOrigin(origin: string | null): boolean {
   if (!origin) return true;
 
-  const localDevOrigins = new Set([
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'https://localhost:3000',
-    'https://127.0.0.1:3000',
-  ]);
+  try {
+    const parsedOrigin = new URL(origin);
+    const isLocalhost =
+      (parsedOrigin.protocol === 'http:' || parsedOrigin.protocol === 'https:') &&
+      (parsedOrigin.hostname === 'localhost' || parsedOrigin.hostname === '127.0.0.1');
 
-  return localDevOrigins.has(origin) || TOKEN_ALLOWED_ORIGINS.includes(origin);
+    if (isLocalhost) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return TOKEN_ALLOWED_ORIGINS.includes(origin);
 }
 
 function buildRateLimitKey(req: Request): string {

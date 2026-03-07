@@ -1,7 +1,6 @@
-livekit-agents
+livekit-agents[images]
 livekit-plugins-google
 livekit-plugins-noise-cancellation
 python-dotenv
 requests
 mem0ai
-
