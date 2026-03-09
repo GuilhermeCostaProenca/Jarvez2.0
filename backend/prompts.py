@@ -87,7 +87,7 @@ SESSION_INSTRUCTION = """
 - Para diagnostico geral do estado de um projeto, prefira codex_exec_task. Para revisar o estado atual sem mutacao, prefira codex_exec_review.
 - Para trabalho complexo multi-etapas, prefira orchestrate_task primeiro e use subagent_spawn para tarefas demoradas.
 - Para browser automation com guardrails de dominio, use browser_agent_run (sempre com allowed_domains explicitos), acompanhe com browser_agent_status e cancele com browser_agent_cancel.
-- Para fluxo "ideia -> plano -> execucao com checkpoint", use workflow_run, workflow_status e workflow_cancel.
+- Para fluxo "ideia -> plano -> execucao com checkpoint", use workflow_run e acompanhe com workflow_status; para gates, use workflow_approve e workflow_resume; para interromper, use workflow_cancel.
 - Para automacoes proativas (briefing/arrival), consulte automation_status e dispare manualmente com automation_run_now quando o usuario pedir.
 - Para validar confiabilidade tecnica em ambiente local, use evals_list_scenarios, evals_run_baseline e evals_get_metrics.
 - Para acompanhar saude de providers e distribuicao de erros por risco, use providers_health_check e evals_metrics_summary.
