@@ -1,0 +1,51 @@
+import { type CharacterModifierName } from '../Character';
+import { type EnabledEffectModifiersIndexes } from '../Character/CharacterAttackTriggeredEffect';
+import { type ManaCost } from '../ManaCost';
+import { type Modifiers } from '../Modifier';
+import { type SerializedSheetAbilityEffect } from '../Sheet';
+import type { ActivateableAbilityEffectInterface, ActivateableEffectParams, ActivationType } from './ActivateableAbilityEffect';
+import { ActivateableAbilityEffect } from './ActivateableAbilityEffect';
+import { type TriggeredEffectActivation } from './TriggeredEffectActivation';
+import { type TriggeredEffectName } from './TriggeredEffectName';
+export declare enum TriggerEvent {
+    attack = "attack",
+    defend = "defend",
+    skillTest = "skillTest",
+    skillTestExceptAttack = "skillTestExceptAttack",
+    resistanceTest = "resistanceTest"
+}
+export type TriggeredEffectModifiers = Partial<Record<CharacterModifierName, Modifiers>>;
+export type TriggeredEffectEnableParams = {
+    modifiers: TriggeredEffectModifiers;
+    modifiersIndexes: EnabledEffectModifiersIndexes;
+};
+export type TriggeredEffectDisableParams = {
+    modifiers: TriggeredEffectModifiers;
+    modifiersIndexes: EnabledEffectModifiersIndexes;
+};
+export type TriggeredEffectInterface = ActivateableAbilityEffectInterface & {
+    triggerEvents: TriggerEvent[];
+    name: TriggeredEffectName;
+    enable({ modifiersIndexes, modifiers }: TriggeredEffectEnableParams): void;
+};
+export type TriggeredEffectEnableReturn = {
+    manaCost?: ManaCost;
+};
+type TriggeredEffectParams = ActivateableEffectParams & {
+    triggerEvents: TriggerEvent[] | TriggerEvent;
+    name: TriggeredEffectName;
+};
+export type SerializedTriggeredEffect = SerializedSheetAbilityEffect & {
+    triggerEvents: TriggerEvent[];
+    name: TriggeredEffectName;
+};
+export declare abstract class TriggeredEffect<A extends TriggeredEffectActivation = TriggeredEffectActivation> extends ActivateableAbilityEffect {
+    triggerEvents: TriggerEvent[];
+    name: TriggeredEffectName;
+    get activationType(): ActivationType;
+    constructor(params: TriggeredEffectParams);
+    serialize(): SerializedTriggeredEffect;
+    abstract enable({ modifiersIndexes, modifiers }: TriggeredEffectEnableParams, activation: A): TriggeredEffectEnableReturn;
+    abstract disable({ modifiersIndexes, modifiers }: TriggeredEffectDisableParams): void;
+}
+export {};

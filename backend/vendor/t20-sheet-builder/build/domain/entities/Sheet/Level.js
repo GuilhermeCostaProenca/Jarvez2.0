@@ -1,0 +1,26 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Level = void 0;
+var Level;
+(function (Level) {
+    Level[Level["one"] = 1] = "one";
+    Level[Level["two"] = 2] = "two";
+    Level[Level["three"] = 3] = "three";
+    Level[Level["four"] = 4] = "four";
+    Level[Level["five"] = 5] = "five";
+    Level[Level["six"] = 6] = "six";
+    Level[Level["seven"] = 7] = "seven";
+    Level[Level["eight"] = 8] = "eight";
+    Level[Level["nine"] = 9] = "nine";
+    Level[Level["ten"] = 10] = "ten";
+    Level[Level["eleven"] = 11] = "eleven";
+    Level[Level["twelve"] = 12] = "twelve";
+    Level[Level["thirteen"] = 13] = "thirteen";
+    Level[Level["fourteen"] = 14] = "fourteen";
+    Level[Level["fifteen"] = 15] = "fifteen";
+    Level[Level["sixteen"] = 16] = "sixteen";
+    Level[Level["seventeen"] = 17] = "seventeen";
+    Level[Level["eighteen"] = 18] = "eighteen";
+    Level[Level["nineteen"] = 19] = "nineteen";
+    Level[Level["twenty"] = 20] = "twenty";
+})(Level || (exports.Level = Level = {}));
