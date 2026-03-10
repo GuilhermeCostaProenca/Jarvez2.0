@@ -6229,12 +6229,20 @@ async def _browser_agent_run(params: JsonObject, ctx: ActionContext) -> ActionRe
     _persist_event_namespace(ctx.participant_identity, ctx.room, "browser_tasks", started_task)
     await _publish_agent_event(ctx, {"type": "browser_task_started", "browser_task": started_task})
 
-    browser_task_state, ok, error_code = run_browser_task(
+    def _is_cancel_requested() -> bool:
+        current = _load_event_namespace(ctx.participant_identity, ctx.room, "browser_tasks")
+        if not isinstance(current, dict):
+            return False
+        return str(current.get("task_id", "")).strip() == task_id and str(current.get("status", "")).strip() == "cancelled"
+
+    browser_task_state, ok, error_code = await asyncio.to_thread(
+        run_browser_task,
         task_id=task_id,
         request=request,
         allowed_domains=allowed_domains if isinstance(allowed_domains, list) else [],
         read_only=read_only,
         mcp_url=str(os.getenv("JARVEZ_PLAYWRIGHT_MCP_URL", "")).strip(),
+        is_cancel_requested=_is_cancel_requested,
     )
     browser_task = browser_task_state.to_payload()
     if not ok:

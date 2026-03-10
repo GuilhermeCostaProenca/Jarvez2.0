@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
-from types import SimpleNamespace
 
 from browser_agent.runner import run_browser_task
 
@@ -95,7 +95,7 @@ class BrowserAgentRunnerTests(unittest.TestCase):
     def test_run_browser_task_blocks_write_mode(self) -> None:
         state, ok, error = run_browser_task(
             task_id="browser_3",
-            request="faça login no portal",
+            request="faca login no portal",
             allowed_domains=["example.com"],
             read_only=False,
             mcp_url="http://127.0.0.1:3333",
@@ -103,6 +103,26 @@ class BrowserAgentRunnerTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(error, "write_mode_not_enabled")
         self.assertEqual(state.status, "failed")
+
+    @patch("browser_agent.runner.PlaywrightMcpClient")
+    def test_run_browser_task_supports_cooperative_cancellation(self, client_cls_mock) -> None:
+        client_instance = client_cls_mock.return_value
+        client_instance.healthcheck.return_value.ok = True
+        client_instance.healthcheck.return_value.status = "ok"
+        client_instance.healthcheck.return_value.detail = None
+        client_instance.call_tool.return_value = SimpleNamespace(ok=True, status="ok", detail=None, result={})
+
+        state, ok, error = run_browser_task(
+            task_id="browser_4",
+            request="resuma https://example.com",
+            allowed_domains=["example.com"],
+            read_only=True,
+            mcp_url="http://127.0.0.1:3333",
+            is_cancel_requested=lambda: True,
+        )
+        self.assertFalse(ok)
+        self.assertEqual(error, "cancelled_by_user")
+        self.assertEqual(state.status, "cancelled")
 
 
 if __name__ == "__main__":

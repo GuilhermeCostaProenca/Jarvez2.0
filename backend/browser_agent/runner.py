@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import re
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 from .mcp_client import PlaywrightMcpClient
@@ -63,7 +64,25 @@ def run_browser_task(
     allowed_domains: list[object] | None,
     read_only: bool,
     mcp_url: str,
+    is_cancel_requested: Callable[[], bool] | None = None,
 ) -> tuple[BrowserTaskState, bool, str | None]:
+    def _cancelled_state(summary: str) -> tuple[BrowserTaskState, bool, str | None]:
+        return (
+            BrowserTaskState(
+                task_id=task_id,
+                status="cancelled",
+                request=request,
+                allowed_domains=normalized_domains,
+                read_only=read_only,
+                summary=summary,
+                error="cancelled_by_user",
+                started_at=_now_iso(),
+                finished_at=_now_iso(),
+            ),
+            False,
+            "cancelled_by_user",
+        )
+
     normalized_domains = normalize_allowed_domains(allowed_domains)
     validation_error = validate_browser_request(request, normalized_domains)
     if validation_error is not None:
@@ -119,6 +138,8 @@ def run_browser_task(
         )
 
     client = PlaywrightMcpClient(mcp_url)
+    if callable(is_cancel_requested) and is_cancel_requested():
+        return _cancelled_state("Cancelada antes de iniciar chamadas MCP.")
     health = client.healthcheck()
     if not health.ok:
         return (
@@ -143,6 +164,8 @@ def run_browser_task(
         )
 
     navigate_call = client.call_tool("browser_navigate", {"url": target_url})
+    if callable(is_cancel_requested) and is_cancel_requested():
+        return _cancelled_state("Cancelada apos navegacao inicial.")
     if not navigate_call.ok:
         return (
             BrowserTaskState(
@@ -167,6 +190,8 @@ def run_browser_task(
         )
 
     snapshot_call = client.call_tool("browser_snapshot", {})
+    if callable(is_cancel_requested) and is_cancel_requested():
+        return _cancelled_state("Cancelada antes de consolidar snapshot.")
     if not snapshot_call.ok:
         return (
             BrowserTaskState(
