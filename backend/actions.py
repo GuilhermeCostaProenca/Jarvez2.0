@@ -6378,7 +6378,7 @@ def _workflow_default_validation_plan(project_name: str | None) -> list[JsonObje
 
 
 async def _workflow_run(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    return await domain_workflow_run_action(
+    result = await domain_workflow_run_action(
         params,
         ctx,
         workflow_engine=WORKFLOW_ENGINE,
@@ -6390,6 +6390,16 @@ async def _workflow_run(params: JsonObject, ctx: ActionContext) -> ActionResult:
         active_project_payload=_active_project_payload,
         capability_payload=_capability_payload,
     )
+    workflow_state = result.data.get("workflow_state") if isinstance(result.data, dict) else None
+    if isinstance(workflow_state, dict):
+        await _publish_agent_event(
+            ctx,
+            {
+                "type": "workflow_started" if result.success else "workflow_failed",
+                "workflow_state": workflow_state,
+            },
+        )
+    return result
 
 
 async def _workflow_status(params: JsonObject, ctx: ActionContext) -> ActionResult:
@@ -6403,33 +6413,59 @@ async def _workflow_status(params: JsonObject, ctx: ActionContext) -> ActionResu
 
 
 async def _workflow_cancel(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    return await domain_workflow_cancel_action(
+    result = await domain_workflow_cancel_action(
         params,
         ctx,
         workflow_engine=WORKFLOW_ENGINE,
         active_project_payload=_active_project_payload,
         capability_payload=_capability_payload,
     )
+    workflow_state = result.data.get("workflow_state") if isinstance(result.data, dict) else None
+    if isinstance(workflow_state, dict):
+        await _publish_agent_event(ctx, {"type": "workflow_failed", "workflow_state": workflow_state})
+    return result
 
 
 async def _workflow_approve(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    return await domain_workflow_approve_action(
+    result = await domain_workflow_approve_action(
         params,
         ctx,
         workflow_engine=WORKFLOW_ENGINE,
         active_project_payload=_active_project_payload,
         capability_payload=_capability_payload,
     )
+    workflow_state = result.data.get("workflow_state") if isinstance(result.data, dict) else None
+    if isinstance(workflow_state, dict):
+        status = str(workflow_state.get("status") or "").strip().lower()
+        if status == "completed":
+            event_type = "workflow_completed"
+        elif status in {"failed", "cancelled"}:
+            event_type = "workflow_failed"
+        else:
+            event_type = "workflow_progress"
+        await _publish_agent_event(ctx, {"type": event_type, "workflow_state": workflow_state})
+    return result
 
 
 async def _workflow_resume(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    return await domain_workflow_resume_action(
+    result = await domain_workflow_resume_action(
         params,
         ctx,
         workflow_engine=WORKFLOW_ENGINE,
         active_project_payload=_active_project_payload,
         capability_payload=_capability_payload,
     )
+    workflow_state = result.data.get("workflow_state") if isinstance(result.data, dict) else None
+    if isinstance(workflow_state, dict):
+        status = str(workflow_state.get("status") or "").strip().lower()
+        if status == "completed":
+            event_type = "workflow_completed"
+        elif status in {"failed", "cancelled"}:
+            event_type = "workflow_failed"
+        else:
+            event_type = "workflow_progress"
+        await _publish_agent_event(ctx, {"type": event_type, "workflow_state": workflow_state})
+    return result
 
 
 async def _whatsapp_channel_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
