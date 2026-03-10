@@ -8,11 +8,22 @@ import { readStoredWhatsAppChannelStatus } from '@/lib/orchestration-storage';
 type WhatsAppChannelStatus = {
   mode?: string;
   legacy_enabled?: boolean;
+  fallback_active?: boolean;
+  history_source?: string;
   mcp?: {
     enabled?: boolean;
     connected?: boolean;
     detail?: string | null;
     url_configured?: boolean;
+    history_available?: boolean;
+    messages_db_path?: string | null;
+  };
+  messages?: {
+    total?: number;
+    inbound_total?: number;
+    outbound_total?: number;
+    last_inbound_at?: string | null;
+    last_outbound_at?: string | null;
   };
 };
 
@@ -56,8 +67,16 @@ export function WhatsAppChannelView() {
             <div className="grid gap-2 text-sm text-white/80 md:grid-cols-2">
               <p>Modo: <strong>{status.mode ?? '-'}</strong></p>
               <p>Legacy Cloud API: <strong>{status.legacy_enabled ? 'ativo' : 'inativo'}</strong></p>
+              <p>Fallback ativo: <strong>{status.fallback_active ? 'sim' : 'nao'}</strong></p>
+              <p>Fonte de historico: <strong>{status.history_source ?? '-'}</strong></p>
               <p>MCP habilitado: <strong>{status.mcp?.enabled ? 'sim' : 'nao'}</strong></p>
               <p>MCP conectado: <strong>{status.mcp?.connected ? 'sim' : 'nao'}</strong></p>
+              <p>Historico MCP: <strong>{status.mcp?.history_available ? 'disponivel' : 'indisponivel'}</strong></p>
+              <p>DB MCP: <strong>{status.mcp?.messages_db_path ?? '-'}</strong></p>
+              <p>Msgs totais: <strong>{status.messages?.total ?? 0}</strong></p>
+              <p>Inbound/Outbound: <strong>{status.messages?.inbound_total ?? 0}/{status.messages?.outbound_total ?? 0}</strong></p>
+              <p>Ultimo inbound: <strong>{status.messages?.last_inbound_at ?? '-'}</strong></p>
+              <p>Ultimo outbound: <strong>{status.messages?.last_outbound_at ?? '-'}</strong></p>
               <p className="md:col-span-2">Diagnostico: <strong>{status.mcp?.detail ?? '-'}</strong></p>
             </div>
           ) : (
