@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import base64
@@ -65,6 +65,134 @@ from actions_core import (
     register_action,
 )
 from actions_core.dispatch import merge_event_state
+from actions_domains import (
+    ac_apply_preset as domain_ac_apply_preset,
+    ac_configure_arrival_prefs as domain_ac_configure_arrival_prefs,
+    ac_get_status as domain_ac_get_status,
+    ac_prepare_arrival as domain_ac_prepare_arrival,
+    ac_send_command as domain_ac_send_command,
+    ac_set_fan_speed as domain_ac_set_fan_speed,
+    ac_set_mode as domain_ac_set_mode,
+    ac_set_power_save as domain_ac_set_power_save,
+    ac_set_sleep_timer as domain_ac_set_sleep_timer,
+    ac_set_start_timer as domain_ac_set_start_timer,
+    ac_set_swing as domain_ac_set_swing,
+    ac_set_temperature as domain_ac_set_temperature,
+    ac_turn_off as domain_ac_turn_off,
+    ac_turn_on as domain_ac_turn_on,
+    authenticate_identity as domain_authenticate_identity,
+    call_service as domain_call_service,
+    code_apply_patch_action as domain_code_apply_patch_action,
+    code_explain_project_action as domain_code_explain_project_action,
+    code_git_diff_action as domain_code_git_diff_action,
+    code_git_status_action as domain_code_git_status_action,
+    code_propose_change_action as domain_code_propose_change_action,
+    code_read_file_action as domain_code_read_file_action,
+    code_reindex_repo as domain_code_reindex_repo,
+    code_run_command_action as domain_code_run_command_action,
+    code_search_in_active_project_action as domain_code_search_in_active_project_action,
+    code_search_repo as domain_code_search_repo,
+    code_worker_status_action as domain_code_worker_status_action,
+    codex_cancel_task_action as domain_codex_cancel_task_action,
+    codex_exec_review_action as domain_codex_exec_review_action,
+    codex_exec_status_action as domain_codex_exec_status_action,
+    codex_exec_task_action as domain_codex_exec_task_action,
+    run_codex_task as domain_run_codex_task,
+    confirm_action as domain_confirm_action,
+    git_clone_repository as domain_git_clone_repository,
+    get_persona_mode_action as domain_get_persona_mode_action,
+    get_security_status as domain_get_security_status,
+    list_persona_modes as domain_list_persona_modes,
+    lock_private_mode as domain_lock_private_mode,
+    open_desktop_resource as domain_open_desktop_resource,
+    onenote_append_to_page as domain_onenote_append_to_page,
+    onenote_create_character_page as domain_onenote_create_character_page,
+    onenote_get_page_content as domain_onenote_get_page_content,
+    onenote_list_notebooks as domain_onenote_list_notebooks,
+    onenote_list_pages as domain_onenote_list_pages,
+    onenote_list_sections as domain_onenote_list_sections,
+    onenote_search_pages as domain_onenote_search_pages,
+    onenote_status as domain_onenote_status,
+    ops_apply_playbook_action as domain_ops_apply_playbook_action,
+    ops_auto_remediate_action as domain_ops_auto_remediate_action,
+    ops_canary_rollout_set_action as domain_ops_canary_rollout_set_action,
+    ops_canary_promote_action as domain_ops_canary_promote_action,
+    ops_canary_set_action as domain_ops_canary_set_action,
+    ops_canary_status_action as domain_ops_canary_status_action,
+    ops_control_loop_tick_action as domain_ops_control_loop_tick_action,
+    ops_feature_flags_set_action as domain_ops_feature_flags_set_action,
+    ops_feature_flags_status_action as domain_ops_feature_flags_status_action,
+    ops_incident_snapshot_action as domain_ops_incident_snapshot_action,
+    ops_rollback_scenario_action as domain_ops_rollback_scenario_action,
+    orchestrate_task_action as domain_orchestrate_task_action,
+    autonomy_killswitch_action as domain_autonomy_killswitch_action,
+    autonomy_set_mode_action as domain_autonomy_set_mode_action,
+    policy_action_risk_matrix_action as domain_policy_action_risk_matrix_action,
+    policy_domain_trust_status_action as domain_policy_domain_trust_status_action,
+    policy_explain_decision_action as domain_policy_explain_decision_action,
+    policy_trust_drift_report_action as domain_policy_trust_drift_report_action,
+    project_clear_active_action as domain_project_clear_active_action,
+    project_get_active_action as domain_project_get_active_action,
+    project_list_action as domain_project_list_action,
+    project_refresh_index_action as domain_project_refresh_index_action,
+    project_remove_action as domain_project_remove_action,
+    project_scan_action as domain_project_scan_action,
+    project_search_action as domain_project_search_action,
+    project_select_action as domain_project_select_action,
+    project_update_action as domain_project_update_action,
+    rpg_assume_character as domain_rpg_assume_character,
+    rpg_clear_character_mode as domain_rpg_clear_character_mode,
+    rpg_create_character_sheet as domain_rpg_create_character_sheet,
+    rpg_create_threat_sheet as domain_rpg_create_threat_sheet,
+    rpg_get_character_mode as domain_rpg_get_character_mode,
+    rpg_get_knowledge_stats as domain_rpg_get_knowledge_stats,
+    rpg_ideate_next_session as domain_rpg_ideate_next_session,
+    rpg_reindex_sources as domain_rpg_reindex_sources,
+    rpg_save_lore_note as domain_rpg_save_lore_note,
+    rpg_search_knowledge as domain_rpg_search_knowledge,
+    rpg_session_recording as domain_rpg_session_recording,
+    rpg_write_session_summary as domain_rpg_write_session_summary,
+    providers_health_check_action as domain_providers_health_check_action,
+    run_local_command as domain_run_local_command,
+    save_web_briefing_schedule as domain_save_web_briefing_schedule,
+    set_light_brightness as domain_set_light_brightness,
+    set_memory_scope as domain_set_memory_scope,
+    set_persona_mode_action as domain_set_persona_mode_action,
+    spotify_create_surprise_playlist as domain_spotify_create_surprise_playlist,
+    spotify_get_devices as domain_spotify_get_devices,
+    spotify_next_track as domain_spotify_next_track,
+    spotify_pause as domain_spotify_pause,
+    spotify_play as domain_spotify_play,
+    spotify_previous_track as domain_spotify_previous_track,
+    spotify_set_volume as domain_spotify_set_volume,
+    spotify_status as domain_spotify_status,
+    spotify_transfer_playback as domain_spotify_transfer_playback,
+    skills_list_action as domain_skills_list_action,
+    skills_read_action as domain_skills_read_action,
+    subagent_cancel_action as domain_subagent_cancel_action,
+    subagent_spawn_action as domain_subagent_spawn_action,
+    subagent_status_action as domain_subagent_status_action,
+    github_clone_and_register_action as domain_github_clone_and_register_action,
+    github_find_repo_action as domain_github_find_repo_action,
+    github_list_repos_action as domain_github_list_repos_action,
+    thinq_control_device as domain_thinq_control_device,
+    thinq_get_device_profile as domain_thinq_get_device_profile,
+    thinq_get_device_state as domain_thinq_get_device_state,
+    thinq_list_devices as domain_thinq_list_devices,
+    thinq_status as domain_thinq_status,
+    turn_light_off as domain_turn_light_off,
+    turn_light_on as domain_turn_light_on,
+    verify_voice_identity as domain_verify_voice_identity,
+    web_search_dashboard as domain_web_search_dashboard,
+    whatsapp_get_recent_messages as domain_whatsapp_get_recent_messages,
+    whatsapp_send_audio_tts as domain_whatsapp_send_audio_tts,
+    whatsapp_send_text as domain_whatsapp_send_text,
+    workflow_approve_action as domain_workflow_approve_action,
+    workflow_cancel_action as domain_workflow_cancel_action,
+    workflow_resume_action as domain_workflow_resume_action,
+    workflow_run_action as domain_workflow_run_action,
+    workflow_status_action as domain_workflow_status_action,
+)
 from voice_biometrics import VoiceProfileStore, get_recent_voice_embedding
 from code_knowledge import CodeKnowledgeIndex
 from codex_cli import is_codex_available, run_exec_streaming
@@ -72,6 +200,7 @@ from code_worker_client import CodeWorkerClient
 from coding_llm import explain_project_state, propose_patch_plan, summarize_diff
 from evals import append_metric, baseline_scenarios, read_metrics, summarize_action_metrics, summarize_slo
 from github_catalog import GitHubCatalogClient, GitHubRepo
+from integrations.whatsapp_mcp_client import WhatsAppMcpClient
 from orchestration import (
     build_provider_registry,
     build_task_plan,
@@ -108,12 +237,14 @@ from policy import (
     set_killswitch_domain,
     set_killswitch_global,
 )
-from providers.provider_router import TaskType, preview_route
+from providers.provider_router import TaskType
 from project_catalog import ProjectCatalog, ProjectRecord
 from rpg_knowledge import RPGKnowledgeIndex
 from rpg_engine import generate_character_sheet, generate_threat_sheet
 from rpg_engine.contracts import InvalidCharacterBuildError, InvalidThreatDefinitionError
+from runtime.model_gateway import resolve_runtime
 from skills import get_skill, list_skills
+from workflows.engine import WorkflowEngine
 
 try:
     from pypdf import PdfReader, PdfWriter
@@ -202,12 +333,13 @@ AMBIGUOUS_CONFIRMATION_RE = re.compile(
     r"\b(talvez|acho que sim|nao sei|n\u00e3o sei|depois|quem sabe|mais ou menos)\b",
     re.IGNORECASE,
 )
-BOOL_FALSE_VALUES = {"0", "false", "off", "no", "nao", "não"}
+BOOL_FALSE_VALUES = {"0", "false", "off", "no", "nao", "nÃ£o"}
 
 VOICE_PROFILE_STORE = VoiceProfileStore.from_env()
 PROJECT_CATALOG_SINGLETON: ProjectCatalog | None = None
 CODE_WORKER_CLIENT: CodeWorkerClient | None = None
 GITHUB_CATALOG_CLIENT: GitHubCatalogClient | None = None
+WORKFLOW_ENGINE = WorkflowEngine()
 SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
 SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token"
 THINQ_DEFAULT_API_BASE_URL = "https://api-aic.lgthinq.com"
@@ -244,7 +376,7 @@ PERSONA_MODE_ALIASES = {
     "default": "default",
     "normal": "default",
     "padrao": "default",
-    "padrão": "default",
+    "padrÃ£o": "default",
     "jarvez": "default",
     "hetero_top": "faria_lima",
     "heterotop": "faria_lima",
@@ -278,7 +410,7 @@ PERSONA_MODES: dict[str, JsonObject] = {
         "label": "RPG",
         "style": "tom de mestre de jogo, narrativo, imersivo e criativo; pode interpretar personagens quando pedido",
         "color_hex": "#7A3EEA",
-        "voice_hint": "narrativo dramático",
+        "voice_hint": "narrativo dramÃ¡tico",
     },
 }
 RPG_KNOWLEDGE_INDEX: RPGKnowledgeIndex | None = None
@@ -1936,241 +2068,59 @@ def _build_web_dashboard_summary(query: str, results: list[JsonObject]) -> str:
 
 
 async def _web_search_dashboard(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    query = _collapse_spaces(str(params.get("query", "")))
-    max_results = int(params.get("max_results", 5))
-    if not query:
-        return ActionResult(success=False, message="Informe o que devo pesquisar na web.", error="missing query")
-
-    max_results = max(3, min(max_results, 8))
-    results, search_error = _run_web_search(query, max_results=max_results)
-    if search_error is not None:
-        return search_error
-
-    image_urls = [
-        str(item["image_url"])
-        for item in results
-        if isinstance(item.get("image_url"), str) and str(item.get("image_url")).strip()
-    ][:4]
-    summary = _build_web_dashboard_summary(query, results)
-    generated_at = datetime.now(timezone.utc).isoformat()
-    dashboard_url = _frontend_dashboard_url()
-    dashboard_opened = False
-
-    try:
-        dashboard_opened = bool(webbrowser.open(dashboard_url, new=2))
-    except OSError:
-        dashboard_opened = False
-
-    return ActionResult(
-        success=True,
-        message=f"Pesquisa web compilada para '{query}'.",
-        data={
-            "web_dashboard": {
-                "query": query,
-                "summary": summary,
-                "generated_at": generated_at,
-                "results": results,
-                "images": image_urls,
-                "dashboard_url": dashboard_url,
-                "dashboard_opened": dashboard_opened,
-            }
-        },
+    return await domain_web_search_dashboard(
+        params,
+        ctx,
+        collapse_spaces=_collapse_spaces,
+        run_web_search=_run_web_search,
+        build_summary=_build_web_dashboard_summary,
+        frontend_dashboard_url=_frontend_dashboard_url,
     )
 
 
 async def _save_web_briefing_schedule(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    query = _collapse_spaces(str(params.get("query", "")))
-    time_of_day = _collapse_spaces(str(params.get("time_of_day", "08:00"))) or "08:00"
+    from actions_domains.research import save_web_briefing_schedule
 
-    if not query:
-        return ActionResult(success=False, message="Informe o tema da pesquisa recorrente.", error="missing query")
-
-    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", time_of_day):
-        return ActionResult(success=False, message="Horario invalido. Use HH:MM.", error="invalid time_of_day")
-
-    schedule_id = f"research-{secrets.token_hex(6)}"
-    schedule = {
-        "id": schedule_id,
-        "query": query,
-        "cadence": "daily",
-        "time_of_day": time_of_day,
-        "prompt": (
-            "Faça uma pesquisa na internet e gere um dashboard completo com resumo, links e imagens sobre: "
-            f"{query}"
-        ),
-    }
-
-    return ActionResult(
-        success=True,
-        message=f"Briefing diario salvo para {time_of_day}.",
-        data={"web_dashboard_schedule": schedule},
+    return await save_web_briefing_schedule(
+        params,
+        ctx,
+        collapse_spaces=_collapse_spaces,
     )
 
-
 async def _open_desktop_resource(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    target = str(params.get("target", "")).strip()
-    target_kind = str(params.get("target_kind", "auto")).strip().casefold() or "auto"
-    if not target:
-        return ActionResult(success=False, message="Informe o recurso que devo abrir.", error="missing target")
-
-    resolved_kind, resolved_value, resolution_error = _resolve_open_resource_target(target, target_kind)
-    if resolved_kind is None:
-        return ActionResult(success=False, message=resolution_error or "Nao consegui abrir o recurso.", error="invalid target")
-
-    try:
-        if resolved_kind == "url":
-            opened = webbrowser.open(str(resolved_value), new=2)
-            if not opened:
-                return ActionResult(success=False, message="O navegador nao aceitou abrir o link.", error="browser open failed")
-        elif resolved_kind == "path":
-            if not hasattr(os, "startfile"):
-                return ActionResult(success=False, message="Abrir arquivos/pastas so esta disponivel no Windows.", error="startfile unavailable")
-            os.startfile(str(resolved_value))
-        else:
-            _launch_detached(list(resolved_value), cwd=_workspace_root())
-    except OSError as error:
-        return ActionResult(success=False, message=f"Falha ao abrir o recurso: {error}", error=str(error))
-
-    return ActionResult(
-        success=True,
-        message=f"Recurso aberto: {target}.",
-        data={
-            "target": target,
-            "resolved_target": str(resolved_value),
-            "target_kind": resolved_kind,
-        },
+    return await domain_open_desktop_resource(
+        params,
+        ctx,
+        resolve_open_resource_target=_resolve_open_resource_target,
+        open_browser=lambda url: webbrowser.open(url, new=2),
+        has_startfile=hasattr(os, "startfile"),
+        startfile=lambda path: os.startfile(path),
+        launch_detached=_launch_detached,
+        workspace_root=_workspace_root,
     )
 
 
 async def _run_local_command(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    command = str(params.get("command", "")).strip()
-    arguments = params.get("arguments", [])
-    working_directory = str(params.get("working_directory", "")).strip()
-    wait_for_exit = bool(params.get("wait_for_exit", True))
-    timeout_seconds = int(params.get("timeout_seconds", 60))
-
-    if not isinstance(arguments, list) or any(not isinstance(item, str) for item in arguments):
-        return ActionResult(success=False, message="`arguments` precisa ser uma lista de textos.", error="invalid arguments")
-
-    resolved_command, command_error = _resolve_local_command(command)
-    if resolved_command is None:
-        return ActionResult(success=False, message=command_error or "Comando nao permitido.", error="command blocked")
-
-    if working_directory:
-        cwd = _resolve_local_path(working_directory, must_exist=True)
-        if cwd is None or not cwd.is_dir():
-            return ActionResult(success=False, message="Diretorio de trabalho nao encontrado.", error="invalid working directory")
-    else:
-        cwd = _workspace_root()
-
-    command_line = [resolved_command, *arguments]
-
-    try:
-        if not wait_for_exit:
-            _launch_detached(command_line, cwd=cwd)
-            return ActionResult(
-                success=True,
-                message="Comando iniciado em segundo plano.",
-                data={
-                    "command_line": command_line,
-                    "working_directory": str(cwd),
-                    "wait_for_exit": False,
-                },
-            )
-
-        completed = subprocess.run(
-            command_line,
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=max(1, min(timeout_seconds, 600)),
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        return ActionResult(success=False, message=f"Falha ao executar o comando: {error}", error=str(error))
-
-    stdout = _trim_process_output(completed.stdout or "")
-    stderr = _trim_process_output(completed.stderr or "")
-    success = completed.returncode == 0
-    return ActionResult(
-        success=success,
-        message="Comando executado com sucesso." if success else "O comando terminou com erro.",
-        data={
-            "command_line": command_line,
-            "working_directory": str(cwd),
-            "returncode": completed.returncode,
-            "stdout": stdout,
-            "stderr": stderr,
-            "wait_for_exit": True,
-        },
-        error=None if success else stderr or f"exit code {completed.returncode}",
+    return await domain_run_local_command(
+        params,
+        ctx,
+        resolve_local_command=_resolve_local_command,
+        resolve_local_path=_resolve_local_path,
+        workspace_root=_workspace_root,
+        launch_detached=_launch_detached,
+        trim_process_output=_trim_process_output,
+        run_process=subprocess.run,
     )
 
 
 async def _git_clone_repository(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    repository_url = str(params.get("repository_url", "")).strip()
-    destination = str(params.get("destination", "")).strip()
-    branch = str(params.get("branch", "")).strip()
-    depth = params.get("depth")
-
-    if not repository_url:
-        return ActionResult(success=False, message="Informe a URL do repositorio.", error="missing repository url")
-
-    destination_path: Path | None = None
-    if destination:
-        destination_path = _resolve_local_path(destination, must_exist=False)
-        if destination_path is None:
-            return ActionResult(success=False, message="Destino invalido.", error="invalid destination")
-        if destination_path.exists():
-            return ActionResult(success=False, message="O destino informado ja existe.", error="destination exists")
-        destination_path.parent.mkdir(parents=True, exist_ok=True)
-
-    command_line = ["git", "clone"]
-    if branch:
-        command_line.extend(["--branch", branch])
-    if isinstance(depth, int) and depth > 0:
-        command_line.extend(["--depth", str(depth)])
-    command_line.append(repository_url)
-    if destination_path is not None:
-        command_line.append(str(destination_path))
-
-    try:
-        completed = subprocess.run(
-            command_line,
-            cwd=str(_workspace_root()),
-            capture_output=True,
-            text=True,
-            timeout=300,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        return ActionResult(success=False, message=f"Falha ao executar git clone: {error}", error=str(error))
-
-    stdout = _trim_process_output(completed.stdout or "")
-    stderr = _trim_process_output(completed.stderr or "")
-    if completed.returncode != 0:
-        return ActionResult(
-            success=False,
-            message="O git clone falhou.",
-            data={
-                "command_line": command_line,
-                "stdout": stdout,
-                "stderr": stderr,
-                "returncode": completed.returncode,
-            },
-            error=stderr or f"exit code {completed.returncode}",
-        )
-
-    return ActionResult(
-        success=True,
-        message="Repositorio clonado com sucesso.",
-        data={
-            "command_line": command_line,
-            "destination": str(destination_path) if destination_path is not None else str(_workspace_root()),
-            "stdout": stdout,
-            "stderr": stderr,
-            "returncode": completed.returncode,
-        },
+    return await domain_git_clone_repository(
+        params,
+        ctx,
+        resolve_local_path=_resolve_local_path,
+        workspace_root=_workspace_root,
+        trim_process_output=_trim_process_output,
+        run_process=subprocess.run,
     )
 
 
@@ -2401,110 +2351,37 @@ def _resolve_github_repo(params: JsonObject) -> tuple[GitHubRepo | None, ActionR
 
 
 async def _github_list_repos_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    client = _get_github_catalog_client()
-    if not client.is_configured():
-        return ActionResult(
-            success=False,
-            message="Configure GITHUB_TOKEN ou GH_TOKEN no backend para listar repositorios.",
-            error="github not configured",
-        )
-
-    limit = int(params.get("limit", 10) or 10)
-    visibility = str(params.get("visibility", "all")).strip().casefold() or "all"
-    query = str(params.get("query", "")).strip()
-
-    try:
-        repos = client.find_repos(query, limit=limit) if query else client.list_repos(visibility=visibility, limit=limit)
-    except requests.RequestException as error:
-        return ActionResult(
-            success=False,
-            message=f"Falha ao consultar o GitHub: {error}",
-            error=str(error),
-        )
-
-    return ActionResult(
-        success=True,
-        message=f"{len(repos)} repositorio(s) carregado(s) do GitHub.",
-        data={
-            "github_repos": [_github_repo_to_payload(item) for item in repos],
-            "query": query or None,
-            "visibility": visibility,
-        },
+    return await domain_github_list_repos_action(
+        params,
+        ctx,
+        get_github_catalog_client=_get_github_catalog_client,
+        github_repo_to_payload=_github_repo_to_payload,
     )
 
 
 async def _github_find_repo_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    repo, error = _resolve_github_repo(params)
-    if error is not None:
-        return error
-    assert repo is not None
-    return ActionResult(
-        success=True,
-        message=f"Repositorio encontrado: {repo.full_name}.",
-        data={"github_repo": _github_repo_to_payload(repo)},
+    return await domain_github_find_repo_action(
+        params,
+        ctx,
+        resolve_github_repo=_resolve_github_repo,
+        github_repo_to_payload=_github_repo_to_payload,
     )
 
 
 async def _github_clone_and_register_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    repo, error = _resolve_github_repo(params)
-    if error is not None:
-        return error
-    assert repo is not None
-
-    destination = str(params.get("destination", "")).strip()
-    destination_root_raw = str(params.get("destination_root", "")).strip()
-    branch = str(params.get("branch", "")).strip() or repo.default_branch
-    depth = params.get("depth")
-
-    destination_path: Path
-    if destination:
-        resolved_destination = _resolve_local_path(destination, must_exist=False)
-        if resolved_destination is None:
-            return ActionResult(success=False, message="Destino invalido para o clone.", error="invalid destination")
-        destination_path = resolved_destination
-    else:
-        clone_root = (
-            _resolve_local_path(destination_root_raw, must_exist=False)
-            if destination_root_raw
-            else _github_default_clone_root()
-        )
-        if clone_root is None:
-            return ActionResult(success=False, message="Pasta base invalida para clonar o repositorio.", error="invalid destination root")
-        clone_root.mkdir(parents=True, exist_ok=True)
-        destination_path = clone_root / repo.name
-
-    clone_result = await _git_clone_repository(
-        {
-            "repository_url": repo.clone_url,
-            "destination": str(destination_path),
-            "branch": branch,
-            "depth": depth,
-        },
+    return await domain_github_clone_and_register_action(
+        params,
         ctx,
-    )
-    if not clone_result.success:
-        clone_data = dict(clone_result.data or {})
-        clone_data["github_repo"] = _github_repo_to_payload(repo)
-        clone_result.data = clone_data
-        return clone_result
-
-    record = _get_project_catalog().create_or_update_project(
-        root_path=destination_path,
-        name=repo.name,
-        aliases=[repo.full_name, repo.owner],
-        priority_score=20,
-    )
-    index_status = _ensure_project_index(record)
-    _set_active_project_from_record(record, ctx, selection_reason=repo.full_name, index_status=index_status)
-
-    return ActionResult(
-        success=True,
-        message=f"Repositorio {repo.full_name} clonado e registrado no catalogo.",
-        data={
-            "github_repo": _github_repo_to_payload(repo),
-            "project": _project_record_to_payload(record),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+        resolve_github_repo=_resolve_github_repo,
+        resolve_local_path=_resolve_local_path,
+        github_default_clone_root=_github_default_clone_root,
+        git_clone_repository=_git_clone_repository,
+        get_project_catalog=_get_project_catalog,
+        ensure_project_index=_ensure_project_index,
+        set_active_project_from_record=_set_active_project_from_record,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
+        github_repo_to_payload=_github_repo_to_payload,
     )
 
 
@@ -3364,7 +3241,7 @@ def _build_character_prompt_hint(name: str, summary: str, profile: JsonObject | 
             parts.append(f"Limites de conhecimento e revelacao: {knowledge_limits}")
         if visual_description:
             parts.append(f"Referencia visual: {visual_description}")
-    parts.append("Nao contradiga os traços acima. Se faltar contexto, improvise sem quebrar a coerencia.")
+    parts.append("Nao contradiga os traÃ§os acima. Se faltar contexto, improvise sem quebrar a coerencia.")
     return " ".join(part for part in parts if part).strip()
 
 
@@ -4130,6 +4007,27 @@ def _whatsapp_inbox_path() -> Path:
         path = Path(__file__).resolve().parent / path
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _whatsapp_mcp_url() -> str:
+    return os.getenv("JARVEZ_WHATSAPP_MCP_URL", "").strip()
+
+
+def _whatsapp_mcp_messages_db_path() -> str | None:
+    value = os.getenv("JARVEZ_WHATSAPP_MCP_MESSAGES_DB_PATH", "").strip()
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = (Path(__file__).resolve().parent / path).resolve(strict=False)
+    return str(path)
+
+
+def _build_whatsapp_mcp_client() -> WhatsAppMcpClient | None:
+    base_url = _whatsapp_mcp_url()
+    if not base_url:
+        return None
+    return WhatsAppMcpClient(base_url, messages_db_path=_whatsapp_mcp_messages_db_path())
 
 
 def _code_knowledge_db_path() -> Path:
@@ -4902,7 +4800,7 @@ def _build_tormenta20_pdf_fields(sheet: JsonObject) -> JsonObject:
         "metadeDoNivel": str(max(0, level // 2)),
         "caracteristicas": "\n".join(feature_lines)[:1800],
         "Historico": "\n".join(powers_lines)[:7000],
-        "Atualização": "\n".join(spell_lines)[:3000],
+        "AtualizaÃ§Ã£o": "\n".join(spell_lines)[:3000],
         "item1": "\n".join(item_lines)[:1000],
         "item2": "\n".join(item_lines[24:] or build_steps)[:1000],
         "cargaAtual": str(int(money_value)),
@@ -5334,6 +5232,123 @@ def _normalize_whatsapp_to(raw_to: str) -> str:
     return digits
 
 
+def _whatsapp_iso_timestamp(value: Any) -> str:
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat()
+    text = str(value or "").strip()
+    if text.isdigit():
+        try:
+            return datetime.fromtimestamp(float(text), tz=timezone.utc).isoformat()
+        except Exception:
+            pass
+    parsed = _parse_datetime(text)
+    if parsed is not None:
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).isoformat()
+    return _now_iso()
+
+
+def _extract_whatsapp_response_message_id(response_payload: Any) -> str | None:
+    if not isinstance(response_payload, dict):
+        return None
+    messages = response_payload.get("messages")
+    if not isinstance(messages, list):
+        return None
+    for row in messages:
+        if not isinstance(row, dict):
+            continue
+        message_id = str(row.get("id") or "").strip()
+        if message_id:
+            return message_id
+    return None
+
+
+def _store_whatsapp_channel_message(
+    *,
+    direction: str,
+    participant_identity: str,
+    room: str | None,
+    address: str | None,
+    text: str | None,
+    payload: Any,
+    external_message_id: str | None = None,
+    created_at: str | None = None,
+) -> bool:
+    try:
+        return STATE_STORE.append_channel_message(
+            channel="whatsapp",
+            direction=direction,
+            participant_identity=participant_identity or "unknown",
+            room=room,
+            address=address,
+            text=text,
+            payload=payload,
+            external_message_id=external_message_id,
+            created_at=created_at,
+        )
+    except Exception:
+        logger.warning("failed to persist whatsapp channel message", exc_info=True)
+        return False
+
+
+def _sync_whatsapp_inbox_to_store(entries: list[JsonObject]) -> int:
+    inserted = 0
+    for item in entries:
+        sender = str(item.get("from") or "").strip() or "unknown"
+        message_id = str(item.get("id") or "").strip() or None
+        text = str(item.get("text") or "").strip() or None
+        created_at = _whatsapp_iso_timestamp(item.get("timestamp") or item.get("received_at"))
+        if _store_whatsapp_channel_message(
+            direction="inbound",
+            participant_identity=sender,
+            room="whatsapp_legacy_v1",
+            address=sender,
+            text=text,
+            payload=item,
+            external_message_id=message_id,
+            created_at=created_at,
+        ):
+            inserted += 1
+    return inserted
+
+
+def _read_whatsapp_messages_from_mcp(*, limit: int = 200) -> list[JsonObject]:
+    client = _build_whatsapp_mcp_client()
+    if client is None:
+        return []
+    try:
+        return [item for item in client.list_recent_messages(limit=limit) if isinstance(item, dict)]
+    except Exception:
+        logger.warning("failed to read whatsapp messages from mcp bridge", exc_info=True)
+        return []
+
+
+def _read_whatsapp_messages_from_store(*, limit: int = 200) -> list[JsonObject]:
+    try:
+        rows = STATE_STORE.list_channel_messages(channel="whatsapp", direction="inbound", limit=limit)
+    except Exception:
+        logger.warning("failed to read whatsapp channel messages from store", exc_info=True)
+        return []
+    messages: list[JsonObject] = []
+    for row in rows:
+        payload = row.get("payload")
+        item = dict(payload) if isinstance(payload, dict) else {}
+        if not str(item.get("id") or "").strip():
+            external_message_id = row.get("external_message_id")
+            if isinstance(external_message_id, str) and external_message_id.strip():
+                item["id"] = external_message_id
+        if not str(item.get("from") or "").strip():
+            item["from"] = str(row.get("address") or row.get("participant_identity") or "").strip()
+        if item.get("text") is None:
+            item["text"] = str(row.get("text") or "")
+        item.setdefault("timestamp", str(row.get("created_at") or ""))
+        item.setdefault("received_at", str(row.get("created_at") or ""))
+        item.setdefault("direction", "inbound")
+        messages.append(item)
+    return messages
+
+
 def _whatsapp_api_request(
     method: str,
     endpoint: str,
@@ -5378,27 +5393,80 @@ def _whatsapp_api_request(
 
 
 def _whatsapp_send_message(payload: JsonObject) -> ActionResult:
+    message_type = str(payload.get("type") or "").strip().lower()
+    mcp_error_detail: str | None = None
+    mcp_client = _build_whatsapp_mcp_client()
+    if mcp_client is not None and message_type == "text":
+        to = str(payload.get("to") or "").strip()
+        text_payload = payload.get("text")
+        text = ""
+        if isinstance(text_payload, dict):
+            text = str(text_payload.get("body") or "").strip()
+        mcp_result = mcp_client.send_text(recipient=to, message=text)
+        if mcp_result.success:
+            response_payload = mcp_result.payload or {
+                "success": True,
+                "message": mcp_result.message,
+            }
+            return ActionResult(
+                success=True,
+                message="Mensagem enviada no WhatsApp.",
+                data={
+                    "whatsapp_response": response_payload,
+                    "whatsapp_transport": "mcp",
+                },
+            )
+        mcp_error_detail = mcp_result.message
+        logger.warning("whatsapp mcp send failed, falling back to legacy: %s", mcp_error_detail)
+
     phone_number_id = _whatsapp_phone_number_id()
     if not phone_number_id:
+        if mcp_error_detail:
+            return ActionResult(
+                success=False,
+                message="Falha no envio via MCP e fallback legado indisponivel.",
+                error=mcp_error_detail,
+                data={"whatsapp_transport": "mcp_failed_no_legacy"},
+            )
         return ActionResult(
             success=False,
             message="WhatsApp nao configurado: faltando WHATSAPP_PHONE_NUMBER_ID.",
             error="missing phone number id",
         )
+
     response_payload, error = _whatsapp_api_request("POST", f"{phone_number_id}/messages", body=payload)
     if error is not None:
+        if mcp_error_detail:
+            if error.data is None:
+                error.data = {}
+            if isinstance(error.data, dict):
+                error.data["whatsapp_transport"] = "legacy_v1"
+                error.data["whatsapp_mcp_error"] = mcp_error_detail
         return error
-    return ActionResult(success=True, message="Mensagem enviada no WhatsApp.", data={"whatsapp_response": response_payload})
+    data: JsonObject = {"whatsapp_response": response_payload, "whatsapp_transport": "legacy_v1"}
+    if mcp_error_detail:
+        data["whatsapp_mcp_error"] = mcp_error_detail
+    return ActionResult(success=True, message="Mensagem enviada no WhatsApp.", data=data)
 
 
 def _whatsapp_read_inbox() -> list[JsonObject]:
+    mcp_entries = _read_whatsapp_messages_from_mcp(limit=200)
+    if mcp_entries:
+        _sync_whatsapp_inbox_to_store(mcp_entries)
+
     path = _whatsapp_inbox_path()
     if not path.exists():
-        return []
+        return _read_whatsapp_messages_from_store(limit=200)
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return []
+        payload = []
+    legacy_entries = [item for item in payload if isinstance(item, dict)] if isinstance(payload, list) else []
+    if legacy_entries:
+        _sync_whatsapp_inbox_to_store(legacy_entries)
+    from_store = _read_whatsapp_messages_from_store(limit=200)
+    if from_store:
+        return from_store
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]
     return []
@@ -6064,91 +6132,54 @@ def _log_action_result(
 
 
 async def _turn_light_on(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    entity_id = str(params["entity_id"])
-    return await _call_service(
-        {
-            "domain": "light",
-            "service": "turn_on",
-            "service_data": {"entity_id": entity_id},
-        },
+    return await domain_turn_light_on(
+        params,
         ctx,
+        call_service=_call_service,
     )
 
 
 async def _turn_light_off(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    entity_id = str(params["entity_id"])
-    return await _call_service(
-        {
-            "domain": "light",
-            "service": "turn_off",
-            "service_data": {"entity_id": entity_id},
-        },
+    return await domain_turn_light_off(
+        params,
         ctx,
+        call_service=_call_service,
     )
 
 
 async def _set_light_brightness(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    entity_id = str(params["entity_id"])
-    brightness = int(params["brightness"])
-    return await _call_service(
-        {
-            "domain": "light",
-            "service": "turn_on",
-            "service_data": {"entity_id": entity_id, "brightness": brightness},
-        },
+    return await domain_set_light_brightness(
+        params,
         ctx,
+        call_service=_call_service,
     )
 
 
 async def _call_service(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    domain = str(params["domain"]).strip().lower()
-    service = str(params["service"]).strip().lower()
-    service_data = params.get("service_data")
-
-    if not isinstance(service_data, dict):
-        return ActionResult(success=False, message="service_data invalido.", error="service_data must be object")
-
-    if not _is_allowed_service(domain, service):
-        return ActionResult(
-            success=False,
-            message=f"Servico nao permitido: {domain}.{service}.",
-            error="service not in allowlist",
-        )
-
-    return _call_home_assistant(domain=domain, service=service, service_data=service_data)
+    return await domain_call_service(
+        params,
+        ctx,
+        is_allowed_service=_is_allowed_service,
+        call_home_assistant=_call_home_assistant,
+    )
 
 
 async def _confirm_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    token = str(params.get("confirmation_token", "")).strip()
-    if not token:
-        return ActionResult(success=False, message="Token de confirmacao ausente.", error="missing token")
-
-    pending = _peek_confirmation(token)
-    if pending is None:
-        return ActionResult(success=False, message="Token de confirmacao invalido ou expirado.", error="invalid token")
-
-    if pending.participant_identity != ctx.participant_identity:
-        return ActionResult(success=False, message="Token pertence a outro participante.", error="identity mismatch")
-
-    if pending.room != ctx.room:
-        return ActionResult(success=False, message="Token pertence a outra sala.", error="room mismatch")
-
-    last_user_text = _extract_last_user_text(ctx.session)
-    if not _is_explicit_confirmation(last_user_text):
-        return ActionResult(
-            success=False,
-            message="Preciso de confirmacao explicita. Diga claramente 'sim, confirmo' para executar.",
-            data={
-                "confirmation_required": True,
-                "confirmation_token": pending.token,
-                "expires_in": _remaining_seconds(pending.expires_at),
-                "action_name": pending.action_name,
-                "params": pending.params,
-            },
-        )
-
-    _pop_confirmation(token)
-    return await dispatch_action(pending.action_name, pending.params, ctx, skip_confirmation=True)
+    return await domain_confirm_action(
+        params,
+        ctx,
+        peek_confirmation=_peek_confirmation,
+        pop_confirmation=_pop_confirmation,
+        extract_last_user_text=_extract_last_user_text,
+        is_explicit_confirmation=_is_explicit_confirmation,
+        remaining_seconds=_remaining_seconds,
+        dispatch_action=lambda action_name, action_params, action_ctx: dispatch_action(
+            action_name,
+            action_params,
+            action_ctx,
+            skip_confirmation=True,
+        ),
+    )
 
 
 def _browser_task_payload(
@@ -6187,6 +6218,17 @@ async def _browser_agent_run(params: JsonObject, ctx: ActionContext) -> ActionRe
     task_id = f"browser_{uuid.uuid4().hex[:10]}"
     from browser_agent.runner import run_browser_task
 
+    started_task = _browser_task_payload(
+        task_id=task_id,
+        status="running",
+        request=request,
+        allowed_domains=allowed_domains if isinstance(allowed_domains, list) else [],
+        read_only=read_only,
+        summary="Browser agent iniciou execucao com guardrails de dominio.",
+    )
+    _persist_event_namespace(ctx.participant_identity, ctx.room, "browser_tasks", started_task)
+    await _publish_agent_event(ctx, {"type": "browser_task_started", "browser_task": started_task})
+
     browser_task_state, ok, error_code = run_browser_task(
         task_id=task_id,
         request=request,
@@ -6205,11 +6247,17 @@ async def _browser_agent_run(params: JsonObject, ctx: ActionContext) -> ActionRe
             error=error_code or "browser_agent_error",
         )
 
+    progress_task = dict(browser_task)
+    progress_task["status"] = "running"
+    progress_task["summary"] = "Navegacao concluida; consolidando evidencias da tarefa."
+    _persist_event_namespace(ctx.participant_identity, ctx.room, "browser_tasks", progress_task)
+    await _publish_agent_event(ctx, {"type": "browser_task_progress", "browser_task": progress_task})
+
     _persist_event_namespace(ctx.participant_identity, ctx.room, "browser_tasks", browser_task)
-    await _publish_agent_event(ctx, {"type": "browser_task_started", "browser_task": browser_task})
+    await _publish_agent_event(ctx, {"type": "browser_task_completed", "browser_task": browser_task})
     return ActionResult(
         success=True,
-        message="Browser agent enfileirado com guardrails de dominio.",
+        message="Browser agent executou a tarefa com sucesso.",
         data={"browser_task": browser_task},
     )
 
@@ -6238,103 +6286,171 @@ async def _browser_agent_cancel(params: JsonObject, ctx: ActionContext) -> Actio
     return ActionResult(success=True, message="Tarefa de browser cancelada.", data={"browser_task": current})
 
 
-def _workflow_state_payload(
+def _workflow_resolve_project_target(
     *,
-    workflow_id: str,
-    workflow_type: str,
-    status: str,
-    summary: str,
-    project_id: str | None = None,
-    project_name: str | None = None,
-    current_step: str | None = None,
-    started_at: str | None = None,
-    finished_at: str | None = None,
-    error: str | None = None,
+    project_query: str | None,
+    active_project: ActiveProjectMode | None,
+) -> tuple[JsonObject | None, ActionResult | None]:
+    query = str(project_query or "").strip()
+    if not query:
+        if active_project is None:
+            return None, ActionResult(
+                success=False,
+                message="Informe qual projeto devo usar para o workflow.",
+                error="missing project",
+            )
+        return {
+            "project_id": active_project.project_id,
+            "name": active_project.name,
+            "root_path": active_project.root_path,
+        }, None
+
+    catalog = _get_project_catalog()
+    match, confidence, candidates = catalog.resolve(
+        query,
+        active_project_id=active_project.project_id if active_project is not None else None,
+        limit=3,
+    )
+    if match is None:
+        return None, ActionResult(
+            success=False,
+            message="Nao consegui identificar o projeto com seguranca.",
+            data={
+                "project_resolution_required": True,
+                "confidence": confidence,
+                "candidates": [_project_record_to_payload(item) for item in candidates],
+            },
+            error="project resolution failed",
+        )
+    if confidence == "medium":
+        return None, ActionResult(
+            success=False,
+            message="Encontrei mais de um projeto plausivel. Escolha pelo nome ou project_id.",
+            data={
+                "project_resolution_required": True,
+                "confidence": confidence,
+                "candidates": [_project_record_to_payload(item) for item in candidates],
+            },
+            error="ambiguous project",
+        )
+    return _project_record_to_payload(match), None
+
+
+def _workflow_build_task_plan_payload(request: str) -> JsonObject:
+    return build_task_plan(request).to_payload()
+
+
+def _workflow_build_codex_review_preview(
+    *,
+    request: str,
+    project_name: str | None,
+    working_directory: str | None,
 ) -> JsonObject:
-    payload: JsonObject = {
-        "workflow_id": workflow_id,
-        "workflow_type": workflow_type,
-        "status": status,
-        "summary": summary,
-        "started_at": started_at or _now_iso(),
+    target_name = str(project_name or "").strip() or "projeto ativo"
+    command = "codex exec --json --skip-git-repo-check --sandbox read-only --ephemeral"
+    if isinstance(working_directory, str) and working_directory.strip():
+        command = f'{command} -C "{working_directory.strip()}"'
+    return {
+        "mode": "read-only",
+        "project_name": target_name,
+        "prompt": request,
+        "command_preview": f'{command} "<prompt>"',
+        "summary": f"Preview de revisao para {target_name}.",
     }
-    if project_id is not None:
-        payload["project_id"] = project_id
-    if project_name is not None:
-        payload["project_name"] = project_name
-    if current_step is not None:
-        payload["current_step"] = current_step
-    if finished_at is not None:
-        payload["finished_at"] = finished_at
-    if error is not None:
-        payload["error"] = error
-    return payload
+
+
+def _workflow_default_validation_plan(project_name: str | None) -> list[JsonObject]:
+    target_name = str(project_name or "").strip() or "projeto"
+    return [
+        {
+            "step": "py_compile_backend",
+            "command": "python",
+            "arguments": ["-m", "compileall", "backend/workflows", "backend/actions_domains/workflows.py"],
+            "summary": f"Validar backend do workflow em {target_name}.",
+        },
+        {
+            "step": "workflow_tests",
+            "command": "python",
+            "arguments": ["-m", "unittest", "test_workflows_engine.py", "test_actions_domains_workflows.py"],
+            "summary": "Executar testes focados em workflow.",
+        },
+    ]
 
 
 async def _workflow_run(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    request = str(params.get("request") or "").strip()
-    if not request:
-        return ActionResult(success=False, message="Pedido do workflow ausente.", error="missing request")
-
-    workflow_id = f"wf_{uuid.uuid4().hex[:10]}"
-    active_project = get_active_project(ctx.participant_identity, ctx.room)
-    from workflows.engine import build_idea_to_code_workflow
-
-    workflow_state_obj, task_plan = build_idea_to_code_workflow(
-        workflow_id=workflow_id,
-        request=request,
-        project_id=active_project.project_id if active_project is not None else None,
-        project_name=active_project.name if active_project is not None else None,
-    )
-    workflow_state = workflow_state_obj.to_payload()
-    _persist_event_namespace(ctx.participant_identity, ctx.room, "workflow_state", workflow_state)
-    await _publish_agent_event(
+    return await domain_workflow_run_action(
+        params,
         ctx,
-        {
-            "type": "workflow_started",
-            "workflow_state": workflow_state,
-        },
-    )
-    return ActionResult(
-        success=True,
-        message="Workflow planejado com checkpoint antes de escrever codigo.",
-        data={
-            "workflow_state": workflow_state,
-            "orchestration": {
-                "request": request,
-                "task_plan": task_plan,
-            },
-        },
+        workflow_engine=WORKFLOW_ENGINE,
+        get_active_project=get_active_project,
+        resolve_project_target=_workflow_resolve_project_target,
+        build_task_plan_payload=_workflow_build_task_plan_payload,
+        build_codex_review_preview=_workflow_build_codex_review_preview,
+        build_validation_plan=_workflow_default_validation_plan,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _workflow_status(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    _ = params
-    workflow_state = _load_event_namespace(ctx.participant_identity, ctx.room, "workflow_state")
-    return ActionResult(
-        success=True,
-        message="Status do workflow carregado.",
-        data={"workflow_state": workflow_state if isinstance(workflow_state, dict) else None},
+    return await domain_workflow_status_action(
+        params,
+        ctx,
+        workflow_engine=WORKFLOW_ENGINE,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _workflow_cancel(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    _ = params
-    workflow_state = _load_event_namespace(ctx.participant_identity, ctx.room, "workflow_state")
-    if not isinstance(workflow_state, dict):
-        return ActionResult(success=False, message="Nenhum workflow ativo.", error="workflow_missing")
-    from workflows.state import cancel_workflow_state
+    return await domain_workflow_cancel_action(
+        params,
+        ctx,
+        workflow_engine=WORKFLOW_ENGINE,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
+    )
 
-    next_state = cancel_workflow_state(workflow_state)
-    _persist_event_namespace(ctx.participant_identity, ctx.room, "workflow_state", next_state)
-    await _publish_agent_event(ctx, {"type": "workflow_failed", "workflow_state": next_state})
-    return ActionResult(success=True, message="Workflow cancelado.", data={"workflow_state": next_state})
+
+async def _workflow_approve(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    return await domain_workflow_approve_action(
+        params,
+        ctx,
+        workflow_engine=WORKFLOW_ENGINE,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
+    )
+
+
+async def _workflow_resume(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    return await domain_workflow_resume_action(
+        params,
+        ctx,
+        workflow_engine=WORKFLOW_ENGINE,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
+    )
 
 
 async def _whatsapp_channel_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     from actions_domains.whatsapp_channel import build_whatsapp_channel_status
 
     status = build_whatsapp_channel_status()
+    try:
+        total = STATE_STORE.count_channel_messages(channel="whatsapp")
+        inbound_total = STATE_STORE.count_channel_messages(channel="whatsapp", direction="inbound")
+        outbound_total = STATE_STORE.count_channel_messages(channel="whatsapp", direction="outbound")
+        latest_inbound = STATE_STORE.latest_channel_message(channel="whatsapp", direction="inbound")
+        latest_outbound = STATE_STORE.latest_channel_message(channel="whatsapp", direction="outbound")
+        status["messages"] = {
+            "total": total,
+            "inbound_total": inbound_total,
+            "outbound_total": outbound_total,
+            "last_inbound_at": latest_inbound.get("created_at") if isinstance(latest_inbound, dict) else None,
+            "last_outbound_at": latest_outbound.get("created_at") if isinstance(latest_outbound, dict) else None,
+        }
+    except Exception:
+        logger.warning("failed to enrich whatsapp channel status", exc_info=True)
     return ActionResult(
         success=True,
         message="Status do canal WhatsApp carregado.",
@@ -6385,503 +6501,197 @@ async def _automation_run_now(params: JsonObject, ctx: ActionContext) -> ActionR
 
 
 async def _authenticate_identity(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    pin = str(params.get("pin", "")).strip()
-    passphrase = str(params.get("passphrase", "")).strip()
-    if not passphrase:
-        passphrase = str(params.get("security_phrase", "")).strip()
-
-    expected_pin = _security_pin()
-    expected_passphrase = _security_passphrase()
-    if not expected_pin and not expected_passphrase:
-        return ActionResult(
-            success=False,
-            message="Credenciais de seguranca nao configuradas no servidor.",
-            error="missing JARVEZ_SECURITY_PIN and JARVEZ_SECURITY_PASSPHRASE",
-        )
-
-    pin_configured = bool(expected_pin)
-    passphrase_configured = bool(expected_passphrase)
-    pin_valid = pin_configured and bool(pin) and secrets.compare_digest(pin, expected_pin)
-    normalized_passphrase = passphrase.casefold()
-    normalized_expected_passphrase = expected_passphrase.casefold()
-    passphrase_valid = passphrase_configured and bool(passphrase) and secrets.compare_digest(
-        normalized_passphrase, normalized_expected_passphrase
-    )
-    authenticated = pin_valid or passphrase_valid
-
-    if not authenticated:
-        _clear_authentication(ctx.participant_identity)
-        return ActionResult(
-            success=False,
-            message="Falha na autenticacao. Informe PIN ou frase de seguranca validos.",
-            data={"authentication_required": True, **_security_status_payload(ctx.participant_identity, ctx.room)},
-            error="invalid credentials",
-        )
-
-    step_up_pending = ctx.participant_identity in VOICE_STEP_UP_PENDING
-    auth_method = "pin" if pin_valid else "passphrase"
-    if step_up_pending:
-        auth_method = "voice+pin"
-    elif pin_valid and passphrase_valid:
-        auth_method = "voice+pin"
-
-    _set_authenticated(ctx.participant_identity, ctx.room, auth_method=auth_method)
-    return ActionResult(
-        success=True,
-        message="Sessao autenticada. Modo privado liberado.",
-        data={"auth_method": auth_method, "private_access_granted": True, **_security_status_payload(ctx.participant_identity, ctx.room)},
+    return await domain_authenticate_identity(
+        params,
+        ctx,
+        security_pin=_security_pin,
+        security_passphrase=_security_passphrase,
+        clear_authentication=_clear_authentication,
+        security_status_payload=_security_status_payload,
+        set_authenticated=_set_authenticated,
+        voice_step_up_pending=VOICE_STEP_UP_PENDING,
     )
 
 
 async def _lock_private_mode(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    _clear_authentication(ctx.participant_identity)
-    return ActionResult(
-        success=True,
-        message="Modo privado bloqueado.",
-        data=_security_status_payload(ctx.participant_identity, ctx.room),
+    return await domain_lock_private_mode(
+        params,
+        ctx,
+        clear_authentication=_clear_authentication,
+        security_status_payload=_security_status_payload,
     )
 
 
 async def _get_security_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    status = _security_status_payload(ctx.participant_identity, ctx.room)
-    if status["security_status"]["authenticated"]:
-        message = "Sessao autenticada."
-    else:
-        message = "Sessao nao autenticada."
-    return ActionResult(success=True, message=message, data=status)
+    return await domain_get_security_status(
+        params,
+        ctx,
+        security_status_payload=_security_status_payload,
+    )
 
 
 async def _list_persona_modes(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    current_mode = get_persona_mode(ctx.participant_identity, ctx.room)
-    return ActionResult(
-        success=True,
-        message="Modos de personalidade disponiveis listados.",
-        data={
-            "available_persona_modes": PERSONA_MODES,
-            "current_persona_mode": current_mode,
-            **_persona_payload(current_mode),
-        },
+    return await domain_list_persona_modes(
+        params,
+        ctx,
+        get_persona_mode=get_persona_mode,
+        persona_modes=PERSONA_MODES,
+        persona_payload=_persona_payload,
     )
 
 
 async def _get_persona_mode_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    current_mode = get_persona_mode(ctx.participant_identity, ctx.room)
-    profile = PERSONA_MODES.get(current_mode, PERSONA_MODES[DEFAULT_PERSONA_MODE])
-    return ActionResult(
-        success=True,
-        message=f"Modo atual: {profile.get('label', current_mode)}.",
-        data={"current_persona_mode": current_mode, **_persona_payload(current_mode)},
+    return await domain_get_persona_mode_action(
+        params,
+        ctx,
+        get_persona_mode=get_persona_mode,
+        persona_modes=PERSONA_MODES,
+        default_persona_mode=DEFAULT_PERSONA_MODE,
+        persona_payload=_persona_payload,
     )
 
 
 async def _set_persona_mode_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    requested_mode = str(params.get("mode", "")).strip()
-    normalized = _normalize_persona_mode(requested_mode)
-    if normalized not in PERSONA_MODES:
-        available = ", ".join(sorted(PERSONA_MODES.keys()))
-        return ActionResult(
-            success=False,
-            message=f"Modo '{requested_mode}' nao existe. Use um destes: {available}.",
-            data={"available_modes": sorted(PERSONA_MODES.keys())},
-            error="invalid persona mode",
-        )
-
-    applied = set_persona_mode(ctx.participant_identity, ctx.room, normalized)
-    if applied != "rpg":
-        clear_active_character(ctx.participant_identity, ctx.room)
-    profile = PERSONA_MODES.get(applied, PERSONA_MODES[DEFAULT_PERSONA_MODE])
-    return ActionResult(
-        success=True,
-        message=f"Modo de personalidade alterado para {profile.get('label', applied)}.",
-        data={
-            "applied_persona_mode": applied,
-            "style_guidance": profile.get("style"),
-            **_persona_payload(applied),
-        },
+    return await domain_set_persona_mode_action(
+        params,
+        ctx,
+        normalize_persona_mode=_normalize_persona_mode,
+        persona_modes=PERSONA_MODES,
+        set_persona_mode=set_persona_mode,
+        persona_payload=_persona_payload,
+        on_mode_applied=lambda applied: clear_active_character(ctx.participant_identity, ctx.room) if applied != "rpg" else None,
     )
 
 
 async def _rpg_get_character_mode(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    active = get_active_character(ctx.participant_identity, ctx.room)
-    if active is None:
-        return ActionResult(
-            success=True,
-            message="Nenhum personagem ativo no momento.",
-            data=_active_character_payload(ctx.participant_identity, ctx.room),
-        )
-    return ActionResult(
-        success=True,
-        message=f"Personagem ativo: {active.name}.",
-        data=_active_character_payload(ctx.participant_identity, ctx.room),
+    return await domain_rpg_get_character_mode(
+        params,
+        ctx,
+        get_active_character=get_active_character,
+        active_character_payload=_active_character_payload,
     )
 
 
 async def _rpg_assume_character(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    name = str(params.get("name", "")).strip()
-    source = str(params.get("source", "auto")).strip().lower() or "auto"
-    section_name = str(params.get("section_name", "")).strip() or None
-    visual_reference_url = str(params.get("referencia_visual_url", "")).strip() or None
-    pinterest_pin_url = str(params.get("pinterest_pin_url", "")).strip() or None
-    visual_description = str(params.get("descricao_visual", "")).strip() or None
-    if not name:
-        return ActionResult(success=False, message="Informe o nome do personagem.", error="missing name")
-
-    resolved_source = source if source in {"auto", "onenote", "pdf", "manual"} else "auto"
-    summary = ""
-    profile: JsonObject = {}
-    page_id: str | None = None
-    page_title: str | None = None
-    resolved_section_name: str | None = None
-    one_note_url: str | None = None
-    used_source = "manual"
-    one_note_sync_status = "skipped"
-    one_note_sync_error: str | None = None
-    existing_sheet, existing_sheet_path = _find_existing_character_sheet_by_name(name)
-    sheet_json_path: str | None = str(existing_sheet_path.resolve()) if existing_sheet_path else None
-    sheet_markdown_path: str | None = None
-    sheet_pdf_path: str | None = None
-    if existing_sheet_path:
-        md_candidate = existing_sheet_path.with_suffix(".md")
-        if md_candidate.exists():
-            sheet_markdown_path = str(md_candidate.resolve())
-        pdf_candidate = _rpg_character_pdfs_dir() / existing_sheet_path.parent.name / f"{existing_sheet_path.stem}.pdf"
-        if pdf_candidate.exists():
-            sheet_pdf_path = str(pdf_candidate.resolve())
-    if existing_sheet and not summary:
-        derived = existing_sheet.get("derived", {}) if isinstance(existing_sheet.get("derived"), dict) else {}
-        class_label = str(existing_sheet.get("class_name", "")).strip()
-        race_label = str(existing_sheet.get("race", "")).strip()
-        summary = _summarize_character_text(
-            " ".join(
-                part
-                for part in [
-                    f"{name}.",
-                    f"Raca {race_label}." if race_label else "",
-                    f"Classe {class_label}." if class_label else "",
-                    f"Nivel {existing_sheet.get('level')}." if existing_sheet.get("level") else "",
-                    f"Conceito: {existing_sheet.get('concept')}." if existing_sheet.get("concept") else "",
-                    f"Defesa {derived.get('defense')}." if derived.get("defense") is not None else "",
-                ]
-                if part
-            )
-        )
-        profile = {
-            "summary": summary,
-            "sheet_reference": {
-                "sheet_json_path": sheet_json_path,
-                "sheet_markdown_path": sheet_markdown_path,
-                "sheet_pdf_path": sheet_pdf_path,
-                "sheet_builder_source": existing_sheet.get("builder"),
-            },
-        }
-        used_source = "sheet"
-
-    if resolved_source in {"auto", "onenote"}:
-        match = _find_onenote_character_page(name, section_name)
-        if match and isinstance(match, dict):
-            page = match.get("page")
-            if isinstance(page, dict):
-                page_id = str(page.get("id", "")).strip() or None
-                page_title = str(page.get("title", "")).strip() or None
-                resolved_section_name = str(match.get("section_name", "")).strip() or None
-                links = page.get("links", {})
-                if isinstance(links, dict):
-                    one_note = links.get("oneNoteClientUrl")
-                    if isinstance(one_note, dict):
-                        one_note_url = str(one_note.get("href", "")).strip() or None
-                if page_id:
-                    encoded_page_id = _quote_path_segment(page_id)
-                    content, error = _onenote_api_request(
-                        "GET",
-                        f"me/onenote/pages/{encoded_page_id}/content",
-                        extra_headers={"Accept": "text/html"},
-                    )
-                    if error is None:
-                        html_content = str(content or "")
-                        profile = _extract_onenote_character_profile(html_content)
-                        summary = str(profile.get("summary", "")).strip() or _summarize_character_text(
-                            _strip_html_for_preview(html_content)
-                        )
-                        if not visual_reference_url:
-                            visual_reference_url = str(profile.get("visual_reference_url", "")).strip() or None
-                        if not pinterest_pin_url:
-                            pinterest_pin_url = str(profile.get("pinterest_pin_url", "")).strip() or None
-                        if not visual_description:
-                            visual_description = str(profile.get("visual_description", "")).strip() or None
-                        used_source = "onenote"
-
-    if not summary and resolved_source in {"auto", "pdf"}:
-        results = _get_rpg_index().search(name, limit=3)
-        if results:
-            first = results[0]
-            summary = _summarize_character_text(str(first.get("content", "")))
-            profile = {
-                "summary": summary,
-                "knowledge_limits": "Baseado em trechos indexados de PDFs e lore local. Se faltar informacao, assuma incerteza.",
-            }
-            used_source = "pdf"
-
-    if not summary:
-        summary = (
-            f"Assuma o papel de {name}. Mantenha consistencia de personalidade, voz e objetivos. "
-            "Se faltar contexto, improvise com coerencia e confirme lacunas quando necessario."
-        )
-        used_source = "manual" if resolved_source == "manual" else resolved_source
-        profile = {
-            "summary": summary,
-            "knowledge_limits": "Contexto manual e incompleto. Nao invente fatos canonicos sem marcar como improviso.",
-        }
-
-    page_sync_payload, page_sync_error = _ensure_onenote_character_page(
-        title=name,
-        summary=summary,
-        source=used_source,
-        preferred_section_name=resolved_section_name or section_name,
-        visual_reference_url=visual_reference_url,
-        pinterest_pin_url=pinterest_pin_url,
-        visual_description=visual_description,
-    )
-    if page_sync_error is None and isinstance(page_sync_payload, dict):
-        page_id = str(page_sync_payload.get("page_id", "")).strip() or page_id
-        page_title = str(page_sync_payload.get("title", "")).strip() or page_title or name
-        resolved_section_name = str(page_sync_payload.get("section_name", "")).strip() or resolved_section_name
-        one_note_url = str(page_sync_payload.get("one_note_url", "")).strip() or one_note_url
-        one_note_sync_status = "created" if page_sync_payload.get("created") else "reused"
-    elif page_sync_error is not None:
-        one_note_sync_status = "failed"
-        one_note_sync_error = page_sync_error.message
-
-    if visual_reference_url and not profile.get("visual_reference_url"):
-        profile["visual_reference_url"] = visual_reference_url
-    if pinterest_pin_url and not profile.get("pinterest_pin_url"):
-        profile["pinterest_pin_url"] = pinterest_pin_url
-    if visual_description and not profile.get("visual_description"):
-        profile["visual_description"] = visual_description
-    if summary and not profile.get("summary"):
-        profile["summary"] = summary
-    prompt_hint = _build_character_prompt_hint(name, summary, profile)
-
-    active = ActiveCharacterMode(
-        name=name,
-        source=used_source,
-        summary=summary,
-        activated_at=_now_iso(),
-        page_id=page_id,
-        page_title=page_title,
-        section_name=resolved_section_name,
-        one_note_url=one_note_url,
-        visual_reference_url=visual_reference_url,
-        pinterest_pin_url=pinterest_pin_url,
-        visual_description=visual_description,
-        profile=profile,
-        prompt_hint=prompt_hint,
-        sheet_json_path=sheet_json_path,
-        sheet_markdown_path=sheet_markdown_path,
-        sheet_pdf_path=sheet_pdf_path,
-    )
-    set_active_character(ctx.participant_identity, ctx.room, active)
-    return ActionResult(
-        success=True,
-        message=(
-            f"Modo personagem ativado para {name}."
-            if one_note_sync_status != "failed"
-            else f"Modo personagem ativado para {name}, mas a pagina dedicada no OneNote nao foi sincronizada."
-        ),
-        data={
-            **_active_character_payload(ctx.participant_identity, ctx.room),
-            "character_prompt_hint": prompt_hint,
-            "one_note_character_page_sync": one_note_sync_status,
-            "one_note_character_page_error": one_note_sync_error,
-        },
+    return await domain_rpg_assume_character(
+        params,
+        ctx,
+        find_existing_character_sheet_by_name=_find_existing_character_sheet_by_name,
+        rpg_character_pdfs_dir=_rpg_character_pdfs_dir,
+        summarize_character_text=_summarize_character_text,
+        find_onenote_character_page=_find_onenote_character_page,
+        quote_path_segment=_quote_path_segment,
+        onenote_api_request=_onenote_api_request,
+        extract_onenote_character_profile=_extract_onenote_character_profile,
+        strip_html_for_preview=_strip_html_for_preview,
+        get_rpg_index=_get_rpg_index,
+        ensure_onenote_character_page=_ensure_onenote_character_page,
+        build_character_prompt_hint=_build_character_prompt_hint,
+        active_character_mode_cls=ActiveCharacterMode,
+        now_iso=_now_iso,
+        set_active_character=set_active_character,
+        active_character_payload=_active_character_payload,
     )
 
 
 async def _rpg_clear_character_mode(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    active = get_active_character(ctx.participant_identity, ctx.room)
-    clear_active_character(ctx.participant_identity, ctx.room)
-    if active is None:
-        return ActionResult(
-            success=True,
-            message="Nenhum modo personagem estava ativo.",
-            data={**_active_character_payload(ctx.participant_identity, ctx.room), "active_character_cleared": True},
-        )
-    return ActionResult(
-        success=True,
-        message=f"Modo personagem encerrado para {active.name}.",
-        data={**_active_character_payload(ctx.participant_identity, ctx.room), "active_character_cleared": True},
+    return await domain_rpg_clear_character_mode(
+        params,
+        ctx,
+        get_active_character=get_active_character,
+        clear_active_character=clear_active_character,
+        active_character_payload=_active_character_payload,
     )
 
 
 async def _thinq_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    route_payload, route_error = _thinq_api_request("GET", "route", require_auth=False)
-    devices, devices_error = _thinq_list_devices_payload()
-    if route_error is not None and devices_error is not None:
-        return devices_error
-
-    return ActionResult(
-        success=True,
-        message="ThinQ configurado." if devices_error is None else "ThinQ parcialmente configurado.",
-        data={
-            "thinq_configured": bool(_thinq_pat()),
-            "country": _thinq_country(),
-            "api_base": _thinq_api_base(),
-            "route": route_payload if route_error is None else None,
-            "devices_count": len(devices or []),
-            "devices_error": devices_error.error if devices_error is not None else None,
-        },
+    return await domain_thinq_status(
+        params,
+        ctx,
+        thinq_api_request=_thinq_api_request,
+        thinq_list_devices_payload=_thinq_list_devices_payload,
+        thinq_pat=_thinq_pat,
+        thinq_country=_thinq_country,
+        thinq_api_base=_thinq_api_base,
     )
 
 
 async def _thinq_list_devices(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    devices, error = _thinq_list_devices_payload()
-    if error is not None:
-        return error
-    simplified = [_thinq_simplify_device(item) for item in devices or []]
-    return ActionResult(
-        success=True,
-        message=f"Encontrei {len(simplified)} dispositivo(s) no ThinQ.",
-        data={"devices": simplified},
+    return await domain_thinq_list_devices(
+        params,
+        ctx,
+        thinq_list_devices_payload=_thinq_list_devices_payload,
+        thinq_simplify_device=_thinq_simplify_device,
     )
 
 
 async def _thinq_get_device_profile(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    device, error = _thinq_find_device(
-        device_name=_coerce_optional_str(params.get("device_name")),
-        device_id=_coerce_optional_str(params.get("device_id")),
-    )
-    if error is not None:
-        return error
-    assert device is not None
-    payload, request_error = _thinq_api_request("GET", f"devices/{quote(_thinq_extract_device_id(device), safe='')}/profile")
-    if request_error is not None:
-        return request_error
-    return ActionResult(
-        success=True,
-        message=f"Perfil carregado para {_thinq_extract_device_alias(device)}.",
-        data={
-            "device": _thinq_simplify_device(device),
-            "profile": payload if isinstance(payload, dict) else {"raw": payload},
-        },
+    return await domain_thinq_get_device_profile(
+        params,
+        ctx,
+        coerce_optional_str=_coerce_optional_str,
+        thinq_find_device=_thinq_find_device,
+        thinq_api_request=_thinq_api_request,
+        thinq_extract_device_id=_thinq_extract_device_id,
+        thinq_extract_device_alias=_thinq_extract_device_alias,
+        thinq_simplify_device=_thinq_simplify_device,
+        quote_path_segment=lambda value: quote(value, safe=""),
     )
 
 
 async def _thinq_get_device_state(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    device, error = _thinq_find_device(
-        device_name=_coerce_optional_str(params.get("device_name")),
-        device_id=_coerce_optional_str(params.get("device_id")),
-    )
-    if error is not None:
-        return error
-    assert device is not None
-    payload, request_error = _thinq_api_request("GET", f"devices/{quote(_thinq_extract_device_id(device), safe='')}/state")
-    if request_error is not None:
-        return request_error
-    return ActionResult(
-        success=True,
-        message=f"Estado carregado para {_thinq_extract_device_alias(device)}.",
-        data={
-            "device": _thinq_simplify_device(device),
-            "state": payload if isinstance(payload, dict) else {"raw": payload},
-        },
+    return await domain_thinq_get_device_state(
+        params,
+        ctx,
+        coerce_optional_str=_coerce_optional_str,
+        thinq_find_device=_thinq_find_device,
+        thinq_api_request=_thinq_api_request,
+        thinq_extract_device_id=_thinq_extract_device_id,
+        thinq_extract_device_alias=_thinq_extract_device_alias,
+        thinq_simplify_device=_thinq_simplify_device,
+        quote_path_segment=lambda value: quote(value, safe=""),
     )
 
 
 async def _thinq_control_device(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    device, error = _thinq_find_device(
-        device_name=_coerce_optional_str(params.get("device_name")),
-        device_id=_coerce_optional_str(params.get("device_id")),
-    )
-    if error is not None:
-        return error
-    assert device is not None
-
-    command = params.get("command")
-    if not isinstance(command, dict) or not command:
-        return ActionResult(
-            success=False,
-            message="Comando ThinQ invalido.",
-            error="missing or invalid command object",
-        )
-
-    conditional = bool(params.get("conditional"))
-    _, request_error = _thinq_api_request(
-        "POST",
-        f"devices/{quote(_thinq_extract_device_id(device), safe='')}/control",
-        body=command,
-        extra_headers={"x-conditional-control": "true"} if conditional else None,
-    )
-    if request_error is not None:
-        return request_error
-
-    return ActionResult(
-        success=True,
-        message=f"Comando enviado para {_thinq_extract_device_alias(device)}.",
-        data={
-            "device": _thinq_simplify_device(device),
-            "conditional": conditional,
-            "command": command,
-        },
+    return await domain_thinq_control_device(
+        params,
+        ctx,
+        coerce_optional_str=_coerce_optional_str,
+        thinq_find_device=_thinq_find_device,
+        thinq_api_request=_thinq_api_request,
+        thinq_extract_device_id=_thinq_extract_device_id,
+        thinq_extract_device_alias=_thinq_extract_device_alias,
+        thinq_simplify_device=_thinq_simplify_device,
+        quote_path_segment=lambda value: quote(value, safe=""),
     )
 
 
 async def _ac_get_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    device, error = _thinq_find_device(
-        device_name=_coerce_optional_str(params.get("device_name")),
-        device_id=_coerce_optional_str(params.get("device_id")),
-        require_air=True,
-    )
-    if error is not None:
-        return error
-    assert device is not None
-    payload, request_error = _thinq_api_request("GET", f"devices/{quote(_thinq_extract_device_id(device), safe='')}/state")
-    if request_error is not None:
-        return request_error
-    return ActionResult(
-        success=True,
-        message=f"Estado do ar carregado para {_thinq_extract_device_alias(device)}.",
-        data={
-            "device": _thinq_simplify_device(device),
-            "state": payload if isinstance(payload, dict) else {"raw": payload},
-        },
+    return await domain_ac_get_status(
+        params,
+        ctx,
+        coerce_optional_str=_coerce_optional_str,
+        thinq_find_device=_thinq_find_device,
+        thinq_api_request=_thinq_api_request,
+        thinq_extract_device_id=_thinq_extract_device_id,
+        thinq_extract_device_alias=_thinq_extract_device_alias,
+        thinq_simplify_device=_thinq_simplify_device,
+        quote_path_segment=lambda value: quote(value, safe=""),
     )
 
 
 async def _ac_send_command(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    device, error = _thinq_find_device(
-        device_name=_coerce_optional_str(params.get("device_name")),
-        device_id=_coerce_optional_str(params.get("device_id")),
-        require_air=True,
-    )
-    if error is not None:
-        return error
-    assert device is not None
-
-    command = params.get("command")
-    if not isinstance(command, dict) or not command:
-        return ActionResult(
-            success=False,
-            message="Comando do ar invalido.",
-            error="missing or invalid command object",
-        )
-
-    conditional = bool(params.get("conditional"))
-    _, request_error = _thinq_api_request(
-        "POST",
-        f"devices/{quote(_thinq_extract_device_id(device), safe='')}/control",
-        body=command,
-        extra_headers={"x-conditional-control": "true"} if conditional else None,
-    )
-    if request_error is not None:
-        return request_error
-
-    return ActionResult(
-        success=True,
-        message=f"Comando enviado para o ar {_thinq_extract_device_alias(device)}.",
-        data={
-            "device": _thinq_simplify_device(device),
-            "conditional": conditional,
-            "command": command,
-        },
+    return await domain_ac_send_command(
+        params,
+        ctx,
+        coerce_optional_str=_coerce_optional_str,
+        thinq_find_device=_thinq_find_device,
+        thinq_api_request=_thinq_api_request,
+        thinq_extract_device_id=_thinq_extract_device_id,
+        thinq_extract_device_alias=_thinq_extract_device_alias,
+        thinq_simplify_device=_thinq_simplify_device,
+        quote_path_segment=lambda value: quote(value, safe=""),
     )
 
 
@@ -6932,127 +6742,60 @@ def _normalize_ac_fan_speed(value: str) -> str:
 
 
 async def _ac_turn_on(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    return await _ac_send_command(
-        {
-            "device_name": params.get("device_name"),
-            "device_id": params.get("device_id"),
-            "conditional": params.get("conditional"),
-            "command": _thinq_build_air_command(section="operation", payload={"airConOperationMode": "POWER_ON"}),
-        },
+    return await domain_ac_turn_on(
+        params,
         ctx,
+        ac_send_command=_ac_send_command,
     )
 
 
 async def _ac_turn_off(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    return await _ac_send_command(
-        {
-            "device_name": params.get("device_name"),
-            "device_id": params.get("device_id"),
-            "conditional": params.get("conditional"),
-            "command": _thinq_build_air_command(section="operation", payload={"airConOperationMode": "POWER_OFF"}),
-        },
+    return await domain_ac_turn_off(
+        params,
         ctx,
+        ac_send_command=_ac_send_command,
     )
 
 
 async def _ac_set_mode(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    raw_mode = _coerce_optional_str(params.get("mode"))
-    if not raw_mode:
-        return ActionResult(success=False, message="Informe o modo do ar.", error="missing mode")
-    mode = _normalize_ac_mode(raw_mode)
-    return await _ac_send_command(
-        {
-            "device_name": params.get("device_name"),
-            "device_id": params.get("device_id"),
-            "conditional": params.get("conditional"),
-            "command": _thinq_build_air_command(section="airConJobMode", payload={"currentJobMode": mode}),
-        },
+    return await domain_ac_set_mode(
+        params,
         ctx,
+        coerce_optional_str=_coerce_optional_str,
+        normalize_label=_normalize_spotify_device_label,
+        ac_send_command=_ac_send_command,
     )
 
 
 async def _ac_set_fan_speed(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    raw_speed = _coerce_optional_str(params.get("fan_speed"))
-    if not raw_speed:
-        return ActionResult(success=False, message="Informe a velocidade do vento.", error="missing fan_speed")
-    speed = _normalize_ac_fan_speed(raw_speed)
-    detail = bool(params.get("detail"))
-    key = "windStrengthDetail" if detail else "windStrength"
-    return await _ac_send_command(
-        {
-            "device_name": params.get("device_name"),
-            "device_id": params.get("device_id"),
-            "conditional": params.get("conditional"),
-            "command": _thinq_build_air_command(section="airFlow", payload={key: speed}),
-        },
+    return await domain_ac_set_fan_speed(
+        params,
         ctx,
+        coerce_optional_str=_coerce_optional_str,
+        normalize_label=_normalize_spotify_device_label,
+        ac_send_command=_ac_send_command,
     )
 
 
 async def _ac_set_temperature(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    device, error = _thinq_find_device(
-        device_name=_coerce_optional_str(params.get("device_name")),
-        device_id=_coerce_optional_str(params.get("device_id")),
-        require_air=True,
-    )
-    if error is not None:
-        return error
-    assert device is not None
-
-    temperature = params.get("temperature")
-    if not isinstance(temperature, (int, float)):
-        return ActionResult(success=False, message="Informe a temperatura alvo.", error="missing temperature")
-
-    profile_payload, profile_error = _thinq_api_request(
-        "GET",
-        f"devices/{quote(_thinq_extract_device_id(device), safe='')}/profile",
-    )
-    if profile_error is not None:
-        return profile_error
-
-    profile = profile_payload if isinstance(profile_payload, dict) else {}
-    temperature_property = (
-        ((profile.get("property") or {}).get("temperature") or {})
-        if isinstance(profile.get("property"), dict)
-        else {}
-    )
-    target_schema = temperature_property.get("targetTemperature") if isinstance(temperature_property, dict) else {}
-    range_info = (target_schema.get("value") or {}).get("w", {}) if isinstance(target_schema, dict) else {}
-    min_value = float(range_info.get("min", 18))
-    max_value = float(range_info.get("max", 30))
-    step = float(range_info.get("step", 0.5))
-
-    desired = max(min_value, min(max_value, float(temperature)))
-    if step > 0:
-        desired = round(round((desired - min_value) / step) * step + min_value, 2)
-
-    unit = _coerce_optional_str(params.get("unit")) or "C"
-    return await _ac_send_command(
-        {
-            "device_name": _thinq_extract_device_alias(device),
-            "device_id": _thinq_extract_device_id(device),
-            "conditional": params.get("conditional"),
-            "command": _thinq_build_air_command(
-                section="temperature",
-                payload={"targetTemperature": desired, "unit": unit.upper()},
-            ),
-        },
+    return await domain_ac_set_temperature(
+        params,
         ctx,
+        coerce_optional_str=_coerce_optional_str,
+        thinq_find_device=_thinq_find_device,
+        thinq_api_request=_thinq_api_request,
+        thinq_extract_device_id=_thinq_extract_device_id,
+        thinq_extract_device_alias=_thinq_extract_device_alias,
+        quote_path_segment=lambda value: quote(value, safe=""),
+        ac_send_command=_ac_send_command,
     )
 
 
 async def _ac_set_swing(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    enabled = params.get("enabled")
-    if not isinstance(enabled, bool):
-        return ActionResult(success=False, message="Informe se a oscilacao fica ligada ou desligada.", error="missing enabled")
-    return await _ac_send_command(
-        {
-            "device_name": params.get("device_name"),
-            "device_id": params.get("device_id"),
-            "conditional": params.get("conditional"),
-            "command": _thinq_build_air_command(section="windDirection", payload={"rotateUpDown": enabled}),
-        },
+    return await domain_ac_set_swing(
+        params,
         ctx,
+        ac_send_command=_ac_send_command,
     )
 
 
@@ -7076,187 +6819,46 @@ def _thinq_profile_write_enum_values(profile: JsonObject, section: str, key: str
 
 
 async def _ac_set_sleep_timer(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    hours = params.get("hours", 0)
-    minutes = params.get("minutes", 0)
-    target_name = params.get("device_name") or _thinq_default_ac_name()
-    target_id = params.get("device_id")
-    try:
-        total_minutes = max(0, int(hours) * 60 + int(minutes))
-    except Exception:
-        return ActionResult(success=False, message="Timer invalido.", error="invalid timer")
-
-    profile_result = await _thinq_get_device_profile(
-        {"device_name": target_name, "device_id": target_id},
+    return await domain_ac_set_sleep_timer(
+        params,
         ctx,
+        thinq_default_ac_name=_thinq_default_ac_name,
+        ac_get_device_profile=_thinq_get_device_profile,
+        ac_send_command=_ac_send_command,
     )
-    profile = (profile_result.data or {}).get("profile") if profile_result.success and isinstance(profile_result.data, dict) else {}
-    writable_values = _thinq_profile_write_enum_values(profile if isinstance(profile, dict) else {}, "sleepTimer", "relativeStopTimer")
-
-    if total_minutes == 0:
-        payload = {"relativeStopTimer": "UNSET"}
-        message = "Timer de desligamento removido."
-    else:
-        if writable_values and "SET" not in writable_values:
-            return ActionResult(
-                success=False,
-                message="Este modelo de ar nao suporta programar timer de desligamento pela API ThinQ.",
-                error="sleep timer set unsupported",
-            )
-        payload = {
-            "relativeStopTimer": "SET",
-            "relativeHourToStop": total_minutes // 60,
-            "relativeMinuteToStop": total_minutes % 60,
-        }
-        message = f"Timer de desligamento ajustado para {total_minutes // 60}h {total_minutes % 60}min."
-
-    result = await _ac_send_command(
-        {
-            "device_name": target_name,
-            "device_id": target_id,
-            "conditional": params.get("conditional"),
-            "command": _thinq_build_air_command(section="sleepTimer", payload=payload),
-        },
-        ctx,
-    )
-    if result.success:
-        result.message = message
-    return result
 
 
 async def _ac_set_start_timer(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    hours = params.get("hours", 0)
-    minutes = params.get("minutes", 0)
-    target_name = params.get("device_name") or _thinq_default_ac_name()
-    target_id = params.get("device_id")
-    try:
-        total_minutes = max(0, int(hours) * 60 + int(minutes))
-    except Exception:
-        return ActionResult(success=False, message="Timer de ligar invalido.", error="invalid timer")
-
-    profile_result = await _thinq_get_device_profile(
-        {"device_name": target_name, "device_id": target_id},
+    return await domain_ac_set_start_timer(
+        params,
         ctx,
+        thinq_default_ac_name=_thinq_default_ac_name,
+        ac_get_device_profile=_thinq_get_device_profile,
+        ac_send_command=_ac_send_command,
     )
-    profile = (profile_result.data or {}).get("profile") if profile_result.success and isinstance(profile_result.data, dict) else {}
-    writable_values = _thinq_profile_write_enum_values(profile if isinstance(profile, dict) else {}, "timer", "relativeStartTimer")
-
-    if total_minutes == 0:
-        payload = {"relativeStartTimer": "UNSET"}
-        message = "Timer de ligamento removido."
-    else:
-        if writable_values and "SET" not in writable_values:
-            return ActionResult(
-                success=False,
-                message="Este modelo de ar nao suporta programar timer de ligamento pela API ThinQ.",
-                error="start timer set unsupported",
-            )
-        payload = {
-            "relativeStartTimer": "SET",
-            "relativeHourToStart": total_minutes // 60,
-            "relativeMinuteToStart": total_minutes % 60,
-        }
-        message = f"Timer de ligamento ajustado para {total_minutes // 60}h {total_minutes % 60}min."
-
-    result = await _ac_send_command(
-        {
-            "device_name": target_name,
-            "device_id": target_id,
-            "conditional": params.get("conditional"),
-            "command": _thinq_build_air_command(section="timer", payload=payload),
-        },
-        ctx,
-    )
-    if result.success:
-        result.message = message
-    return result
 
 
 async def _ac_set_power_save(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    enabled = params.get("enabled")
-    if not isinstance(enabled, bool):
-        return ActionResult(success=False, message="Informe se o modo economia fica ligado ou desligado.", error="missing enabled")
-    result = await _ac_send_command(
-        {
-            "device_name": params.get("device_name"),
-            "device_id": params.get("device_id"),
-            "conditional": params.get("conditional"),
-            "command": _thinq_build_air_command(section="powerSave", payload={"powerSaveEnabled": enabled}),
-        },
+    return await domain_ac_set_power_save(
+        params,
         ctx,
+        ac_send_command=_ac_send_command,
     )
-    if result.success:
-        result.message = "Modo economia ligado." if enabled else "Modo economia desligado."
-    return result
 
 
 async def _ac_apply_preset(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    preset_raw = _coerce_optional_str(params.get("preset"))
-    if not preset_raw:
-        return ActionResult(success=False, message="Informe qual preset aplicar.", error="missing preset")
-
-    preset = _normalize_spotify_device_label(preset_raw)
-    base_params = {
-        "device_name": params.get("device_name"),
-        "device_id": params.get("device_id"),
-        "conditional": params.get("conditional"),
-    }
-
-    if preset in {"modo dormir", "dormir", "sleep"}:
-        sequence = [
-            ("modo", await _ac_set_mode({**base_params, "mode": "COOL"}, ctx)),
-            ("temperatura", await _ac_set_temperature({**base_params, "temperature": 23}, ctx)),
-            ("vento", await _ac_set_fan_speed({**base_params, "fan_speed": "LOW"}, ctx)),
-            ("timer", await _ac_set_sleep_timer({**base_params, "hours": 8}, ctx)),
-        ]
-    elif preset in {"gelar sala", "turbo", "resfriar rapido", "resfriar rapido"}:
-        sequence = [
-            ("modo", await _ac_set_mode({**base_params, "mode": "COOL"}, ctx)),
-            ("temperatura", await _ac_set_temperature({**base_params, "temperature": 18}, ctx)),
-            ("vento", await _ac_set_fan_speed({**base_params, "fan_speed": "HIGH"}, ctx)),
-        ]
-    elif preset in {"modo visita", "visita"}:
-        sequence = [
-            ("ligar", await _ac_turn_on(base_params, ctx)),
-            ("modo", await _ac_set_mode({**base_params, "mode": "COOL"}, ctx)),
-            ("temperatura", await _ac_set_temperature({**base_params, "temperature": 22}, ctx)),
-            ("vento", await _ac_set_fan_speed({**base_params, "fan_speed": "MID"}, ctx)),
-            ("oscilacao", await _ac_set_swing({**base_params, "enabled": True}, ctx)),
-        ]
-    elif preset in {"economia", "eco", "modo economia"}:
-        sequence = [
-            ("ligar", await _ac_turn_on(base_params, ctx)),
-            ("modo", await _ac_set_mode({**base_params, "mode": "AUTO"}, ctx)),
-            ("temperatura", await _ac_set_temperature({**base_params, "temperature": 24}, ctx)),
-            ("vento", await _ac_set_fan_speed({**base_params, "fan_speed": "AUTO"}, ctx)),
-            ("economia", await _ac_set_power_save({**base_params, "enabled": True}, ctx)),
-        ]
-    elif preset in {"ventilar leve", "ventilar", "brisa"}:
-        sequence = [
-            ("ligar", await _ac_turn_on(base_params, ctx)),
-            ("modo", await _ac_set_mode({**base_params, "mode": "FAN"}, ctx)),
-            ("vento", await _ac_set_fan_speed({**base_params, "fan_speed": "LOW"}, ctx)),
-            ("oscilacao", await _ac_set_swing({**base_params, "enabled": True}, ctx)),
-        ]
-    else:
-        return ActionResult(
-            success=False,
-            message="Preset desconhecido.",
-            error="unsupported preset; use 'modo dormir', 'gelar sala', 'modo visita', 'economia' ou 'ventilar leve'",
-        )
-
-    failed = [f"{label}: {result.error or result.message}" for label, result in sequence if not result.success]
-    if failed:
-        return ActionResult(
-            success=False,
-            message="Preset executado parcialmente.",
-            data={"steps": [{"label": label, "success": result.success, "message": result.message} for label, result in sequence]},
-            error="; ".join(failed),
-        )
-
-    return ActionResult(
-        success=True,
-        message=f"Preset aplicado: {preset_raw}.",
-        data={"steps": [{"label": label, "success": result.success, "message": result.message} for label, result in sequence]},
+    return await domain_ac_apply_preset(
+        params,
+        ctx,
+        coerce_optional_str=_coerce_optional_str,
+        normalize_label=_normalize_spotify_device_label,
+        ac_turn_on=_ac_turn_on,
+        ac_set_mode=_ac_set_mode,
+        ac_set_temperature=_ac_set_temperature,
+        ac_set_fan_speed=_ac_set_fan_speed,
+        ac_set_sleep_timer=_ac_set_sleep_timer,
+        ac_set_swing=_ac_set_swing,
+        ac_set_power_save=_ac_set_power_save,
     )
 
 
@@ -7300,137 +6902,38 @@ def _resolve_ac_arrival_prefs(params: JsonObject) -> JsonObject:
 
 
 async def _ac_configure_arrival_prefs(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    prefs = _resolve_ac_arrival_prefs(params)
-    if float(prefs["vent_only_threshold"]) > float(prefs["hot_threshold"]):
-        return ActionResult(
-            success=False,
-            message="O limite de ventilacao nao pode ser maior que o limite de calor forte.",
-            error="invalid thresholds",
-        )
-    _save_ac_arrival_prefs(prefs)
-    return ActionResult(
-        success=True,
-        message="Preferencias de chegada em casa salvas.",
-        data={"preferences": prefs},
+    return await domain_ac_configure_arrival_prefs(
+        params,
+        ctx,
+        load_ac_arrival_prefs=_load_ac_arrival_prefs,
+        save_ac_arrival_prefs=_save_ac_arrival_prefs,
+        thinq_default_ac_name=_thinq_default_ac_name,
+        coerce_optional_str=_coerce_optional_str,
     )
 
 
 async def _ac_prepare_arrival(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    prefs = _resolve_ac_arrival_prefs(params)
-    target_name = _coerce_optional_str(params.get("device_name")) or _coerce_optional_str(prefs.get("device_name")) or _thinq_default_ac_name()
-    target_id = _coerce_optional_str(params.get("device_id"))
-    dry_run = bool(params.get("dry_run"))
-
-    status_result = await _ac_get_status({"device_name": target_name, "device_id": target_id}, ctx)
-    if not status_result.success:
-        return status_result
-
-    status_data = status_result.data if isinstance(status_result.data, dict) else {}
-    current_temperature = _ac_current_temperature_from_status(status_data)
-    if current_temperature is None:
-        return ActionResult(
-            success=False,
-            message="Nao consegui ler a temperatura atual do ambiente pelo ar.",
-            error="missing current temperature",
-        )
-
-    desired_temperature = float(prefs["desired_temperature"])
-    hot_threshold = float(prefs["hot_threshold"])
-    vent_only_threshold = float(prefs["vent_only_threshold"])
-    eta_minutes = int(prefs["eta_minutes"])
-    enable_swing = bool(prefs["enable_swing"])
-
-    if current_temperature >= hot_threshold:
-        strategy = "cool"
-        fan_speed = "HIGH" if current_temperature - desired_temperature >= 3 else "MID"
-        actions_to_run: list[tuple[str, Any]] = [
-            ("ligar", lambda: _ac_turn_on({"device_name": target_name, "device_id": target_id}, ctx)),
-            ("modo", lambda: _ac_set_mode({"device_name": target_name, "device_id": target_id, "mode": "COOL"}, ctx)),
-            (
-                "temperatura",
-                lambda: _ac_set_temperature(
-                    {"device_name": target_name, "device_id": target_id, "temperature": desired_temperature},
-                    ctx,
-                ),
-            ),
-            ("vento", lambda: _ac_set_fan_speed({"device_name": target_name, "device_id": target_id, "fan_speed": fan_speed}, ctx)),
-        ]
-        if enable_swing:
-            actions_to_run.append(("oscilacao", lambda: _ac_set_swing({"device_name": target_name, "device_id": target_id, "enabled": True}, ctx)))
-        message = (
-            f"Ambiente a {current_temperature:.1f}C: esta quente. "
-            f"Vou resfriar para {desired_temperature:.1f}C (ETA {eta_minutes} min)."
-        )
-    elif current_temperature >= vent_only_threshold:
-        strategy = "fan"
-        actions_to_run = [
-            ("ligar", lambda: _ac_turn_on({"device_name": target_name, "device_id": target_id}, ctx)),
-            ("modo", lambda: _ac_set_mode({"device_name": target_name, "device_id": target_id, "mode": "FAN"}, ctx)),
-            ("vento", lambda: _ac_set_fan_speed({"device_name": target_name, "device_id": target_id, "fan_speed": "LOW"}, ctx)),
-        ]
-        if enable_swing:
-            actions_to_run.append(("oscilacao", lambda: _ac_set_swing({"device_name": target_name, "device_id": target_id, "enabled": True}, ctx)))
-        message = (
-            f"Ambiente a {current_temperature:.1f}C: esta morno. "
-            f"So ventilar ja deve bastar (ETA {eta_minutes} min)."
-        )
-    else:
-        strategy = "hold"
-        actions_to_run = []
-        message = f"Ambiente a {current_temperature:.1f}C: temperatura aceitavel. Nao precisa mexer no ar agora."
-
-    if dry_run or not actions_to_run:
-        return ActionResult(
-            success=True,
-            message=message + (" (dry-run)" if dry_run else ""),
-            data={
-                "strategy": strategy,
-                "current_temperature": current_temperature,
-                "preferences": prefs,
-                "applied": False,
-                "device_name": target_name,
-            },
-        )
-
-    results: list[tuple[str, ActionResult]] = []
-    for label, runner in actions_to_run:
-        results.append((label, await runner()))
-
-    failed = [f"{label}: {result.error or result.message}" for label, result in results if not result.success]
-    if failed:
-        return ActionResult(
-            success=False,
-            message="Falha ao preparar a chegada em casa.",
-            error="; ".join(failed),
-            data={
-                "strategy": strategy,
-                "current_temperature": current_temperature,
-                "preferences": prefs,
-                "steps": [label for label, _ in results],
-                "device_name": target_name,
-            },
-        )
-
-    return ActionResult(
-        success=True,
-        message=message,
-        data={
-            "strategy": strategy,
-            "current_temperature": current_temperature,
-            "preferences": prefs,
-            "applied": True,
-            "steps": [label for label, _ in results],
-            "device_name": target_name,
-        },
+    return await domain_ac_prepare_arrival(
+        params,
+        ctx,
+        load_ac_arrival_prefs=_load_ac_arrival_prefs,
+        thinq_default_ac_name=_thinq_default_ac_name,
+        coerce_optional_str=_coerce_optional_str,
+        ac_get_status=_ac_get_status,
+        ac_turn_on=_ac_turn_on,
+        ac_set_mode=_ac_set_mode,
+        ac_set_temperature=_ac_set_temperature,
+        ac_set_fan_speed=_ac_set_fan_speed,
+        ac_set_swing=_ac_set_swing,
     )
 
 
 async def _set_memory_scope(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    scope = str(params.get("scope", "")).strip().lower()
-    if scope not in {"public", "private"}:
-        return ActionResult(success=False, message="Escopo invalido. Use public ou private.", error="invalid scope")
-    set_memory_scope_override(ctx.participant_identity, ctx.room, scope)
-    return ActionResult(success=True, message=f"Ok, vou tratar o proximo contexto como {scope}.", data={"memory_scope": scope})
+    return await domain_set_memory_scope(
+        params,
+        ctx,
+        set_memory_scope_override=set_memory_scope_override,
+    )
 
 
 async def _forget_memory(params: JsonObject, ctx: ActionContext) -> ActionResult:
@@ -7532,1099 +7035,384 @@ async def _delete_voice_profile(params: JsonObject, ctx: ActionContext) -> Actio
 
 
 async def _verify_voice_identity(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    if VOICE_PROFILE_STORE is None:
-        return ActionResult(success=False, message="Biometria de voz desativada.", error="voice biometrics disabled")
-
-    embedding = get_recent_voice_embedding(ctx.participant_identity)
-    if embedding is None:
-        return ActionResult(
-            success=False,
-            message="Nao detectei audio suficiente para verificar sua voz. Fale por alguns segundos e repita.",
-            error="insufficient voice sample",
-            data={"step_up_required": True},
-        )
-
-    verify = VOICE_PROFILE_STORE.verify_identity(participant_identity=ctx.participant_identity, embedding=embedding)
-    threshold = _voice_threshold()
-    stepup_limit = max(threshold, _voice_stepup_threshold())
-
-    if verify.score >= stepup_limit:
-        _set_authenticated(ctx.participant_identity, ctx.room, auth_method="voice")
-        return ActionResult(
-            success=True,
-            message="Identidade por voz validada com alta confianca.",
-            data={
-                "auth_method": "voice",
-                "voice_score": verify.score,
-                "private_access_granted": True,
-                "step_up_required": False,
-                "matched_profile": verify.profile_name,
-                "voice_method": verify.method,
-                "compared_profiles": verify.compared_profiles,
-                **_security_status_payload(ctx.participant_identity, ctx.room),
-            },
-        )
-
-    if verify.score >= threshold:
-        VOICE_STEP_UP_PENDING[ctx.participant_identity] = verify.score
-        _clear_authentication(ctx.participant_identity)
-        return ActionResult(
-            success=False,
-            message="Voz reconhecida com confianca media. Confirme com PIN/frase para liberar acesso privado.",
-            data={
-                "authentication_required": True,
-                "step_up_required": True,
-                "voice_score": verify.score,
-                "matched_profile": verify.profile_name,
-                "voice_method": verify.method,
-                "compared_profiles": verify.compared_profiles,
-                **_security_status_payload(ctx.participant_identity, ctx.room),
-            },
-            error="voice_step_up_required",
-        )
-
-    _clear_authentication(ctx.participant_identity)
-    return ActionResult(
-        success=False,
-        message="Nao consegui validar sua identidade por voz.",
-        data={
-            "voice_score": verify.score,
-            "step_up_required": True,
-            "voice_method": verify.method,
-            "compared_profiles": verify.compared_profiles,
-        },
-        error="voice_not_matched",
+    return await domain_verify_voice_identity(
+        params,
+        ctx,
+        voice_profile_store=VOICE_PROFILE_STORE,
+        get_recent_voice_embedding=get_recent_voice_embedding,
+        voice_threshold=_voice_threshold,
+        voice_stepup_threshold=_voice_stepup_threshold,
+        set_authenticated=_set_authenticated,
+        clear_authentication=_clear_authentication,
+        security_status_payload=_security_status_payload,
+        voice_step_up_pending=VOICE_STEP_UP_PENDING,
     )
 
 
 async def _spotify_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    _spotify_initialize_cache()
-    me, error = _spotify_api_request("GET", "me")
-    if error is not None:
-        return error
-
-    devices_payload, _ = _spotify_api_request("GET", "me/player/devices")
-    devices = devices_payload.get("devices", []) if isinstance(devices_payload, dict) else []
-    active_devices = []
-    if isinstance(devices, list):
-        active_devices = [str(d.get("name", "")) for d in devices if isinstance(d, dict) and d.get("is_active")]
-
-    return ActionResult(
-        success=True,
-        message="Spotify conectado e pronto para uso.",
-        data={
-            "spotify_connected": True,
-            "user_id": me.get("id") if isinstance(me, dict) else None,
-            "display_name": me.get("display_name") if isinstance(me, dict) else None,
-            "active_devices": active_devices,
-        },
+    return await domain_spotify_status(
+        params,
+        ctx,
+        spotify_initialize_cache=_spotify_initialize_cache,
+        spotify_api_request=_spotify_api_request,
     )
 
 
 async def _spotify_get_devices(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    payload, error = _spotify_api_request("GET", "me/player/devices")
-    if error is not None:
-        return error
-    devices = payload.get("devices", []) if isinstance(payload, dict) else []
-    if not isinstance(devices, list):
-        devices = []
-    mapped = [
-        {
-            "id": str(device.get("id", "")),
-            "name": str(device.get("name", "")),
-            "type": str(device.get("type", "")),
-            "is_active": bool(device.get("is_active")),
-            "volume_percent": device.get("volume_percent"),
-        }
-        for device in devices
-        if isinstance(device, dict)
-    ]
-    return ActionResult(success=True, message=f"{len(mapped)} device(s) Spotify encontrados.", data={"devices": mapped})
+    return await domain_spotify_get_devices(
+        params,
+        ctx,
+        spotify_api_request=_spotify_api_request,
+    )
 
 
 async def _spotify_transfer_playback(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    requested_device_name = _coerce_optional_str(params.get("device_name"))
-    requested_device_id = _coerce_optional_str(params.get("device_id"))
-    play_now = bool(params.get("play", True))
-    device, error = _spotify_find_device(requested_device_name, requested_device_id)
-    if error is not None:
-        return error
-    if device is None:
-        return ActionResult(success=False, message="Nao consegui resolver o device Spotify.", error="device not found")
-
-    _, request_error = _spotify_api_request(
-        "PUT",
-        "me/player",
-        body={"device_ids": [str(device.get("id"))], "play": play_now},
-    )
-    if request_error is not None:
-        return request_error
-    if requested_device_name:
-        _spotify_remember_device_alias(requested_device_name, str(device.get("id", "")).strip())
-
-    return ActionResult(
-        success=True,
-        message=f"Playback transferido para {device.get('name', 'device desconhecido')}.",
-        data={"device_id": device.get("id"), "device_name": device.get("name"), "is_active": True},
+    return await domain_spotify_transfer_playback(
+        params,
+        ctx,
+        coerce_optional_str=_coerce_optional_str,
+        spotify_find_device=_spotify_find_device,
+        spotify_api_request=_spotify_api_request,
+        spotify_remember_device_alias=_spotify_remember_device_alias,
     )
 
 
 async def _spotify_play(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    requested_device_name = _coerce_optional_str(params.get("device_name")) or _coerce_optional_str(
-        os.getenv("SPOTIFY_DEFAULT_DEVICE_NAME", "")
+    return await domain_spotify_play(
+        params,
+        ctx,
+        coerce_optional_str=_coerce_optional_str,
+        normalize_spotify_uri=_normalize_spotify_uri,
+        spotify_find_device=_spotify_find_device,
+        spotify_api_request=_spotify_api_request,
+        is_spotify_restriction_error=_is_spotify_restriction_error,
+        spotify_remember_device_alias=_spotify_remember_device_alias,
     )
-    requested_device_id = _coerce_optional_str(params.get("device_id"))
-    query = str(params.get("query", "")).strip()
-    uri = _normalize_spotify_uri(str(params.get("uri", "")))
-    target_device: JsonObject | None = None
-    if requested_device_name or requested_device_id:
-        target_device, target_error = _spotify_find_device(requested_device_name, requested_device_id)
-        if target_error is not None:
-            return target_error
-
-    resolved_uri = uri
-    resolved_title = None
-    if query and not resolved_uri:
-        search_payload, search_error = _spotify_api_request(
-            "GET",
-            "search",
-            params={"q": query, "type": "track", "limit": 1},
-        )
-        if search_error is not None:
-            return search_error
-        tracks = search_payload.get("tracks", {}).get("items", []) if isinstance(search_payload, dict) else []
-        if not isinstance(tracks, list) or not tracks:
-            return ActionResult(success=False, message=f"Nao encontrei musica para '{query}'.", error="track not found")
-        first = tracks[0]
-        if not isinstance(first, dict):
-            return ActionResult(success=False, message=f"Nao encontrei musica para '{query}'.", error="track not found")
-        resolved_uri = str(first.get("uri", "")).strip()
-        artist_names = ", ".join(
-            str(artist.get("name", "")) for artist in first.get("artists", []) if isinstance(artist, dict)
-        )
-        resolved_title = f"{first.get('name', 'Faixa')} - {artist_names}".strip(" -")
-
-    body: JsonObject | None = None
-    if resolved_uri:
-        if resolved_uri.startswith("spotify:track:"):
-            body = {"uris": [resolved_uri]}
-        else:
-            body = {"context_uri": resolved_uri}
-
-    play_params: JsonObject | None = None
-    if target_device and target_device.get("id"):
-        play_params = {"device_id": str(target_device.get("id"))}
-
-    _, play_error = _spotify_api_request("PUT", "me/player/play", params=play_params, body=body)
-    if play_error is not None:
-        if target_device and _is_spotify_restriction_error(play_error):
-            fallback_body = {"device_ids": [str(target_device.get("id"))], "play": True}
-            _, transfer_error = _spotify_api_request("PUT", "me/player", body=fallback_body)
-            if transfer_error is None:
-                if requested_device_name:
-                    _spotify_remember_device_alias(requested_device_name, str(target_device.get("id", "")).strip())
-                return ActionResult(
-                    success=True,
-                    message=f"Playback transferido e retomado em {target_device.get('name', 'device desconhecido')}.",
-                    data={
-                        "device_id": target_device.get("id"),
-                        "device_name": target_device.get("name"),
-                        "uri": resolved_uri,
-                        "title": resolved_title,
-                    },
-                )
-        return play_error
-
-    if resolved_uri:
-        if requested_device_name and target_device:
-            _spotify_remember_device_alias(requested_device_name, str(target_device.get("id", "")).strip())
-        return ActionResult(
-            success=True,
-            message=f"Tocando agora: {resolved_title or resolved_uri}.",
-            data={
-                "uri": resolved_uri,
-                "title": resolved_title,
-                "device_id": target_device.get("id") if target_device else None,
-                "device_name": target_device.get("name") if target_device else None,
-            },
-        )
-    return ActionResult(success=True, message="Playback retomado no Spotify.")
 
 
 async def _spotify_pause(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    _, error = _spotify_api_request("PUT", "me/player/pause")
-    if error is not None:
-        return error
-    return ActionResult(success=True, message="Playback pausado.")
+    return await domain_spotify_pause(
+        params,
+        ctx,
+        spotify_api_request=_spotify_api_request,
+    )
 
 
 async def _spotify_next_track(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    _, error = _spotify_api_request("POST", "me/player/next")
-    if error is not None:
-        return error
-    return ActionResult(success=True, message="Faixa avancada.")
+    return await domain_spotify_next_track(
+        params,
+        ctx,
+        spotify_api_request=_spotify_api_request,
+    )
 
 
 async def _spotify_previous_track(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    _, error = _spotify_api_request("POST", "me/player/previous")
-    if error is not None:
-        return error
-    return ActionResult(success=True, message="Voltando para a faixa anterior.")
+    return await domain_spotify_previous_track(
+        params,
+        ctx,
+        spotify_api_request=_spotify_api_request,
+    )
 
 
 async def _spotify_set_volume(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    volume = int(params.get("volume_percent", 50))
-    requested_device_name = _coerce_optional_str(params.get("device_name"))
-    requested_device_id = _coerce_optional_str(params.get("device_id"))
-    request_params: JsonObject = {"volume_percent": volume}
-
-    if requested_device_name or requested_device_id:
-        device, error = _spotify_find_device(requested_device_name, requested_device_id)
-        if error is not None:
-            return error
-        if device and device.get("id"):
-            request_params["device_id"] = str(device.get("id"))
-
-    _, request_error = _spotify_api_request("PUT", "me/player/volume", params=request_params)
-    if request_error is not None:
-        return request_error
-    if requested_device_name and "device_id" in request_params:
-        _spotify_remember_device_alias(requested_device_name, str(request_params["device_id"]))
-    return ActionResult(success=True, message=f"Volume do Spotify ajustado para {volume}%.")
+    return await domain_spotify_set_volume(
+        params,
+        ctx,
+        coerce_optional_str=_coerce_optional_str,
+        spotify_find_device=_spotify_find_device,
+        spotify_api_request=_spotify_api_request,
+        spotify_remember_device_alias=_spotify_remember_device_alias,
+    )
 
 
 async def _spotify_create_surprise_playlist(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    playlist_name = str(params.get("name", "")).strip() or f"Jarvez Surprise {datetime.now().strftime('%Y-%m-%d')}"
-    public = bool(params.get("public", False))
-
-    me_payload, me_error = _spotify_api_request("GET", "me")
-    if me_error is not None:
-        return me_error
-    user_id = str(me_payload.get("id", "")).strip() if isinstance(me_payload, dict) else ""
-    if not user_id:
-        return ActionResult(success=False, message="Nao consegui identificar sua conta Spotify.", error="missing user id")
-
-    top_tracks_payload, _ = _spotify_api_request(
-        "GET",
-        "me/top/tracks",
-        params={"time_range": "long_term", "limit": 20},
-    )
-    selected_uris = _spotify_pick_surprise_tracks(top_tracks_payload if isinstance(top_tracks_payload, dict) else None)
-
-    playlist_payload, create_error = _spotify_api_request(
-        "POST",
-        f"users/{user_id}/playlists",
-        body={
-            "name": playlist_name,
-            "description": "Playlist surpresa criada pelo Jarvez.",
-            "public": public,
-        },
-    )
-    if create_error is not None:
-        return create_error
-
-    playlist_id = str(playlist_payload.get("id", "")).strip() if isinstance(playlist_payload, dict) else ""
-    if not playlist_id:
-        return ActionResult(success=False, message="Spotify nao retornou id da playlist criada.", error="playlist id missing")
-
-    _, add_error = _spotify_api_request("POST", f"playlists/{playlist_id}/tracks", body={"uris": selected_uris})
-    if add_error is not None:
-        return add_error
-
-    playlist_url = ""
-    if isinstance(playlist_payload, dict):
-        external_urls = playlist_payload.get("external_urls", {})
-        if isinstance(external_urls, dict):
-            playlist_url = str(external_urls.get("spotify", ""))
-
-    return ActionResult(
-        success=True,
-        message=f"Playlist surpresa criada: {playlist_name}.",
-        data={
-            "playlist_id": playlist_id,
-            "playlist_name": playlist_name,
-            "playlist_url": playlist_url,
-            "tracks_added": len(selected_uris),
-            "tracks": selected_uris,
-        },
+    return await domain_spotify_create_surprise_playlist(
+        params,
+        ctx,
+        spotify_api_request=_spotify_api_request,
+        spotify_pick_surprise_tracks=_spotify_pick_surprise_tracks,
     )
 
 
 async def _onenote_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    _onenote_initialize_cache()
-    me_payload, me_error = _onenote_api_request("GET", "me")
-    if me_error is not None:
-        return me_error
-
-    notebooks_payload, notebooks_error = _onenote_api_request("GET", "me/onenote/notebooks", params={"$top": 20})
-    if notebooks_error is not None:
-        return notebooks_error
-
-    notebooks: list[JsonObject] = []
-    if isinstance(notebooks_payload, dict):
-        values = notebooks_payload.get("value", [])
-        if isinstance(values, list):
-            notebooks = [item for item in values if isinstance(item, dict)]
-
-    return ActionResult(
-        success=True,
-        message="OneNote conectado e pronto para uso.",
-        data={
-            "onenote_connected": True,
-            "display_name": me_payload.get("displayName") if isinstance(me_payload, dict) else None,
-            "user_principal_name": me_payload.get("userPrincipalName") if isinstance(me_payload, dict) else None,
-            "notebooks_count": len(notebooks),
-            "notebooks": [
-                {"id": str(nb.get("id", "")), "displayName": str(nb.get("displayName", ""))}
-                for nb in notebooks[:10]
-            ],
-        },
+    return await domain_onenote_status(
+        params,
+        ctx,
+        onenote_initialize_cache=_onenote_initialize_cache,
+        onenote_api_request=_onenote_api_request,
     )
 
 
 async def _onenote_list_notebooks(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    payload, error = _onenote_api_request("GET", "me/onenote/notebooks", params={"$top": 100})
-    if error is not None:
-        return error
-    notebooks = payload.get("value", []) if isinstance(payload, dict) else []
-    if not isinstance(notebooks, list):
-        notebooks = []
-
-    query = str(params.get("query", "")).strip().casefold()
-    mapped: list[JsonObject] = []
-    for notebook in notebooks:
-        if not isinstance(notebook, dict):
-            continue
-        display_name = str(notebook.get("displayName", "")).strip()
-        if query and query not in display_name.casefold():
-            continue
-        mapped.append(
-            {
-                "id": str(notebook.get("id", "")),
-                "displayName": display_name,
-                "createdDateTime": notebook.get("createdDateTime"),
-                "lastModifiedDateTime": notebook.get("lastModifiedDateTime"),
-                "isDefault": bool(notebook.get("isDefault")),
-            }
-        )
-    limited = mapped[:20]
-    return ActionResult(
-        success=True,
-        message=f"{len(mapped)} caderno(s) OneNote encontrado(s).",
-        data={
-            "notebooks": limited,
-            "total_found": len(mapped),
-            "truncated": len(mapped) > len(limited),
-        },
+    return await domain_onenote_list_notebooks(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
     )
 
 
 async def _onenote_list_sections(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    payload, error = _onenote_api_request("GET", "me/onenote/sections", params={"$top": 100})
-    if error is not None:
-        return error
-    sections = payload.get("value", []) if isinstance(payload, dict) else []
-    if not isinstance(sections, list):
-        sections = []
-
-    notebook_name = str(params.get("notebook_name", "")).strip().casefold()
-    notebook_id = str(params.get("notebook_id", "")).strip()
-    mapped: list[JsonObject] = []
-    for section in sections:
-        if not isinstance(section, dict):
-            continue
-        parent_name = ""
-        parent_id = ""
-        parent = section.get("parentNotebook")
-        if isinstance(parent, dict):
-            parent_name = str(parent.get("displayName", ""))
-            parent_id = str(parent.get("id", ""))
-        if notebook_name and notebook_name not in parent_name.casefold():
-            continue
-        if notebook_id and notebook_id != parent_id:
-            continue
-        mapped.append(
-            {
-                "id": str(section.get("id", "")),
-                "displayName": str(section.get("displayName", "")),
-                "createdDateTime": section.get("createdDateTime"),
-                "lastModifiedDateTime": section.get("lastModifiedDateTime"),
-                "parentNotebook": parent_name,
-                "parentNotebookId": parent_id,
-            }
-        )
-    limited = mapped[:20]
-    return ActionResult(
-        success=True,
-        message=f"{len(mapped)} secao(oes) OneNote encontradas.",
-        data={
-            "sections": limited,
-            "total_found": len(mapped),
-            "truncated": len(mapped) > len(limited),
-        },
+    return await domain_onenote_list_sections(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
     )
 
 
 async def _onenote_list_pages(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    section_id = str(params.get("section_id", "")).strip()
-    section_name = str(params.get("section_name", "")).strip().casefold()
-    title_query = str(params.get("query", "")).strip().casefold()
-
-    if not section_id and not section_name:
-        return ActionResult(
-            success=False,
-            message="Informe section_id ou section_name para listar paginas com seguranca.",
-            error="missing section",
-        )
-
-    sections_payload, sections_error = _onenote_api_request("GET", "me/onenote/sections", params={"$top": 100})
-    if sections_error is not None:
-        return sections_error
-    sections = sections_payload.get("value", []) if isinstance(sections_payload, dict) else []
-    if not isinstance(sections, list):
-        sections = []
-
-    target_section: JsonObject | None = None
-    for section in sections:
-        if not isinstance(section, dict):
-            continue
-        current_id = str(section.get("id", "")).strip()
-        current_name = str(section.get("displayName", "")).strip()
-        if section_id and current_id == section_id:
-            target_section = section
-            break
-        if section_name and section_name in current_name.casefold():
-            target_section = section
-            break
-
-    if target_section is None:
-        return ActionResult(
-            success=False,
-            message="Nao encontrei a secao OneNote informada.",
-            error="section not found",
-        )
-
-    target_section_id = str(target_section.get("id", "")).strip()
-    target_section_name = str(target_section.get("displayName", "")).strip()
-    encoded_section_id = _quote_path_segment(target_section_id)
-    pages_payload, pages_error = _onenote_api_request(
-        "GET",
-        f"me/onenote/sections/{encoded_section_id}/pages",
-        params={"$top": 100},
-    )
-    if pages_error is not None:
-        return pages_error
-    pages = pages_payload.get("value", []) if isinstance(pages_payload, dict) else []
-    if not isinstance(pages, list):
-        pages = []
-
-    mapped: list[JsonObject] = []
-    for page in pages:
-        if not isinstance(page, dict):
-            continue
-        title = str(page.get("title", "")).strip()
-        if title_query and title_query not in title.casefold():
-            continue
-        mapped.append(
-            {
-                "id": str(page.get("id", "")),
-                "title": title,
-                "createdDateTime": page.get("createdDateTime"),
-                "lastModifiedDateTime": page.get("lastModifiedDateTime"),
-                "contentUrl": page.get("contentUrl"),
-                "sectionId": target_section_id,
-                "sectionName": target_section_name,
-            }
-        )
-
-    limited = mapped[:20]
-    return ActionResult(
-        success=True,
-        message=f"{len(mapped)} pagina(s) encontradas na secao {target_section_name}.",
-        data={
-            "pages": limited,
-            "sectionId": target_section_id,
-            "sectionName": target_section_name,
-            "total_found": len(mapped),
-            "truncated": len(mapped) > len(limited),
-        },
+    return await domain_onenote_list_pages(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
+        quote_path_segment=_quote_path_segment,
     )
 
 
 async def _onenote_search_pages(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    query = (
-        str(params.get("query", "")).strip()
-        or str(params.get("title", "")).strip()
-        or str(params.get("name", "")).strip()
-    )
-    if not query:
-        return ActionResult(success=False, message="Informe uma busca para OneNote.", error="missing query")
-
-    section_id = str(params.get("section_id", "")).strip()
-    section_name = str(params.get("section_name", "")).strip().casefold()
-
-    sections_payload, sections_error = _onenote_api_request("GET", "me/onenote/sections", params={"$top": 100})
-    if sections_error is not None:
-        return sections_error
-    sections = sections_payload.get("value", []) if isinstance(sections_payload, dict) else []
-    if not isinstance(sections, list):
-        sections = []
-
-    filtered_sections: list[JsonObject] = []
-    for section in sections:
-        if not isinstance(section, dict):
-            continue
-        current_section_id = str(section.get("id", "")).strip()
-        current_section_name = str(section.get("displayName", "")).strip()
-        if section_id and section_id != current_section_id:
-            continue
-        if section_name and section_name not in current_section_name.casefold():
-            continue
-        filtered_sections.append(section)
-
-    if not filtered_sections:
-        return ActionResult(
-            success=False,
-            message="Nao encontrei secao OneNote compativel para fazer a busca.",
-            data={"query": query},
-            error="section not found",
-        )
-
-    q = query.casefold()
-    filtered = []
-    for section in filtered_sections[:40]:
-        current_section_id = str(section.get("id", "")).strip()
-        current_section_name = str(section.get("displayName", "")).strip()
-        encoded_section_id = _quote_path_segment(current_section_id)
-        pages_payload, pages_error = _onenote_api_request(
-            "GET",
-            f"me/onenote/sections/{encoded_section_id}/pages",
-            params={"$top": 100},
-        )
-        if pages_error is not None:
-            return pages_error
-        pages = pages_payload.get("value", []) if isinstance(pages_payload, dict) else []
-        if not isinstance(pages, list):
-            continue
-
-        for page in pages:
-            if not isinstance(page, dict):
-                continue
-            title = str(page.get("title", ""))
-            if q in title.casefold():
-                filtered.append(
-                    {
-                        "id": str(page.get("id", "")),
-                        "title": title,
-                        "createdDateTime": page.get("createdDateTime"),
-                        "lastModifiedDateTime": page.get("lastModifiedDateTime"),
-                        "contentUrl": page.get("contentUrl"),
-                        "sectionId": current_section_id,
-                        "sectionName": current_section_name,
-                    }
-                )
-        if len(filtered) >= 20:
-            break
-
-    limited = filtered[:20]
-    return ActionResult(
-        success=True,
-        message=f"{len(filtered)} pagina(s) encontradas para '{query}'.",
-        data={
-            "query": query,
-            "pages": limited,
-            "total_found": len(filtered),
-            "truncated": len(filtered) > len(limited),
-        },
+    return await domain_onenote_search_pages(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
+        quote_path_segment=_quote_path_segment,
     )
 
 
 async def _onenote_get_page_content(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    page_id = str(params.get("page_id", "")).strip()
-    if not page_id:
-        return ActionResult(success=False, message="Informe o page_id do OneNote.", error="missing page_id")
-    encoded_page_id = _quote_path_segment(page_id)
-
-    content, error = _onenote_api_request(
-        "GET",
-        f"me/onenote/pages/{encoded_page_id}/content",
-        extra_headers={"Accept": "text/html"},
-    )
-    if error is not None:
-        return error
-    html_content = str(content or "")
-    return ActionResult(
-        success=True,
-        message="Conteudo da pagina OneNote carregado.",
-        data={
-            "page_id": page_id,
-            "content_html": html_content,
-            "content_preview": _strip_html_for_preview(html_content),
-        },
+    return await domain_onenote_get_page_content(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
+        quote_path_segment=_quote_path_segment,
+        strip_html_for_preview=_strip_html_for_preview,
     )
 
 
 async def _onenote_create_character_page(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    section_id = str(params.get("section_id", "")).strip()
-    title = str(params.get("title", "")).strip()
-    body = str(params.get("body", "")).strip()
-    if not section_id or not title:
-        return ActionResult(success=False, message="section_id e title sao obrigatorios.", error="missing params")
-
-    safe_title = html.escape(title)
-    safe_body = html.escape(body) if body else "Sem descricao inicial."
-    encoded_section_id = _quote_path_segment(section_id)
-    html_doc = (
-        "<!DOCTYPE html><html><head><title>"
-        f"{safe_title}"
-        "</title></head><body>"
-        f"<h1>{safe_title}</h1><p>{safe_body}</p>"
-        "</body></html>"
-    )
-    payload, error = _onenote_api_request(
-        "POST",
-        f"me/onenote/sections/{encoded_section_id}/pages",
-        raw_body=html_doc,
-        extra_headers={"Content-Type": "text/html"},
-    )
-    if error is not None:
-        return error
-
-    page_id = str(payload.get("id", "")).strip() if isinstance(payload, dict) else ""
-    links = payload.get("links", {}) if isinstance(payload, dict) else {}
-    one_note_url = ""
-    if isinstance(links, dict):
-        one_note = links.get("oneNoteClientUrl")
-        if isinstance(one_note, dict):
-            one_note_url = str(one_note.get("href", ""))
-
-    return ActionResult(
-        success=True,
-        message=f"Pagina de personagem '{title}' criada no OneNote.",
-        data={"page_id": page_id, "title": title, "one_note_url": one_note_url},
+    return await domain_onenote_create_character_page(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
+        quote_path_segment=_quote_path_segment,
     )
 
 
 async def _onenote_append_to_page(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    page_id = str(params.get("page_id", "")).strip()
-    content = str(params.get("content", "")).strip()
-    if not page_id or not content:
-        return ActionResult(success=False, message="page_id e content sao obrigatorios.", error="missing params")
-
-    encoded_page_id = _quote_path_segment(page_id)
-    commands = [
-        {
-            "target": "body",
-            "action": "append",
-            "content": f"<p>{html.escape(content)}</p>",
-        }
-    ]
-    _, error = _onenote_api_request(
-        "PATCH",
-        f"me/onenote/pages/{encoded_page_id}/content",
-        body=commands,
-        extra_headers={"Content-Type": "application/json"},
-    )
-    if error is not None:
-        return error
-    return ActionResult(
-        success=True,
-        message="Conteudo anexado na pagina OneNote com sucesso.",
-        data={"page_id": page_id},
+    return await domain_onenote_append_to_page(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
+        quote_path_segment=_quote_path_segment,
     )
 
 
 async def _whatsapp_get_recent_messages(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    contact = _normalize_whatsapp_to(str(params.get("contact", "")).strip()) if params.get("contact") else None
-    limit = int(params.get("limit", 10))
-    entries = _whatsapp_read_inbox()
-    if contact:
-        entries = [item for item in entries if str(item.get("from", "")).strip() == contact]
-    entries = sorted(entries, key=lambda item: str(item.get("timestamp", "")), reverse=True)
-    sliced = entries[: max(1, min(limit, 50))]
-    return ActionResult(
-        success=True,
-        message=f"{len(sliced)} mensagem(ns) recuperada(s) do WhatsApp.",
-        data={"messages": sliced},
+    return await domain_whatsapp_get_recent_messages(
+        params,
+        ctx,
+        normalize_whatsapp_to=_normalize_whatsapp_to,
+        whatsapp_read_inbox=_whatsapp_read_inbox,
     )
 
 
 async def _whatsapp_send_text(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    to = _normalize_whatsapp_to(str(params.get("to", "")).strip())
-    text = str(params.get("text", "")).strip()
-    if not to or not text:
-        return ActionResult(success=False, message="Parametros invalidos para WhatsApp.", error="missing to/text")
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": to,
-        "type": "text",
-        "text": {"preview_url": False, "body": text},
-    }
-    result = _whatsapp_send_message(payload)
+    result = await domain_whatsapp_send_text(
+        params,
+        ctx,
+        normalize_whatsapp_to=_normalize_whatsapp_to,
+        whatsapp_send_message=_whatsapp_send_message,
+    )
     if result.success:
-        result.message = f"Mensagem enviada para {to}."
+        to = _normalize_whatsapp_to(str(params.get("to", "")).strip())
+        text = str(params.get("text", "")).strip() or None
+        response_payload = result.data.get("whatsapp_response") if isinstance(result.data, dict) else None
+        _store_whatsapp_channel_message(
+            direction="outbound",
+            participant_identity=ctx.participant_identity,
+            room=ctx.room,
+            address=to or None,
+            text=text,
+            payload={
+                "to": to,
+                "text": text,
+                "direction": "outbound",
+                "type": "text",
+                "response": response_payload if isinstance(response_payload, dict) else None,
+            },
+            external_message_id=_extract_whatsapp_response_message_id(response_payload),
+            created_at=_now_iso(),
+        )
     return result
 
 
 async def _whatsapp_send_audio_tts(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    to = _normalize_whatsapp_to(str(params.get("to", "")).strip())
-    text = str(params.get("text", "")).strip()
-    if not to or not text:
-        return ActionResult(success=False, message="Parametros invalidos para audio WhatsApp.", error="missing to/text")
-
-    audio_file, tts_error = await _build_jarvez_tts_file(text)
-    if tts_error is not None:
-        return tts_error
-    if audio_file is None:
-        return ActionResult(success=False, message="Falha ao gerar audio do Jarvez.", error="tts generation failed")
-
-    media_id, media_error = _upload_whatsapp_media(audio_file, "audio/mpeg")
-    try:
-        audio_file.unlink(missing_ok=True)
-    except Exception:
-        pass
-
-    if media_error is not None:
-        return media_error
-    if not media_id:
-        return ActionResult(success=False, message="Nao consegui enviar audio ao WhatsApp.", error="missing media id")
-
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": to,
-        "type": "audio",
-        "audio": {"id": media_id},
-    }
-    result = _whatsapp_send_message(payload)
+    result = await domain_whatsapp_send_audio_tts(
+        params,
+        ctx,
+        normalize_whatsapp_to=_normalize_whatsapp_to,
+        build_jarvez_tts_file=_build_jarvez_tts_file,
+        upload_whatsapp_media=_upload_whatsapp_media,
+        whatsapp_send_message=_whatsapp_send_message,
+    )
     if result.success:
-        result.message = f"Audio do Jarvez enviado para {to}."
-        if result.data is None:
-            result.data = {}
-        result.data["media_id"] = media_id
+        to = _normalize_whatsapp_to(str(params.get("to", "")).strip())
+        text = str(params.get("text", "")).strip() or None
+        response_payload = result.data.get("whatsapp_response") if isinstance(result.data, dict) else None
+        media_id = str(result.data.get("media_id") or "").strip() if isinstance(result.data, dict) else ""
+        _store_whatsapp_channel_message(
+            direction="outbound",
+            participant_identity=ctx.participant_identity,
+            room=ctx.room,
+            address=to or None,
+            text=text or "[audio_tts]",
+            payload={
+                "to": to,
+                "text": text,
+                "direction": "outbound",
+                "type": "audio_tts",
+                "media_id": media_id or None,
+                "response": response_payload if isinstance(response_payload, dict) else None,
+            },
+            external_message_id=_extract_whatsapp_response_message_id(response_payload),
+            created_at=_now_iso(),
+        )
     return result
 
 
 async def _rpg_reindex_sources(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    index = _get_rpg_index()
-    configured = _rpg_sources()
-    extra_paths_raw = params.get("paths", [])
-    extra_paths: list[Path] = []
-    if isinstance(extra_paths_raw, list):
-        for item in extra_paths_raw:
-            if isinstance(item, str) and item.strip():
-                extra_paths.append(Path(item.strip()))
-
-    sources = configured + extra_paths
-    if not sources:
-        return ActionResult(
-            success=False,
-            message="Nenhuma fonte RPG configurada para indexar.",
-            error="missing RPG_SOURCE_PATHS",
-        )
-
-    summary = index.ingest_paths(sources)
-    stats = index.stats()
-    return ActionResult(
-        success=True,
-        message="Base RPG reindexada com sucesso.",
-        data={"ingest_summary": summary, "knowledge_stats": stats},
+    return await domain_rpg_reindex_sources(
+        params,
+        ctx,
+        get_rpg_index=_get_rpg_index,
+        rpg_sources=_rpg_sources,
     )
 
 
 async def _rpg_search_knowledge(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    query = str(params.get("query", "")).strip()
-    limit = int(params.get("limit", 5))
-    if not query:
-        return ActionResult(success=False, message="Informe uma consulta RPG.", error="missing query")
-
-    index = _get_rpg_index()
-    results = index.search(query, limit=limit)
-    if not results:
-        return ActionResult(
-            success=False,
-            message="Nao encontrei trechos na base RPG para essa pergunta.",
-            data={"query": query},
-            error="not found",
-        )
-    return ActionResult(
-        success=True,
-        message=f"Encontrei {len(results)} trecho(s) da base RPG.",
-        data={"query": query, "results": results},
+    return await domain_rpg_search_knowledge(
+        params,
+        ctx,
+        get_rpg_index=_get_rpg_index,
     )
 
 
 async def _code_reindex_repo(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    catalog = _get_project_catalog()
-    target_project_id = str(params.get("project_id", "")).strip()
-    records: list[ProjectRecord]
-    if target_project_id:
-        record = catalog.get_project(target_project_id)
-        if record is None:
-            return ActionResult(success=False, message="Projeto nao encontrado para reindexacao.", error="unknown project")
-        records = [record]
-    else:
-        records = catalog.list_projects()
-        if not records:
-            catalog.scan()
-            records = catalog.list_projects()
-
-    summaries: list[JsonObject] = []
-    for record in records:
-        root = Path(record.root_path).resolve(strict=False)
-        if not root.exists():
-            summaries.append({"project_id": record.project_id, "name": record.name, "status": "missing_root"})
-            continue
-        summary = _get_code_index().index_project(
-            record.project_id,
-            root,
-            project_name=record.name,
-            aliases=record.aliases,
-        )
-        catalog.update_last_indexed(record.project_id)
-        summaries.append(
-            {
-                "project_id": record.project_id,
-                "name": record.name,
-                "summary": summary,
-                "knowledge_stats": _get_code_index().stats(project_id=record.project_id),
-            }
-        )
-
-    return ActionResult(
-        success=True,
-        message="Indice global de codigo atualizado.",
-        data={
-            "projects_reindexed": summaries,
-            "knowledge_stats": _get_code_index().stats(),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_code_reindex_repo(
+        params,
+        ctx,
+        get_project_catalog=_get_project_catalog,
+        get_code_index=_get_code_index,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _code_search_repo(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    query = str(params.get("query", "")).strip()
-    limit = int(params.get("limit", 5))
-    if not query:
-        return ActionResult(success=False, message="Informe uma consulta de codigo.", error="missing query")
-
-    active = get_active_project(ctx.participant_identity, ctx.room)
-    results = _get_code_index().search(query, limit=limit, project_id=active.project_id if active else None)
-    if not results:
-        return ActionResult(
-            success=False,
-            message="Nao encontrei trechos de codigo para essa pergunta.",
-            data={
-                "query": query,
-                "repo_root": str(_code_repo_root()),
-                **_active_project_payload(ctx.participant_identity, ctx.room),
-            },
-            error="not found",
-        )
-    return ActionResult(
-        success=True,
-        message=f"Encontrei {len(results)} trecho(s) relevantes do codigo.",
-        data={
-            "query": query,
-            "repo_root": str(_code_repo_root()),
-            "results": results,
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_code_search_repo(
+        params,
+        ctx,
+        get_active_project=get_active_project,
+        get_code_index=_get_code_index,
+        code_repo_root=_code_repo_root,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _project_list_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    include_inactive = bool(params.get("include_inactive", False))
-    projects = _get_project_catalog().list_projects(include_inactive=include_inactive)
-    return ActionResult(
-        success=True,
-        message=f"{len(projects)} projeto(s) no catalogo.",
-        data={
-            "projects": [_project_record_to_payload(item) for item in projects],
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_project_list_action(
+        params,
+        ctx,
+        get_project_catalog=_get_project_catalog,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _project_scan_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    discovered = _get_project_catalog().scan()
-    return ActionResult(
-        success=True,
-        message=f"Scan finalizado. {len(discovered)} projeto(s) detectado(s).",
-        data={
-            "projects": [_project_record_to_payload(item) for item in discovered],
-            "catalog_size": len(_get_project_catalog().list_projects(include_inactive=True)),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_project_scan_action(
+        params,
+        ctx,
+        get_project_catalog=_get_project_catalog,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _project_update_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    project_id = str(params.get("project_id", "")).strip()
-    if not project_id:
-        return ActionResult(success=False, message="Informe o project_id para atualizar.", error="missing project_id")
-
-    catalog = _get_project_catalog()
-    record = catalog.get_project(project_id)
-    if record is None:
-        return ActionResult(success=False, message="Projeto nao encontrado para atualizacao.", error="unknown project")
-
-    updated = False
-    if "name" in params:
-        name = str(params.get("name", "")).strip()
-        if name:
-            catalog.rename_project(project_id, name)
-            updated = True
-    if "aliases" in params:
-        aliases = params.get("aliases", [])
-        if isinstance(aliases, list):
-            catalog.set_aliases(project_id, [str(item) for item in aliases if str(item).strip()])
-            updated = True
-    if "priority_score" in params:
-        catalog.set_priority(project_id, int(params.get("priority_score", 0) or 0))
-        updated = True
-    if "is_active" in params:
-        catalog.set_active(project_id, is_active=bool(params.get("is_active")))
-        updated = True
-
-    refreshed = catalog.get_project(project_id)
-    if refreshed is None:
-        return ActionResult(success=False, message="Projeto indisponivel apos atualizacao.", error="project missing after update")
-
-    if not refreshed.is_active:
-        active = get_active_project(ctx.participant_identity, ctx.room)
-        if active and active.project_id == project_id:
-            clear_active_project(ctx.participant_identity, ctx.room)
-    elif get_active_project(ctx.participant_identity, ctx.room) and get_active_project(ctx.participant_identity, ctx.room).project_id == project_id:
-        _set_active_project_from_record(refreshed, ctx, selection_reason="project_update", index_status=get_active_project(ctx.participant_identity, ctx.room).index_status)
-
-    return ActionResult(
-        success=True,
-        message="Projeto atualizado no catalogo." if updated else "Nenhuma mudanca aplicada ao projeto.",
-        data={
-            "project": _project_record_to_payload(refreshed),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_project_update_action(
+        params,
+        ctx,
+        get_project_catalog=_get_project_catalog,
+        get_active_project=get_active_project,
+        clear_active_project=clear_active_project,
+        set_active_project_from_record=_set_active_project_from_record,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _project_remove_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    project_id = str(params.get("project_id", "")).strip()
-    if not project_id:
-        return ActionResult(success=False, message="Informe o project_id para remover.", error="missing project_id")
-    removed = _get_project_catalog().remove_project(project_id)
-    if removed is None:
-        return ActionResult(success=False, message="Projeto nao encontrado para remocao.", error="unknown project")
-    active = get_active_project(ctx.participant_identity, ctx.room)
-    if active and active.project_id == project_id:
-        clear_active_project(ctx.participant_identity, ctx.room)
-    return ActionResult(
-        success=True,
-        message=f"Projeto {removed.name} removido do catalogo.",
-        data={
-            "removed_project": _project_record_to_payload(removed),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_project_remove_action(
+        params,
+        ctx,
+        get_project_catalog=_get_project_catalog,
+        get_active_project=get_active_project,
+        clear_active_project=clear_active_project,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _project_select_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    record, error = _resolve_project_record(params, ctx)
-    if error is not None:
-        return error
-    assert record is not None
-    active = get_active_project(ctx.participant_identity, ctx.room)
-    return ActionResult(
-        success=True,
-        message=f"Projeto ativo definido para {record.name}.",
-        data={
-            "selected_project": _project_record_to_payload(record),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-            "active_project": {
-                **(_active_project_payload(ctx.participant_identity, ctx.room).get("active_project") or {}),
-                "index_status": active.index_status if active else "unknown",
-            },
-        },
+    return await domain_project_select_action(
+        params,
+        ctx,
+        resolve_project_record=_resolve_project_record,
+        get_active_project=get_active_project,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _project_get_active_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    active = get_active_project(ctx.participant_identity, ctx.room)
-    if active is None:
-        return ActionResult(
-            success=False,
-            message="Nenhum projeto ativo na sessao.",
-            data=_active_project_payload(ctx.participant_identity, ctx.room),
-            error="no active project",
-        )
-    return ActionResult(
-        success=True,
-        message=f"Projeto ativo: {active.name}.",
-        data={**_active_project_payload(ctx.participant_identity, ctx.room)},
+    return await domain_project_get_active_action(
+        params,
+        ctx,
+        get_active_project=get_active_project,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _project_clear_active_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    clear_active_project(ctx.participant_identity, ctx.room)
-    return ActionResult(
-        success=True,
-        message="Projeto ativo removido da sessao.",
-        data={**_active_project_payload(ctx.participant_identity, ctx.room)},
+    return await domain_project_clear_active_action(
+        params,
+        ctx,
+        clear_active_project=clear_active_project,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _project_refresh_index_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    record, error = _resolve_project_record(params, ctx)
-    if error is not None:
-        return error
-    assert record is not None
-    root = Path(record.root_path).resolve(strict=False)
-    if not root.exists():
-        return ActionResult(success=False, message="A raiz do projeto nao existe.", error="missing project root")
-    summary = _get_code_index().index_project(record.project_id, root, project_name=record.name, aliases=record.aliases)
-    _get_project_catalog().update_last_indexed(record.project_id)
-    _set_active_project_from_record(record, ctx, selection_reason="refresh_index", index_status="reindexed")
-    return ActionResult(
-        success=True,
-        message=f"Indice atualizado para {record.name}.",
-        data={
-            "project": _project_record_to_payload(record),
-            "ingest_summary": summary,
-            "knowledge_stats": _get_code_index().stats(project_id=record.project_id),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_project_refresh_index_action(
+        params,
+        ctx,
+        resolve_project_record=_resolve_project_record,
+        get_code_index=_get_code_index,
+        get_project_catalog=_get_project_catalog,
+        set_active_project_from_record=_set_active_project_from_record,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _project_search_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    query = str(params.get("query", "")).strip()
-    limit = int(params.get("limit", 5))
-    if not query:
-        return ActionResult(success=False, message="Informe o que devo procurar no projeto.", error="missing query")
-    record, error = _resolve_project_record(params, ctx)
-    if error is not None:
-        return error
-    assert record is not None
-    results = _get_code_index().search(query, limit=limit, project_id=record.project_id)
-    if not results:
-        return ActionResult(
-            success=False,
-            message=f"Nao encontrei trechos para '{query}' em {record.name}.",
-            data={"query": query, "project": _project_record_to_payload(record), **_active_project_payload(ctx.participant_identity, ctx.room)},
-            error="not found",
-        )
-    return ActionResult(
-        success=True,
-        message=f"Encontrei {len(results)} trecho(s) em {record.name}.",
-        data={
-            "query": query,
-            "project": _project_record_to_payload(record),
-            "results": results,
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_project_search_action(
+        params,
+        ctx,
+        resolve_project_record=_resolve_project_record,
+        get_code_index=_get_code_index,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
     )
 
 
@@ -8653,653 +7441,227 @@ async def _run_codex_task(
     default_request: str,
     review_mode: bool,
 ) -> ActionResult:
-    user_request = (
-        str(params.get("request", "")).strip()
-        or str(params.get("query", "")).strip()
-        or str(params.get("prompt", "")).strip()
-        or default_request
-    )
-    if not user_request:
-        return ActionResult(success=False, message="Descreva a tarefa para o Codex.", error="missing request")
-
-    if not is_codex_available():
-        return ActionResult(success=False, message="Codex CLI nao esta disponivel neste ambiente.", error="codex unavailable")
-
-    record, error = _resolve_project_record(params, ctx)
-    if error is not None:
-        return error
-    assert record is not None
-
-    root = Path(record.root_path).resolve(strict=False)
-    if not root.exists():
-        return ActionResult(success=False, message="A raiz do projeto nao existe.", error="missing project root")
-
-    prompt = _build_codex_request_prompt(record=record, user_request=user_request, review_mode=review_mode)
-    command_preview = (
-        "codex exec --json --skip-git-repo-check --sandbox read-only "
-        f'--ephemeral -C "{root}" "<prompt>"'
-    )
-    task = ActiveCodexTask(
-        task_id=f"codex_{uuid.uuid4().hex[:12]}",
-        status="running",
-        project_id=record.project_id,
-        project_name=record.name,
-        working_directory=str(root),
-        request=user_request,
-        started_at=_now_iso(),
-        current_phase="starting",
-        command_preview=command_preview,
-    )
-    set_active_codex_task(ctx.participant_identity, ctx.room, task)
-    await _emit_codex_task_event(
-        ctx,
-        event_type="codex_task_started",
-        task=task,
-        phase="starting",
-        message=f"Iniciando Codex em {record.name}.",
-    )
-
-    async def on_progress(event: JsonObject) -> None:
-        task.current_phase = str(event.get("type", "")).strip() or "progress"
-        task.raw_last_event = event
-        task.summary = _codex_progress_message(event)
-        await _emit_codex_task_event(
-            ctx,
-            event_type="codex_task_progress",
-            task=task,
-            phase=task.current_phase,
-            message=task.summary,
-            raw_event_type=str(event.get("type", "")).strip() or None,
-        )
-
-    key = _codex_key(ctx.participant_identity, ctx.room)
-    try:
-        result = await run_exec_streaming(
-            prompt=prompt,
-            working_directory=root,
-            on_progress=on_progress,
-            process_registry=CODEX_RUNNING_PROCESSES,
-            registry_key=key,
-        )
-    except FileNotFoundError:
-        task.status = "failed"
-        task.finished_at = _now_iso()
-        task.current_phase = "missing_cli"
-        task.error = "codex unavailable"
-        task.summary = "Codex CLI nao esta disponivel neste ambiente."
-        _push_codex_history(ctx.participant_identity, ctx.room, task)
-        await _emit_codex_task_event(
-            ctx,
-            event_type="codex_task_failed",
-            task=task,
-            phase="missing_cli",
-            message=task.summary,
-        )
-        return ActionResult(success=False, message=task.summary, error=task.error)
-    except Exception as error:  # noqa: BLE001
-        task.status = "failed"
-        task.finished_at = _now_iso()
-        task.current_phase = "runtime_error"
-        task.error = str(error)
-        task.summary = "A tarefa do Codex falhou durante a execucao."
-        _push_codex_history(ctx.participant_identity, ctx.room, task)
-        await _emit_codex_task_event(
-            ctx,
-            event_type="codex_task_failed",
-            task=task,
-            phase="runtime_error",
-            message=task.summary,
-        )
-        return ActionResult(success=False, message=task.summary, error=str(error))
-
-    if task.status == "cancelled":
-        task.exit_code = result.exit_code
-        task.raw_last_event = result.last_event
-        return ActionResult(
-            success=False,
-            message="Tarefa do Codex cancelada.",
-            data={
-                "codex_task": _codex_task_to_payload(task),
-                "codex_history": _codex_history_payload(ctx.participant_identity, ctx.room),
-                **_active_project_payload(ctx.participant_identity, ctx.room),
-                **_capability_payload(ctx.participant_identity, ctx.room),
-            },
-            error="cancelled",
-        )
-
-    task.status = "completed" if result.success else "failed"
-    task.finished_at = _now_iso()
-    task.current_phase = "completed" if result.success else "failed"
-    task.summary = result.summary
-    task.exit_code = result.exit_code
-    task.raw_last_event = result.last_event
-    if not result.success:
-        task.error = result.stderr[:400] or f"exit code {result.exit_code}"
-    _push_codex_history(ctx.participant_identity, ctx.room, task)
-
-    await _emit_codex_task_event(
-        ctx,
-        event_type="codex_task_completed" if result.success else "codex_task_failed",
-        task=task,
-        phase=task.current_phase,
-        message=result.summary,
-        raw_event_type=str(result.last_event.get("type", "")).strip() if isinstance(result.last_event, dict) else None,
-    )
-
-    data = {
-        "codex_task": _codex_task_to_payload(task),
-        "codex_history": _codex_history_payload(ctx.participant_identity, ctx.room),
-        **_active_project_payload(ctx.participant_identity, ctx.room),
-        **_capability_payload(ctx.participant_identity, ctx.room),
-    }
-    if result.success:
-        return ActionResult(success=True, message=f"Codex concluiu a tarefa em {record.name}.", data=data)
-    return ActionResult(
-        success=False,
-        message=f"Codex falhou na tarefa em {record.name}.",
-        data=data,
-        error=task.error,
+    return await domain_run_codex_task(
+        params=params,
+        ctx=ctx,
+        default_request=default_request,
+        review_mode=review_mode,
+        is_codex_available=is_codex_available,
+        resolve_project_record=_resolve_project_record,
+        build_codex_request_prompt=_build_codex_request_prompt,
+        now_iso=_now_iso,
+        codex_task_factory=ActiveCodexTask,
+        set_active_codex_task=set_active_codex_task,
+        emit_codex_task_event=_emit_codex_task_event,
+        codex_progress_message=_codex_progress_message,
+        codex_key=_codex_key,
+        run_exec_streaming=run_exec_streaming,
+        codex_running_processes=CODEX_RUNNING_PROCESSES,
+        push_codex_history=_push_codex_history,
+        codex_task_to_payload=_codex_task_to_payload,
+        codex_history_payload=_codex_history_payload,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _codex_exec_task_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    return await _run_codex_task(
-        params=params,
-        ctx=ctx,
-        default_request="Analise o projeto atual e explique o estado tecnico com proximos passos.",
-        review_mode=False,
+    return await domain_codex_exec_task_action(
+        params,
+        ctx,
+        run_codex_task_fn=_run_codex_task,
     )
 
 
 async def _codex_exec_review_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    return await _run_codex_task(
-        params=params,
-        ctx=ctx,
-        default_request="Revise o estado atual do projeto e destaque riscos e pontos de atencao sem editar arquivos.",
-        review_mode=True,
+    return await domain_codex_exec_review_action(
+        params,
+        ctx,
+        run_codex_task_fn=_run_codex_task,
     )
 
 
 async def _codex_exec_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    task = get_active_codex_task(ctx.participant_identity, ctx.room)
-    if task is None:
-        return ActionResult(
-            success=False,
-            message="Nenhuma tarefa do Codex na sessao.",
-            data={"codex_task": None, "codex_history": _codex_history_payload(ctx.participant_identity, ctx.room)},
-            error="no codex task",
-        )
-    return ActionResult(
-        success=True,
-        message=f"Tarefa do Codex em estado {task.status}.",
-        data={
-            "codex_task": _codex_task_to_payload(task),
-            "codex_history": _codex_history_payload(ctx.participant_identity, ctx.room),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_codex_exec_status_action(
+        params,
+        ctx,
+        get_active_codex_task=get_active_codex_task,
+        codex_history_payload=_codex_history_payload,
+        codex_task_to_payload=_codex_task_to_payload,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _codex_cancel_task_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    key = _codex_key(ctx.participant_identity, ctx.room)
-    process = CODEX_RUNNING_PROCESSES.get(key)
-    task = get_active_codex_task(ctx.participant_identity, ctx.room)
-    if process is None or task is None or task.status != "running":
-        return ActionResult(success=False, message="Nenhuma tarefa do Codex em andamento.", error="no running task")
-
-    process.terminate()
-    task.status = "cancelled"
-    task.finished_at = _now_iso()
-    task.current_phase = "cancelled"
-    task.summary = "Tarefa cancelada pelo usuario."
-    task.error = None
-    CODEX_RUNNING_PROCESSES.pop(key, None)
-    _push_codex_history(ctx.participant_identity, ctx.room, task)
-    await _emit_codex_task_event(
+    return await domain_codex_cancel_task_action(
+        params,
         ctx,
-        event_type="codex_task_cancelled",
-        task=task,
-        phase="cancelled",
-        message=task.summary,
-    )
-    return ActionResult(
-        success=True,
-        message="Tarefa do Codex cancelada.",
-        data={
-            "codex_task": _codex_task_to_payload(task),
-            "codex_history": _codex_history_payload(ctx.participant_identity, ctx.room),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+        codex_key=_codex_key,
+        codex_running_processes=CODEX_RUNNING_PROCESSES,
+        get_active_codex_task=get_active_codex_task,
+        now_iso=_now_iso,
+        push_codex_history=_push_codex_history,
+        emit_codex_task_event=_emit_codex_task_event,
+        codex_task_to_payload=_codex_task_to_payload,
+        codex_history_payload=_codex_history_payload,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _skills_list_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    feature_error = _require_feature("skills_v1")
-    if feature_error is not None:
-        return feature_error
-    query = str(params.get("query", "")).strip() or None
-    refresh = bool(params.get("refresh", False))
-    items = list_skills(query=query, refresh=refresh)
-    payload = [item.to_payload() for item in items]
-    return ActionResult(
-        success=True,
-        message=f"Encontrei {len(payload)} skill(s) disponiveis.",
-        data={
-            "skills": payload,
-            "skills_total": len(payload),
-            "query": query,
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_skills_list_action(
+        params,
+        ctx,
+        require_feature=_require_feature,
+        list_skills=list_skills,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _skills_read_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    feature_error = _require_feature("skills_v1")
-    if feature_error is not None:
-        return feature_error
-    skill_id = str(params.get("skill_id", "")).strip() or None
-    skill_name = str(params.get("skill_name", "")).strip() or None
-    doc = get_skill(skill_id=skill_id, skill_name=skill_name)
-    if doc is None:
-        return ActionResult(
-            success=False,
-            message="Skill nao encontrada. Use skills_list para conferir os ids.",
-            error="skill not found",
-        )
-    return ActionResult(
-        success=True,
-        message=f"Skill carregada: {doc.metadata.name}.",
-        data={
-            "skill_document": doc.to_payload(),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_skills_read_action(
+        params,
+        ctx,
+        require_feature=_require_feature,
+        get_skill=get_skill,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _orchestrate_task_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    feature_error = _require_feature("multi_model_router_v1")
-    if feature_error is not None:
-        return feature_error
-    request_text = (
-        str(params.get("request", "")).strip()
-        or str(params.get("query", "")).strip()
-        or str(params.get("prompt", "")).strip()
-    )
-    if not request_text:
-        return ActionResult(success=False, message="Descreva a tarefa para orquestrar.", error="missing request")
-
-    plan = build_task_plan(request_text)
-    task_type: TaskType = plan.task_type
-    risk = classify_action_risk(str(params.get("action_hint", "")).strip() or "orchestrate_task")
-    response_text, route_decision = route_orchestration(request=request_text, task_type=task_type, risk=risk)
-    orchestration_payload = {
-        "request": request_text,
-        "task_plan": plan.to_payload(),
-        "model_route": route_decision.to_payload(),
-        "response_preview": response_text,
-    }
-    return ActionResult(
-        success=True,
-        message=f"Tarefa orquestrada com provider {route_decision.used_provider}.",
-        data={
-            "orchestration": orchestration_payload,
-            "model_route": route_decision.to_payload(),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
-        evidence={
-            "provider": route_decision.used_provider,
-            "request_id": route_decision.generated_at,
-            "executed_at": _now_iso(),
-        },
-        fallback_used=route_decision.fallback_used,
+    return await domain_orchestrate_task_action(
+        params,
+        ctx,
+        require_feature=_require_feature,
+        build_task_plan=build_task_plan,
+        classify_action_risk=classify_action_risk,
+        route_orchestration=route_orchestration,
+        now_iso=_now_iso,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _subagent_spawn_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    feature_error = _require_feature("subagents_v1")
-    if feature_error is not None:
-        return feature_error
-    request_text = str(params.get("request", "")).strip()
-    if not request_text:
-        return ActionResult(success=False, message="Descreva a tarefa do subagente.", error="missing request")
-    plan = build_task_plan(request_text)
-    risk = classify_action_risk(str(params.get("action_hint", "")).strip() or "subagent_spawn")
-    primary_provider, fallback_provider = preview_route(plan.task_type, risk)
-    state = spawn_subagent(
-        participant_identity=ctx.participant_identity,
-        room=ctx.room,
-        request=request_text,
-        task_type=plan.task_type,
-        risk=risk,
-        route_provider=primary_provider,
-        initial_summary="Subagente iniciado.",
-    )
-    wait_for_completion_raw = params.get("wait_for_completion")
-    if isinstance(wait_for_completion_raw, bool):
-        wait_for_completion = wait_for_completion_raw
-    else:
-        wait_for_completion = bool(params.get("auto_complete", False))
-
-    route_payload: JsonObject = {
-        "task_type": plan.task_type,
-        "risk": risk,
-        "primary_provider": primary_provider,
-        "fallback_provider": fallback_provider,
-        "used_provider": primary_provider,
-        "fallback_used": False,
-        "reason": "Subagente enfileirado para execucao assincrona.",
-        "generated_at": _now_iso(),
-    }
-    fallback_used = False
-
-    async def _runner() -> str:
-        text, decision = route_orchestration(request=request_text, task_type=plan.task_type, risk=risk)
-        state.route_provider = decision.used_provider
-        state.updated_at = _now_iso()
-        return text[:1200]
-
-    if wait_for_completion:
-        response_text, route_decision = route_orchestration(request=request_text, task_type=plan.task_type, risk=risk)
-        state.route_provider = route_decision.used_provider
-        completed = complete_subagent(
-            participant_identity=ctx.participant_identity,
-            room=ctx.room,
-            subagent_id=state.subagent_id,
-            summary=response_text[:1200],
-        )
-        if completed is not None:
-            state = completed
-        route_payload = route_decision.to_payload()
-        fallback_used = route_decision.fallback_used
-    else:
-        start_subagent_task(
-            participant_identity=ctx.participant_identity,
-            room=ctx.room,
-            state=state,
-            runner=_runner,
-        )
-
-    return ActionResult(
-        success=True,
-        message=f"Subagente {state.subagent_id} em estado {state.status}.",
-        data={
-            "subagent_state": state.to_payload(),
-            "subagent_states": [item.to_payload() for item in list_subagents(participant_identity=ctx.participant_identity, room=ctx.room)],
-            "model_route": route_payload,
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
-        evidence={
-            "provider": state.route_provider or primary_provider,
-            "request_id": state.subagent_id,
-            "executed_at": _now_iso(),
-        },
-        fallback_used=fallback_used,
+    return await domain_subagent_spawn_action(
+        params,
+        ctx,
+        require_feature=_require_feature,
+        build_task_plan=build_task_plan,
+        classify_action_risk=classify_action_risk,
+        resolve_runtime=resolve_runtime,
+        spawn_subagent=spawn_subagent,
+        route_orchestration=route_orchestration,
+        complete_subagent=complete_subagent,
+        start_subagent_task=start_subagent_task,
+        list_subagents=list_subagents,
+        now_iso=_now_iso,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _subagent_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    feature_error = _require_feature("subagents_v1")
-    if feature_error is not None:
-        return feature_error
-    subagent_id = str(params.get("subagent_id", "")).strip()
-    if subagent_id:
-        target = None
-        for item in list_subagents(participant_identity=ctx.participant_identity, room=ctx.room):
-            if item.subagent_id == subagent_id:
-                target = item
-                break
-        if target is None:
-            return ActionResult(success=False, message="Subagente nao encontrado.", error="subagent not found")
-        return ActionResult(
-            success=True,
-            message=f"Subagente {target.subagent_id} em estado {target.status}.",
-            data={"subagent_state": target.to_payload()},
-        )
-
-    states = [item.to_payload() for item in list_subagents(participant_identity=ctx.participant_identity, room=ctx.room)]
-    return ActionResult(
-        success=True,
-        message=f"{len(states)} subagente(s) neste contexto.",
-        data={"subagent_states": states},
+    return await domain_subagent_status_action(
+        params,
+        ctx,
+        require_feature=_require_feature,
+        list_subagents=list_subagents,
     )
 
 
 async def _subagent_cancel_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    feature_error = _require_feature("subagents_v1")
-    if feature_error is not None:
-        return feature_error
-    subagent_id = str(params.get("subagent_id", "")).strip()
-    if not subagent_id:
-        return ActionResult(success=False, message="Informe o subagent_id para cancelar.", error="missing subagent id")
-    cancelled = cancel_subagent(participant_identity=ctx.participant_identity, room=ctx.room, subagent_id=subagent_id)
-    if cancelled is None:
-        return ActionResult(success=False, message="Subagente nao encontrado.", error="subagent not found")
-    return ActionResult(
-        success=True,
-        message=f"Subagente {cancelled.subagent_id} cancelado.",
-        data={
-            "subagent_state": cancelled.to_payload(),
-            "subagent_states": [item.to_payload() for item in list_subagents(participant_identity=ctx.participant_identity, room=ctx.room)],
-        },
+    return await domain_subagent_cancel_action(
+        params,
+        ctx,
+        require_feature=_require_feature,
+        cancel_subagent=cancel_subagent,
+        list_subagents=list_subagents,
     )
 
 
 async def _policy_explain_decision_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    feature_error = _require_feature("policy_v1")
-    if feature_error is not None:
-        return feature_error
-    action_name = str(params.get("action_name", "")).strip()
-    if not action_name:
-        return ActionResult(success=False, message="Informe o nome da action para analisar politica.", error="missing action name")
-    spec = get_action(action_name)
-    risk = classify_action_risk(action_name)
-    domain = infer_action_domain(action_name)
-    domain_trust = get_domain_trust(domain)
-    trust_drift = get_trust_drift(ctx.participant_identity, ctx.room, domain)
-    mode = get_autonomy_mode(ctx.participant_identity, ctx.room)
-    domain_details = get_domain_autonomy_details(ctx.participant_identity, ctx.room, domain) or {}
-    domain_mode = get_domain_autonomy_mode(ctx.participant_identity, ctx.room, domain)
-    effective_mode = get_effective_autonomy_mode(ctx.participant_identity, ctx.room, domain=domain)
-    blocked, reason = is_blocked(domain=_action_domain(action_name))
-    policy_eval = evaluate_policy(
-        risk=risk,
-        mode=effective_mode,
-        requires_confirmation=bool(spec.requires_confirmation) if spec is not None else False,
-        kill_switch_active=blocked,
-        kill_switch_reason=reason,
-        domain=domain,
-        domain_trust_score=domain_trust.score,
-        trust_drift_active=bool(trust_drift and trust_drift.active),
-        trust_drift_reason=trust_drift.reason if trust_drift is not None else None,
+    return await domain_policy_explain_decision_action(
+        params,
+        ctx,
+        require_feature=_require_feature,
+        get_action=get_action,
+        classify_action_risk=classify_action_risk,
+        infer_action_domain=infer_action_domain,
+        get_domain_trust=get_domain_trust,
+        get_trust_drift=get_trust_drift,
+        get_autonomy_mode=get_autonomy_mode,
+        get_domain_autonomy_details=get_domain_autonomy_details,
+        get_domain_autonomy_mode=get_domain_autonomy_mode,
+        get_effective_autonomy_mode=get_effective_autonomy_mode,
+        is_blocked=is_blocked,
+        action_domain=_action_domain,
+        evaluate_policy=evaluate_policy,
+        get_killswitch_status=get_killswitch_status,
     )
-    payload = {
-        "action_name": action_name,
-        "domain": domain,
-        "domain_trust": domain_trust.to_payload(),
-        "trust_drift": trust_drift.to_payload() if trust_drift is not None else None,
-        "risk": risk,
-        "autonomy_mode": mode,
-        "effective_autonomy_mode": effective_mode,
-        "domain_autonomy_mode": domain_mode,
-        "domain_autonomy_reason": str(domain_details.get("reason") or "") or None,
-        "domain_autonomy_source": str(domain_details.get("source") or "") or None,
-        "domain_autonomy_updated_at": str(domain_details.get("updated_at") or "") or None,
-        "decision": policy_eval.decision,
-        "reason": policy_eval.reason,
-        "kill_switch": get_killswitch_status().to_payload(),
-    }
-    return ActionResult(success=True, message=f"Politica para {action_name}: {policy_eval.decision}.", data={"policy": payload})
 
 
 async def _autonomy_set_mode_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    feature_error = _require_feature("policy_v1")
-    if feature_error is not None:
-        return feature_error
-    mode = str(params.get("mode", "")).strip().lower()
-    if not mode:
-        return ActionResult(success=False, message="Informe o modo de autonomia.", error="missing mode")
-    if mode not in ALLOWED_AUTONOMY_MODES:
-        return ActionResult(
-            success=False,
-            message=f"Modo invalido. Use: {', '.join(sorted(ALLOWED_AUTONOMY_MODES))}.",
-            error="invalid mode",
-        )
-    applied = set_autonomy_mode(ctx.participant_identity, ctx.room, mode)
-    return ActionResult(
-        success=True,
-        message=f"Modo de autonomia ajustado para {applied}.",
-        data={
-            "autonomy_mode": applied,
-            "kill_switch": get_killswitch_status().to_payload(),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_autonomy_set_mode_action(
+        params,
+        ctx,
+        require_feature=_require_feature,
+        allowed_autonomy_modes=ALLOWED_AUTONOMY_MODES,
+        set_autonomy_mode=set_autonomy_mode,
+        get_killswitch_status=get_killswitch_status,
+        capability_payload=_capability_payload,
     )
 
 
 async def _autonomy_killswitch_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    feature_error = _require_feature("policy_v1")
-    if feature_error is not None:
-        return feature_error
-    operation = str(params.get("operation", "status")).strip().lower()
-    domain = str(params.get("domain", "")).strip().lower()
-    reason = str(params.get("reason", "")).strip() or None
-    if operation == "enable":
-        state = set_killswitch_global(True, reason=reason)
-    elif operation == "disable":
-        state = set_killswitch_global(False, reason=None)
-    elif operation == "enable_domain":
-        if not domain:
-            return ActionResult(success=False, message="Informe `domain` para enable_domain.", error="missing domain")
-        state = set_killswitch_domain(domain, True, reason=reason)
-    elif operation == "disable_domain":
-        if not domain:
-            return ActionResult(success=False, message="Informe `domain` para disable_domain.", error="missing domain")
-        state = set_killswitch_domain(domain, False)
-    else:
-        state = get_killswitch_status()
-
-    return ActionResult(
-        success=True,
-        message="Kill switch atualizado.",
-        data={
-            "kill_switch": state.to_payload(),
-            "autonomy_mode": get_autonomy_mode(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_autonomy_killswitch_action(
+        params,
+        ctx,
+        require_feature=_require_feature,
+        set_killswitch_global=set_killswitch_global,
+        set_killswitch_domain=set_killswitch_domain,
+        get_killswitch_status=get_killswitch_status,
+        get_autonomy_mode=get_autonomy_mode,
+        capability_payload=_capability_payload,
     )
 
 
 async def _policy_action_risk_matrix_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    query = str(params.get("query", "")).strip().lower()
-    include_internal = bool(params.get("include_internal", False))
-    rows: list[JsonObject] = []
-    for spec in ACTION_REGISTRY.values():
-        if not include_internal and not spec.expose_to_model:
-            continue
-        risk = classify_action_risk(spec.name)
-        domain = infer_action_domain(spec.name)
-        domain_trust = get_domain_trust(domain)
-        row: JsonObject = {
-            "action_name": spec.name,
-            "risk": risk,
-            "requires_confirmation": spec.requires_confirmation,
-            "requires_auth": spec.requires_auth,
-            "expose_to_model": spec.expose_to_model,
-            "domain": domain,
-            "domain_trust_score": round(domain_trust.score, 4),
-        }
-        if query:
-            haystack = f"{spec.name} {risk} {domain}".lower()
-            if query not in haystack:
-                continue
-        rows.append(row)
-    rows.sort(key=lambda item: (str(item.get("risk", "")), str(item.get("action_name", ""))))
-    return ActionResult(
-        success=True,
-        message=f"Matriz de risco com {len(rows)} action(s).",
-        data={
-            "risk_matrix": rows,
-            "query": query or None,
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_policy_action_risk_matrix_action(
+        params,
+        ctx,
+        action_registry=ACTION_REGISTRY,
+        classify_action_risk=classify_action_risk,
+        infer_action_domain=infer_action_domain,
+        get_domain_trust=get_domain_trust,
+        capability_payload=_capability_payload,
     )
 
 
 async def _policy_domain_trust_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    domain = str(params.get("domain", "")).strip().lower()
-    if domain:
-        snapshots = [get_domain_trust(domain)]
-    else:
-        snapshots = list_domain_trust()
-    drift_rows = {item.domain: item for item in list_trust_drift(ctx.participant_identity, ctx.room)}
-    domain_mode_rows = {
-        str(item.get("domain") or ""): item
-        for item in list_domain_autonomy_modes(ctx.participant_identity, ctx.room)
-        if isinstance(item, dict)
-    }
-    rows: list[JsonObject] = []
-    for snapshot in snapshots:
-        row = snapshot.to_payload()
-        drift = drift_rows.get(snapshot.domain)
-        domain_details = domain_mode_rows.get(snapshot.domain, {})
-        row["trust_drift_active"] = bool(drift and drift.active)
-        row["trust_drift"] = drift.to_payload() if drift is not None else None
-        row["autonomy_mode"] = get_autonomy_mode(ctx.participant_identity, ctx.room)
-        row["domain_autonomy_mode"] = str(domain_details.get("mode") or "") or None
-        row["effective_autonomy_mode"] = get_effective_autonomy_mode(
-            ctx.participant_identity,
-            ctx.room,
-            domain=snapshot.domain,
-        )
-        row["domain_autonomy_reason"] = str(domain_details.get("reason") or "") or None
-        row["domain_autonomy_source"] = str(domain_details.get("source") or "") or None
-        row["domain_autonomy_updated_at"] = str(domain_details.get("updated_at") or "") or None
-        rows.append(row)
-    return ActionResult(
-        success=True,
-        message=f"Trust score em {len(rows)} dominio(s).",
-        data={
-            "domain_trust": rows,
-            "domain": domain or None,
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_policy_domain_trust_status_action(
+        params,
+        ctx,
+        get_domain_trust=get_domain_trust,
+        list_domain_trust=list_domain_trust,
+        list_trust_drift=list_trust_drift,
+        list_domain_autonomy_modes=list_domain_autonomy_modes,
+        get_autonomy_mode=get_autonomy_mode,
+        get_effective_autonomy_mode=get_effective_autonomy_mode,
+        capability_payload=_capability_payload,
     )
 
 
 async def _policy_trust_drift_report_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    rows_param = params.get("rows")
-    if rows_param is None:
-        rows: list[JsonObject] = []
-    elif isinstance(rows_param, list):
-        rows = [item for item in rows_param if isinstance(item, dict)]
-    else:
-        return ActionResult(
-            success=False,
-            message="`rows` precisa ser uma lista de objetos.",
-            error="invalid rows",
-        )
-    signature = str(params.get("signature", "")).strip() or None
-    updated = replace_trust_drift(
-        ctx.participant_identity,
-        ctx.room,
-        rows,
-        source="frontend",
-        signature=signature,
-    )
-    return ActionResult(
-        success=True,
-        message=f"Trust drift sincronizado para {len(updated)} dominio(s).",
-        data={
-            "trust_drift": [item.to_payload() for item in updated],
-            "signature": signature,
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_policy_trust_drift_report_action(
+        params,
+        ctx,
+        replace_trust_drift=replace_trust_drift,
+        capability_payload=_capability_payload,
     )
 
 
@@ -9694,114 +8056,42 @@ def _build_ops_incident_snapshot(
 
 
 async def _providers_health_check_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    include_ping = bool(params.get("include_ping", False))
-    ping_prompt = str(params.get("ping_prompt", "")).strip() or "Responda apenas: ok"
-    rows = _collect_provider_health(include_ping=include_ping, ping_prompt=ping_prompt)
-    return ActionResult(
-        success=True,
-        message=f"Health check de {len(rows)} provider(s) concluido.",
-        data={
-            "providers_health": rows,
-            "feature_flags": _feature_flags_snapshot(),
-            "canary_state": _canary_state_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_providers_health_check_action(
+        params,
+        ctx,
+        collect_provider_health=_collect_provider_health,
+        feature_flags_snapshot=_feature_flags_snapshot,
+        canary_state_payload=_canary_state_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _ops_incident_snapshot_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    include_ping = bool(params.get("include_ping", False))
-    ping_prompt = str(params.get("ping_prompt", "")).strip() or "Responda apenas: ok"
-    metrics_limit = int(params.get("metrics_limit", 300))
-    snapshot = _build_ops_incident_snapshot(
-        participant_identity=ctx.participant_identity,
-        room=ctx.room,
-        include_ping=include_ping,
-        ping_prompt=ping_prompt,
-        metrics_limit=metrics_limit,
-    )
-    return ActionResult(
-        success=True,
-        message="Snapshot operacional gerado.",
-        data={
-            "ops_incident_snapshot": snapshot,
-            "canary_state": snapshot.get("canary_state"),
-            "autonomy_mode": snapshot.get("autonomy_mode"),
-            "feature_flags": snapshot.get("feature_flags"),
-            "kill_switch": snapshot.get("kill_switch"),
-            "providers_health": snapshot.get("providers_health"),
-            "eval_metrics_summary": snapshot.get("metrics_summary"),
-            "slo_report": snapshot.get("slo_report"),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_ops_incident_snapshot_action(
+        params,
+        ctx,
+        build_ops_incident_snapshot=_build_ops_incident_snapshot,
+        capability_payload=_capability_payload,
     )
 
 
 async def _ops_canary_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    metrics_limit = int(params.get("metrics_limit", 300))
-    snapshot = _build_ops_incident_snapshot(
-        participant_identity=ctx.participant_identity,
-        room=ctx.room,
-        include_ping=False,
-        ping_prompt="Responda apenas: ok",
-        metrics_limit=metrics_limit,
-    )
-    canary_state = snapshot.get("canary_state") if isinstance(snapshot.get("canary_state"), dict) else {}
-    return ActionResult(
-        success=True,
-        message=(
-            f"Canario {'ativo' if bool(canary_state.get('active')) else 'inativo'} "
-            f"para a sessao ({str(canary_state.get('cohort') or 'stable')})."
-        ),
-        data={
-            "canary_state": canary_state,
-            "ops_incident_snapshot": snapshot,
-            "feature_flags": snapshot.get("feature_flags"),
-            "eval_metrics_summary": snapshot.get("metrics_summary"),
-            "slo_report": snapshot.get("slo_report"),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_ops_canary_status_action(
+        params,
+        ctx,
+        build_ops_incident_snapshot=_build_ops_incident_snapshot,
+        capability_payload=_capability_payload,
     )
 
 
 async def _ops_canary_set_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    operation = str(params.get("operation", "")).strip().lower()
-    allowed = {"enroll", "unenroll", "enable_global", "disable_global"}
-    if operation not in allowed:
-        return ActionResult(
-            success=False,
-            message=f"Operacao invalida. Opcoes: {', '.join(sorted(allowed))}.",
-            error="invalid operation",
-        )
-
-    if operation == "enroll":
-        _set_canary_session_enrollment(ctx.participant_identity, ctx.room, enrolled=True)
-    elif operation == "unenroll":
-        _set_canary_session_enrollment(ctx.participant_identity, ctx.room, enrolled=False)
-    elif operation == "enable_global":
-        _set_runtime_feature_override("canary_v1", True)
-    elif operation == "disable_global":
-        _set_runtime_feature_override("canary_v1", False)
-
-    snapshot = _build_ops_incident_snapshot(
-        participant_identity=ctx.participant_identity,
-        room=ctx.room,
-        include_ping=False,
-        ping_prompt="Responda apenas: ok",
-        metrics_limit=300,
-    )
-    canary_state = snapshot.get("canary_state") if isinstance(snapshot.get("canary_state"), dict) else {}
-    return ActionResult(
-        success=True,
-        message=f"Canario atualizado via `{operation}`.",
-        data={
-            "canary_state": canary_state,
-            "ops_incident_snapshot": snapshot,
-            "feature_flags": snapshot.get("feature_flags"),
-            "eval_metrics_summary": snapshot.get("metrics_summary"),
-            "slo_report": snapshot.get("slo_report"),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_ops_canary_set_action(
+        params,
+        ctx,
+        set_canary_session_enrollment=_set_canary_session_enrollment,
+        set_runtime_feature_override=_set_runtime_feature_override,
+        build_ops_incident_snapshot=_build_ops_incident_snapshot,
+        capability_payload=_capability_payload,
     )
 
 
@@ -9820,87 +8110,17 @@ def _rollout_step_percent(current: int, *, direction: str) -> int:
 
 
 async def _ops_canary_rollout_set_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    operation = str(params.get("operation", "")).strip().lower()
-    percent_param = params.get("percent")
-    dry_run = bool(params.get("dry_run", False))
-    allowed = {"set_percent", "step_up", "step_down", "pause", "resume"}
-    if operation not in allowed:
-        return ActionResult(
-            success=False,
-            message=f"Operacao invalida. Opcoes: {', '.join(sorted(allowed))}.",
-            error="invalid operation",
-        )
-
-    current_percent = _get_canary_rollout_percent()
-    next_percent = current_percent
-    before_enabled = _is_feature_enabled("canary_v1", default=False)
-    next_enabled = before_enabled
-
-    if operation == "set_percent":
-        if not isinstance(percent_param, int):
-            return ActionResult(success=False, message="Informe `percent` (0..100).", error="missing percent")
-        next_percent = max(0, min(100, int(percent_param)))
-        if next_percent > 0:
-            next_enabled = True
-    elif operation == "step_up":
-        next_percent = _rollout_step_percent(current_percent, direction="up")
-        if next_percent > 0:
-            next_enabled = True
-    elif operation == "step_down":
-        next_percent = _rollout_step_percent(current_percent, direction="down")
-    elif operation == "pause":
-        next_enabled = False
-    elif operation == "resume":
-        next_enabled = True
-        if current_percent <= 0:
-            next_percent = 10
-
-    if not dry_run:
-        _set_canary_rollout_percent(next_percent)
-        _set_runtime_feature_override("canary_v1", next_enabled)
-
-    snapshot = _build_ops_incident_snapshot(
-        participant_identity=ctx.participant_identity,
-        room=ctx.room,
-        include_ping=False,
-        ping_prompt="Responda apenas: ok",
-        metrics_limit=300,
-    )
-    canary_state = snapshot.get("canary_state") if isinstance(snapshot.get("canary_state"), dict) else {}
-    report: JsonObject = {
-        "playbook": "canary_rollout",
-        "dry_run": dry_run,
-        "applied": not dry_run,
-        "changes": [
-            {
-                "type": "canary_rollout",
-                "target": "rollout_percent",
-                "from": current_percent,
-                "to": next_percent,
-                "note": f"Operacao {operation}",
-            },
-            {
-                "type": "feature_flag_override",
-                "target": "canary_v1",
-                "from": before_enabled,
-                "to": next_enabled if dry_run else bool(_is_feature_enabled("canary_v1", default=False)),
-                "note": "Controle global de canario.",
-            },
-        ],
-        "generated_at": _now_iso(),
-    }
-    return ActionResult(
-        success=True,
-        message=f"Rollout canario {'simulado' if dry_run else 'atualizado'} via `{operation}`.",
-        data={
-            "ops_playbook_report": report,
-            "canary_state": canary_state,
-            "ops_incident_snapshot": snapshot,
-            "feature_flags": snapshot.get("feature_flags"),
-            "eval_metrics_summary": snapshot.get("metrics_summary"),
-            "slo_report": snapshot.get("slo_report"),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_ops_canary_rollout_set_action(
+        params,
+        ctx,
+        get_canary_rollout_percent=_get_canary_rollout_percent,
+        is_feature_enabled=_is_feature_enabled,
+        rollout_step_percent=_rollout_step_percent,
+        set_canary_rollout_percent=_set_canary_rollout_percent,
+        set_runtime_feature_override=_set_runtime_feature_override,
+        build_ops_incident_snapshot=_build_ops_incident_snapshot,
+        now_iso=_now_iso,
+        capability_payload=_capability_payload,
     )
 
 
@@ -10019,139 +8239,17 @@ def _ops_slo_signal(snapshot: JsonObject) -> JsonObject:
 
 
 async def _ops_auto_remediate_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    dry_run = bool(params.get("dry_run", True))
-    force = bool(params.get("force", False))
-    domain = str(params.get("domain", "")).strip().lower()
-    metrics_limit = int(params.get("metrics_limit", 400))
-    cooldown_seconds = int(
-        params.get("cooldown_seconds", int(str(os.getenv("JARVEZ_AUTO_REMEDIATION_COOLDOWN_SECONDS", "180"))))
-    )
-    cooldown_seconds = max(30, min(cooldown_seconds, 3600))
-
-    snapshot = _build_ops_incident_snapshot(
-        participant_identity=ctx.participant_identity,
-        room=ctx.room,
-        include_ping=False,
-        ping_prompt="Responda apenas: ok",
-        metrics_limit=metrics_limit,
-    )
-    signal = _ops_slo_signal(snapshot)
-    scenario = str(signal.get("recommended_scenario") or "").strip()
-    signal_domains = signal.get("trust_drift_active_domains") if isinstance(signal.get("trust_drift_active_domains"), list) else []
-    notice_delivery_domains = (
-        signal.get("autonomy_notice_delivery_domains")
-        if isinstance(signal.get("autonomy_notice_delivery_domains"), list)
-        else []
-    )
-    resolved_domain = domain
-    if (
-        not resolved_domain
-        and scenario == "trust_drift_breach"
-        and len(signal_domains) == 1
-        and isinstance(signal_domains[0], str)
-        and signal_domains[0].strip()
-    ):
-        resolved_domain = str(signal_domains[0]).strip().lower()
-    if (
-        not resolved_domain
-        and scenario == "reliability_breach"
-        and bool(signal.get("autonomy_notice_delivery_breach"))
-        and len(notice_delivery_domains) == 1
-        and isinstance(notice_delivery_domains[0], str)
-        and notice_delivery_domains[0].strip()
-    ):
-        resolved_domain = str(notice_delivery_domains[0]).strip().lower()
-    now_ts = time.time()
-    room_key = _canary_key(ctx.participant_identity, ctx.room)
-    last_run = float(AUTO_REMEDIATION_LAST_EXECUTION.get(room_key, 0.0))
-    remaining_cooldown = max(0, int(cooldown_seconds - (now_ts - last_run)))
-
-    if not scenario and not force:
-        return ActionResult(
-            success=True,
-            message="Sem violacao de SLO para auto-remediacao.",
-            data={
-                "ops_auto_remediation": {
-                    "executed": False,
-                    "dry_run": dry_run,
-                    "reason": "no signal",
-                    "signal": signal,
-                    "cooldown_remaining_seconds": remaining_cooldown,
-                    "generated_at": _now_iso(),
-                },
-                "ops_incident_snapshot": snapshot,
-                "canary_state": snapshot.get("canary_state"),
-                "feature_flags": snapshot.get("feature_flags"),
-                "kill_switch": snapshot.get("kill_switch"),
-                "eval_metrics_summary": snapshot.get("metrics_summary"),
-                "slo_report": snapshot.get("slo_report"),
-                **_capability_payload(ctx.participant_identity, ctx.room),
-            },
-        )
-
-    if force and not scenario:
-        scenario = "reliability_breach"
-
-    if not dry_run and remaining_cooldown > 0:
-        return ActionResult(
-            success=False,
-            message=f"Cooldown ativo para auto-remediacao ({remaining_cooldown}s).",
-            data={
-                "ops_auto_remediation": {
-                    "executed": False,
-                    "dry_run": dry_run,
-                    "reason": "cooldown",
-                    "signal": signal,
-                    "cooldown_remaining_seconds": remaining_cooldown,
-                    "generated_at": _now_iso(),
-                },
-                "ops_incident_snapshot": snapshot,
-                "canary_state": snapshot.get("canary_state"),
-                "feature_flags": snapshot.get("feature_flags"),
-                "kill_switch": snapshot.get("kill_switch"),
-                **_capability_payload(ctx.participant_identity, ctx.room),
-            },
-            error="auto remediation cooldown",
-        )
-
-    rollback = await _ops_rollback_scenario_action(
-        {
-            "scenario": scenario,
-            "dry_run": dry_run,
-            "domain": resolved_domain,
-            "containment_strategy": (
-                "domain_autonomy"
-                if scenario == "reliability_breach"
-                and bool(signal.get("autonomy_notice_delivery_breach"))
-                and bool(resolved_domain)
-                else "default"
-            ),
-            "reason": "auto remediation",
-        },
+    return await domain_ops_auto_remediate_action(
+        params,
         ctx,
-    )
-    if not rollback.success:
-        return rollback
-
-    if not dry_run:
-        AUTO_REMEDIATION_LAST_EXECUTION[room_key] = now_ts
-
-    rollback_data = rollback.data if isinstance(rollback.data, dict) else {}
-    return ActionResult(
-        success=True,
-        message=f"Auto-remediacao {'simulada' if dry_run else 'aplicada'} via `{scenario}`.",
-        data={
-            **rollback_data,
-            "ops_auto_remediation": {
-                "executed": True,
-                "dry_run": dry_run,
-                "scenario": scenario,
-                "signal": signal,
-                "cooldown_remaining_seconds": 0 if not dry_run else remaining_cooldown,
-                "generated_at": _now_iso(),
-            },
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+        auto_remediation_last_execution=AUTO_REMEDIATION_LAST_EXECUTION,
+        canary_key=_canary_key,
+        build_ops_incident_snapshot=_build_ops_incident_snapshot,
+        ops_slo_signal=_ops_slo_signal,
+        ops_rollback_scenario_action=_ops_rollback_scenario_action,
+        now_ts=time.time,
+        now_iso=_now_iso,
+        capability_payload=_capability_payload,
     )
 
 
@@ -10222,345 +8320,59 @@ def _ops_canary_gate_report(
 
 
 async def _ops_canary_promote_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    dry_run = bool(params.get("dry_run", True))
-    force = bool(params.get("force", False))
-    step_if_passed = bool(params.get("step_if_passed", True))
-    rollback_on_fail = bool(params.get("rollback_on_fail", False))
-    min_samples = int(params.get("min_samples", 20))
-    min_samples = max(5, min(min_samples, 200))
-    success_rate_min = float(params.get("success_rate_min", 0.95))
-    success_rate_min = max(0.5, min(success_rate_min, 1.0))
-    max_regression_vs_stable = float(params.get("max_regression_vs_stable", 0.03))
-    max_regression_vs_stable = max(0.0, min(max_regression_vs_stable, 0.4))
-    require_no_alerts = bool(params.get("require_no_alerts", True))
-    metrics_limit = int(params.get("metrics_limit", 400))
-    cooldown_seconds = int(
-        params.get("cooldown_seconds", int(str(os.getenv("JARVEZ_CANARY_PROMOTION_COOLDOWN_SECONDS", "600"))))
-    )
-    cooldown_seconds = max(30, min(cooldown_seconds, 7200))
-
-    snapshot = _build_ops_incident_snapshot(
-        participant_identity=ctx.participant_identity,
-        room=ctx.room,
-        include_ping=False,
-        ping_prompt="Responda apenas: ok",
-        metrics_limit=metrics_limit,
-    )
-    gate = _ops_canary_gate_report(
-        snapshot=snapshot,
-        min_samples=min_samples,
-        success_rate_min=success_rate_min,
-        max_regression_vs_stable=max_regression_vs_stable,
-        require_no_alerts=require_no_alerts,
-    )
-
-    now_ts = time.time()
-    room_key = _canary_key(ctx.participant_identity, ctx.room)
-    last_run = float(CANARY_PROMOTION_LAST_EXECUTION.get(room_key, 0.0))
-    remaining_cooldown = max(0, int(cooldown_seconds - (now_ts - last_run)))
-    if not dry_run and remaining_cooldown > 0 and not force:
-        return ActionResult(
-            success=False,
-            message=f"Cooldown ativo para promocao de canario ({remaining_cooldown}s).",
-            data={
-                "ops_canary_promotion": {
-                    "executed": False,
-                    "promoted": False,
-                    "dry_run": dry_run,
-                    "reason": "cooldown",
-                    "gate": gate,
-                    "cooldown_remaining_seconds": remaining_cooldown,
-                    "generated_at": _now_iso(),
-                },
-                "ops_incident_snapshot": snapshot,
-                "canary_state": snapshot.get("canary_state"),
-                "feature_flags": snapshot.get("feature_flags"),
-                "slo_report": snapshot.get("slo_report"),
-                **_capability_payload(ctx.participant_identity, ctx.room),
-            },
-            error="canary promotion cooldown",
-        )
-
-    gate_passed = bool(gate.get("passed"))
-    if force:
-        gate_passed = True
-
-    rollback_result: ActionResult | None = None
-    promoted = False
-    rollout_result: ActionResult | None = None
-    if gate_passed and step_if_passed:
-        rollout_result = await _ops_canary_rollout_set_action(
-            {"operation": "step_up", "dry_run": dry_run},
-            ctx,
-        )
-        promoted = bool(rollout_result.success)
-        if rollout_result.success and not dry_run:
-            CANARY_PROMOTION_LAST_EXECUTION[room_key] = now_ts
-        if rollout_result.success and isinstance(rollout_result.data, dict):
-            maybe_snapshot = rollout_result.data.get("ops_incident_snapshot")
-            if isinstance(maybe_snapshot, dict):
-                snapshot = maybe_snapshot
-    elif (not gate_passed) and rollback_on_fail:
-        rollback_result = await _ops_rollback_scenario_action(
-            {
-                "scenario": "reliability_breach",
-                "dry_run": dry_run,
-                "reason": "canary promotion gate failed",
-            },
-            ctx,
-        )
-        if rollback_result.success and isinstance(rollback_result.data, dict):
-            maybe_snapshot = rollback_result.data.get("ops_incident_snapshot")
-            if isinstance(maybe_snapshot, dict):
-                snapshot = maybe_snapshot
-
-    report: JsonObject = {
-        "executed": True,
-        "promoted": promoted,
-        "dry_run": dry_run,
-        "force": force,
-        "step_if_passed": step_if_passed,
-        "rollback_on_fail": rollback_on_fail,
-        "gate": gate,
-        "cooldown_remaining_seconds": 0 if not dry_run else remaining_cooldown,
-        "generated_at": _now_iso(),
-    }
-    if rollout_result is not None:
-        report["rollout_status"] = {"success": rollout_result.success, "message": rollout_result.message}
-    if rollback_result is not None:
-        report["rollback_status"] = {"success": rollback_result.success, "message": rollback_result.message}
-
-    return ActionResult(
-        success=True,
-        message=(
-            "Promocao de canario aplicada."
-            if promoted and not dry_run
-            else "Promocao de canario simulada."
-            if promoted and dry_run
-            else "Gate de promocao nao aprovado."
-        ),
-        data={
-            "ops_canary_promotion": report,
-            "ops_playbook_report": (
-                rollout_result.data.get("ops_playbook_report") if rollout_result and isinstance(rollout_result.data, dict) else None
-            ) or (
-                rollback_result.data.get("ops_playbook_report") if rollback_result and isinstance(rollback_result.data, dict) else None
-            ),
-            "ops_incident_snapshot": snapshot,
-            "canary_state": snapshot.get("canary_state"),
-            "feature_flags": snapshot.get("feature_flags"),
-            "kill_switch": snapshot.get("kill_switch"),
-            "slo_report": snapshot.get("slo_report"),
-            "eval_metrics_summary": snapshot.get("metrics_summary"),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_ops_canary_promote_action(
+        params,
+        ctx,
+        canary_promotion_last_execution=CANARY_PROMOTION_LAST_EXECUTION,
+        canary_key=_canary_key,
+        build_ops_incident_snapshot=_build_ops_incident_snapshot,
+        ops_canary_gate_report=_ops_canary_gate_report,
+        ops_canary_rollout_set_action=_ops_canary_rollout_set_action,
+        ops_rollback_scenario_action=_ops_rollback_scenario_action,
+        now_ts=time.time,
+        now_iso=_now_iso,
+        capability_payload=_capability_payload,
     )
 
 
 async def _ops_control_loop_tick_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    dry_run = bool(params.get("dry_run", True))
-    auto_remediate = bool(params.get("auto_remediate", True))
-    auto_promote_canary = bool(params.get("auto_promote_canary", True))
-    force_remediation = bool(params.get("force_remediation", False))
-    force_promotion = bool(params.get("force_promotion", False))
-    metrics_limit = int(params.get("metrics_limit", 400))
-    domain = str(params.get("domain", "")).strip().lower()
-    freeze_threshold = int(
-        params.get("freeze_threshold", int(str(os.getenv("JARVEZ_CONTROL_LOOP_FREEZE_THRESHOLD", "3"))))
-    )
-    freeze_window_seconds = int(
-        params.get("freeze_window_seconds", int(str(os.getenv("JARVEZ_CONTROL_LOOP_FREEZE_WINDOW_SECONDS", "900"))))
-    )
-    freeze_cooldown_seconds = int(
-        params.get("freeze_cooldown_seconds", int(str(os.getenv("JARVEZ_CONTROL_LOOP_FREEZE_COOLDOWN_SECONDS", "1800"))))
-    )
-    freeze_threshold = max(1, min(freeze_threshold, 20))
-    freeze_window_seconds = max(60, min(freeze_window_seconds, 86400))
-    freeze_cooldown_seconds = max(60, min(freeze_cooldown_seconds, 86400))
-
-    initial_snapshot = _build_ops_incident_snapshot(
-        participant_identity=ctx.participant_identity,
-        room=ctx.room,
-        include_ping=False,
-        ping_prompt="Responda apenas: ok",
-        metrics_limit=metrics_limit,
-    )
-    remediation_result: ActionResult | None = None
-    promotion_result: ActionResult | None = None
-
-    if auto_remediate:
-        remediation_result = await _ops_auto_remediate_action(
-            {
-                "dry_run": dry_run,
-                "force": force_remediation,
-                "domain": domain,
-                "metrics_limit": metrics_limit,
-                },
-                ctx,
-            )
-
-    room_key = _canary_key(ctx.participant_identity, ctx.room)
-    now_ts = time.time()
-    initial_signal = _ops_slo_signal(initial_snapshot)
-    current_breach = str(initial_signal.get("recommended_scenario") or "").strip()
-    history = [
-        stamp
-        for stamp in CONTROL_LOOP_BREACH_HISTORY.get(room_key, [])
-        if (now_ts - float(stamp)) <= float(freeze_window_seconds)
-    ]
-    if current_breach:
-        history.append(now_ts)
-    CONTROL_LOOP_BREACH_HISTORY[room_key] = history
-
-    last_freeze = float(CONTROL_LOOP_FREEZE_LAST_TRIGGER.get(room_key, 0.0))
-    freeze_cooldown_remaining = max(0, int(freeze_cooldown_seconds - (now_ts - last_freeze)))
-    freeze_should_apply = bool(
-        len(history) >= freeze_threshold and (freeze_cooldown_remaining == 0)
-    )
-
-    remediation_data = remediation_result.data if remediation_result and isinstance(remediation_result.data, dict) else {}
-    auto_remediation_payload = remediation_data.get("ops_auto_remediation")
-    remediation_triggered = bool(isinstance(auto_remediation_payload, dict) and auto_remediation_payload.get("executed"))
-    remediation_scenario = (
-        str(auto_remediation_payload.get("scenario") or "")
-        if isinstance(auto_remediation_payload, dict)
-        else ""
-    ).strip()
-
-    skip_promotion_reason = ""
-    if auto_promote_canary:
-        if remediation_triggered and remediation_scenario in {"provider_outage", "reliability_breach", "latency_spike", "trust_drift_breach"}:
-            skip_promotion_reason = f"remediacao ativa em cenario `{remediation_scenario}`."
-        else:
-            promotion_result = await _ops_canary_promote_action(
-                {
-                    "dry_run": dry_run,
-                    "force": force_promotion,
-                    "step_if_passed": True,
-                    "rollback_on_fail": False,
-                    "metrics_limit": metrics_limit,
-                },
-                ctx,
-            )
-
-    final_snapshot = initial_snapshot
-    for result in [remediation_result, promotion_result]:
-        if result and isinstance(result.data, dict):
-            maybe_snapshot = result.data.get("ops_incident_snapshot")
-            if isinstance(maybe_snapshot, dict):
-                final_snapshot = maybe_snapshot
-
-    freeze_applied = False
-    freeze_reason = ""
-    if freeze_should_apply:
-        freeze_reason = (
-            "control_loop_freeze: "
-            f"{len(history)} breach(es) em {freeze_window_seconds}s "
-            f"(threshold={freeze_threshold})."
-        )
-        if dry_run:
-            freeze_reason = f"{freeze_reason} [dry-run]"
-        else:
-            set_killswitch_global(True, reason=freeze_reason)
-            _set_runtime_feature_override("canary_v1", False)
-            _set_canary_rollout_percent(0)
-            CONTROL_LOOP_FREEZE_LAST_TRIGGER[room_key] = now_ts
-            freeze_applied = True
-            final_snapshot = _build_ops_incident_snapshot(
-                participant_identity=ctx.participant_identity,
-                room=ctx.room,
-                include_ping=False,
-                ping_prompt="Responda apenas: ok",
-                metrics_limit=metrics_limit,
-            )
-
-    control_report: JsonObject = {
-        "executed": True,
-        "dry_run": dry_run,
-        "auto_remediate": auto_remediate,
-        "auto_promote_canary": auto_promote_canary,
-        "remediation_triggered": remediation_triggered,
-        "remediation_scenario": remediation_scenario or None,
-        "promotion_skipped_reason": skip_promotion_reason or None,
-        "initial_signal": initial_signal,
-        "breach_window": {
-            "count": len(history),
-            "threshold": freeze_threshold,
-            "window_seconds": freeze_window_seconds,
-        },
-        "freeze": {
-            "should_apply": freeze_should_apply,
-            "applied": freeze_applied,
-            "reason": freeze_reason or None,
-            "cooldown_remaining_seconds": max(0, freeze_cooldown_remaining),
-            "cooldown_seconds": freeze_cooldown_seconds,
-        },
-        "generated_at": _now_iso(),
-    }
-    if remediation_result is not None:
-        control_report["remediation_status"] = {
-            "success": remediation_result.success,
-            "message": remediation_result.message,
-        }
-    if promotion_result is not None:
-        control_report["promotion_status"] = {
-            "success": promotion_result.success,
-            "message": promotion_result.message,
-        }
-
-    return ActionResult(
-        success=True,
-        message="Tick operacional concluido.",
-        data={
-            "ops_control_tick": control_report,
-            "ops_auto_remediation": remediation_data.get("ops_auto_remediation"),
-            "ops_canary_promotion": (
-                promotion_result.data.get("ops_canary_promotion")
-                if promotion_result and isinstance(promotion_result.data, dict)
-                else None
-            ),
-            "ops_playbook_report": (
-                promotion_result.data.get("ops_playbook_report")
-                if promotion_result and isinstance(promotion_result.data, dict)
-                else remediation_data.get("ops_playbook_report")
-            ),
-            "ops_incident_snapshot": final_snapshot,
-            "canary_state": final_snapshot.get("canary_state"),
-            "feature_flags": final_snapshot.get("feature_flags"),
-            "kill_switch": final_snapshot.get("kill_switch"),
-            "slo_report": final_snapshot.get("slo_report"),
-            "eval_metrics_summary": final_snapshot.get("metrics_summary"),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_ops_control_loop_tick_action(
+        params,
+        ctx,
+        control_loop_breach_history=CONTROL_LOOP_BREACH_HISTORY,
+        control_loop_freeze_last_trigger=CONTROL_LOOP_FREEZE_LAST_TRIGGER,
+        canary_key=_canary_key,
+        build_ops_incident_snapshot=_build_ops_incident_snapshot,
+        ops_slo_signal=_ops_slo_signal,
+        ops_auto_remediate_action=_ops_auto_remediate_action,
+        ops_canary_promote_action=_ops_canary_promote_action,
+        set_killswitch_global=set_killswitch_global,
+        set_runtime_feature_override=_set_runtime_feature_override,
+        set_canary_rollout_percent=_set_canary_rollout_percent,
+        now_ts=time.time,
+        now_iso=_now_iso,
+        capability_payload=_capability_payload,
     )
 
 
 async def _ops_feature_flags_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return ActionResult(
-        success=True,
-        message="Status das feature flags coletado.",
-        data={
-            "feature_flags": _feature_flags_snapshot(),
-            "canary_state": _canary_state_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_ops_feature_flags_status_action(
+        params,
+        ctx,
+        feature_flags_snapshot=_feature_flags_snapshot,
+        canary_state_payload=_canary_state_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _ops_feature_flags_set_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    feature_name = str(params.get("feature", "")).strip().lower()
-    if not feature_name:
-        return ActionResult(success=False, message="Informe `feature`.", error="missing feature")
-    enabled = bool(params.get("enabled", True))
-    FEATURE_FLAG_OVERRIDES[feature_name] = enabled
-    return ActionResult(
-        success=True,
-        message=f"Feature `{feature_name}` ajustada para {'on' if enabled else 'off'} (runtime).",
-        data={
-            "feature_flags": _feature_flags_snapshot(),
-            "canary_state": _canary_state_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_ops_feature_flags_set_action(
+        params,
+        ctx,
+        feature_flag_overrides=FEATURE_FLAG_OVERRIDES,
+        feature_flags_snapshot=_feature_flags_snapshot,
+        canary_state_payload=_canary_state_payload,
+        capability_payload=_capability_payload,
     )
 
 
@@ -10582,1146 +8394,242 @@ def _predict_feature_values_from_overrides(overrides: dict[str, bool]) -> JsonOb
 
 
 async def _ops_apply_playbook_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    playbook = str(params.get("playbook", "")).strip().lower()
-    dry_run = bool(params.get("dry_run", False))
-    domain = str(params.get("domain", "")).strip().lower()
-    reason = str(params.get("reason", "")).strip()
-    allowed = {
-        "provider_degradation",
-        "strict_guardrails",
-        "degrade_domain_autonomy",
-        "restore_domain_autonomy",
-        "block_domain",
-        "unblock_domain",
-        "restore_runtime_overrides",
-    }
-    if playbook not in allowed:
-        return ActionResult(
-            success=False,
-            message=f"Playbook invalido. Opcoes: {', '.join(sorted(allowed))}.",
-            error="invalid playbook",
-        )
-    if playbook in {"degrade_domain_autonomy", "restore_domain_autonomy", "block_domain", "unblock_domain"} and not domain:
-        return ActionResult(success=False, message="Informe `domain` para este playbook.", error="missing domain")
-
-    before_flags = _feature_flags_snapshot()
-    before_killswitch = get_killswitch_status().to_payload()
-    before_mode = get_autonomy_mode(ctx.participant_identity, ctx.room)
-    before_domain_mode = get_domain_autonomy_mode(ctx.participant_identity, ctx.room, domain) if domain else None
-    predicted_domain_modes: dict[str, str] = {
-        str(item.get("domain") or ""): str(item.get("mode") or "")
-        for item in list_domain_autonomy_modes(ctx.participant_identity, ctx.room)
-        if isinstance(item, dict) and str(item.get("domain") or "")
-    }
-
-    predicted_overrides: dict[str, bool] = {
-        str(key).strip().lower(): bool(value)
-        for key, value in dict(before_flags.get("overrides", {})).items()
-    }
-    predicted_killswitch = {
-        "global_enabled": bool(before_killswitch.get("global_enabled", False)),
-        "global_reason": before_killswitch.get("global_reason"),
-        "domains": dict(before_killswitch.get("domains", {})),
-    }
-    predicted_mode = before_mode
-    predicted_domain_mode = before_domain_mode
-    changes: list[JsonObject] = []
-
-    def _track_override(flag_name: str, enabled: bool, note: str) -> None:
-        normalized = flag_name.strip().lower()
-        previous_override = predicted_overrides.get(normalized)
-        previous_effective = (
-            bool(previous_override) if previous_override is not None else _feature_value_from_env(normalized)
-        )
-        changes.append(
-            {
-                "type": "feature_flag_override",
-                "target": normalized,
-                "from": previous_effective,
-                "to": enabled,
-                "note": note,
-            }
-        )
-        predicted_overrides[normalized] = enabled
-        if not dry_run:
-            _set_runtime_feature_override(normalized, enabled)
-
-    if playbook == "provider_degradation":
-        _track_override("multi_model_router_v1", False, "Desliga roteador multi-model para reduzir variacao.")
-        _track_override("subagents_v1", False, "Desliga subagentes para simplificar execucao.")
-        _track_override("policy_v1", True, "Mantem politica ativa durante degradacao.")
-        _track_override("skills_v1", True, "Mantem skills disponiveis para operacao manual assistida.")
-    elif playbook == "strict_guardrails":
-        changes.append(
-            {
-                "type": "autonomy_mode",
-                "target": f"{ctx.participant_identity}:{ctx.room}",
-                "from": before_mode,
-                "to": "safe",
-                "note": "Forca guardrails mais conservadores durante incidente.",
-            }
-        )
-        predicted_mode = "safe"
-        if not dry_run:
-            set_autonomy_mode(ctx.participant_identity, ctx.room, "safe")
-        _track_override("policy_v1", True, "Garante engine de politica habilitada.")
-    elif playbook == "degrade_domain_autonomy":
-        changes.append(
-            {
-                "type": "domain_autonomy_mode",
-                "target": domain,
-                "from": before_domain_mode,
-                "to": "safe",
-                "note": "Reduz autonomia apenas no dominio afetado.",
-            }
-        )
-        predicted_domain_mode = "safe"
-        predicted_domain_modes[domain] = "safe"
-        if not dry_run:
-            set_domain_autonomy_mode(
-                ctx.participant_identity,
-                ctx.room,
-                domain,
-                "safe",
-                reason=reason or "ops_playbook_degrade_domain_autonomy",
-                source="ops_playbook",
-            )
-    elif playbook == "restore_domain_autonomy":
-        changes.append(
-            {
-                "type": "domain_autonomy_mode",
-                "target": domain,
-                "from": before_domain_mode,
-                "to": None,
-                "note": "Remove floor de autonomia por dominio apos estabilizacao.",
-            }
-        )
-        predicted_domain_mode = None
-        predicted_domain_modes.pop(domain, None)
-        if not dry_run:
-            clear_domain_autonomy_mode(ctx.participant_identity, ctx.room, domain)
-    elif playbook == "block_domain":
-        previous_reason = str(predicted_killswitch["domains"].get(domain, "")) or None
-        applied_reason = reason or "blocked by ops playbook"
-        changes.append(
-            {
-                "type": "domain_killswitch",
-                "target": domain,
-                "from": previous_reason,
-                "to": applied_reason,
-                "note": "Bloqueia dominio para conter erro em acao real.",
-            }
-        )
-        predicted_killswitch["domains"][domain] = applied_reason
-        if not dry_run:
-            set_killswitch_domain(domain, True, applied_reason)
-    elif playbook == "unblock_domain":
-        previous_reason = str(predicted_killswitch["domains"].get(domain, "")) or None
-        changes.append(
-            {
-                "type": "domain_killswitch",
-                "target": domain,
-                "from": previous_reason,
-                "to": None,
-                "note": "Reabre dominio bloqueado apos estabilizacao.",
-            }
-        )
-        predicted_killswitch["domains"].pop(domain, None)
-        if not dry_run:
-            set_killswitch_domain(domain, False, None)
-    elif playbook == "restore_runtime_overrides":
-        existing = dict(FEATURE_FLAG_OVERRIDES)
-        changes.append(
-            {
-                "type": "feature_flag_override",
-                "target": "*",
-                "from": len(existing),
-                "to": 0,
-                "note": "Limpa overrides runtime e volta para estado de env.",
-            }
-        )
-        predicted_overrides = {}
-        if not dry_run:
-            FEATURE_FLAG_OVERRIDES.clear()
-
-    if dry_run:
-        after_flags = {
-            "values": _predict_feature_values_from_overrides(predicted_overrides),
-            "overrides": dict(predicted_overrides),
-        }
-        after_killswitch = {
-            "global_enabled": predicted_killswitch["global_enabled"],
-            "global_reason": predicted_killswitch["global_reason"],
-            "domains": dict(predicted_killswitch["domains"]),
-            "updated_at": _now_iso(),
-        }
-        after_mode = predicted_mode
-        after_domain_mode = predicted_domain_mode
-        after_domain_modes = [
-            {
-                "domain": item_domain,
-                "mode": item_mode,
-                "reason": reason if item_domain == domain and playbook == "degrade_domain_autonomy" else "",
-                "source": "ops_playbook" if item_domain == domain and playbook == "degrade_domain_autonomy" else "",
-                "updated_at": _now_iso() if item_domain == domain and playbook == "degrade_domain_autonomy" else "",
-            }
-            for item_domain, item_mode in sorted(predicted_domain_modes.items(), key=lambda item: item[0])
-        ]
-    else:
-        after_flags = _feature_flags_snapshot()
-        after_killswitch = get_killswitch_status().to_payload()
-        after_mode = get_autonomy_mode(ctx.participant_identity, ctx.room)
-        after_domain_mode = get_domain_autonomy_mode(ctx.participant_identity, ctx.room, domain) if domain else None
-        after_domain_modes = list_domain_autonomy_modes(ctx.participant_identity, ctx.room)
-
-    report = {
-        "playbook": playbook,
-        "dry_run": dry_run,
-        "applied": not dry_run,
-        "changes": changes,
-        "before": {
-            "feature_flags": before_flags,
-            "kill_switch": before_killswitch,
-            "autonomy_mode": before_mode,
-            "domain_autonomy_mode": before_domain_mode,
-            "domain_autonomy_modes": list_domain_autonomy_modes(ctx.participant_identity, ctx.room),
-        },
-        "after": {
-            "feature_flags": after_flags,
-            "kill_switch": after_killswitch,
-            "autonomy_mode": after_mode,
-            "domain_autonomy_mode": after_domain_mode,
-            "domain_autonomy_modes": after_domain_modes,
-        },
-        "generated_at": _now_iso(),
-    }
-
-    snapshot = _build_ops_incident_snapshot(
-        participant_identity=ctx.participant_identity,
-        room=ctx.room,
-        include_ping=False,
-        ping_prompt="Responda apenas: ok",
-        metrics_limit=300,
-    )
-    snapshot["autonomy_mode"] = after_mode
-    snapshot["domain_autonomy_modes"] = after_domain_modes
-    snapshot["domain_autonomy_status"] = _build_domain_autonomy_audit_rows(
-        participant_identity=ctx.participant_identity,
-        room=ctx.room,
-        metrics_summary=snapshot.get("metrics_summary") if isinstance(snapshot.get("metrics_summary"), dict) else None,
-        domain_mode_rows_override=after_domain_modes,
-        autonomy_mode_override=after_mode,
-    )
-    snapshot["feature_flags"] = after_flags
-    snapshot["kill_switch"] = after_killswitch
-
-    return ActionResult(
-        success=True,
-        message=f"Playbook `{playbook}` {'simulado' if dry_run else 'aplicado'} com {len(changes)} ajuste(s).",
-        data={
-            "ops_playbook_report": report,
-            "ops_incident_snapshot": snapshot,
-            "canary_state": snapshot.get("canary_state"),
-            "autonomy_mode": after_mode,
-            "domain_autonomy_mode": after_domain_mode,
-            "feature_flags": after_flags,
-            "kill_switch": after_killswitch,
-            "providers_health": snapshot.get("providers_health"),
-            "eval_metrics_summary": snapshot.get("metrics_summary"),
-            "slo_report": snapshot.get("slo_report"),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_ops_apply_playbook_action(
+        params,
+        ctx,
+        feature_flags_snapshot=_feature_flags_snapshot,
+        get_killswitch_payload=lambda: get_killswitch_status().to_payload(),
+        get_autonomy_mode=get_autonomy_mode,
+        get_domain_autonomy_mode=get_domain_autonomy_mode,
+        list_domain_autonomy_modes=list_domain_autonomy_modes,
+        feature_value_from_env=_feature_value_from_env,
+        set_runtime_feature_override=_set_runtime_feature_override,
+        set_autonomy_mode=set_autonomy_mode,
+        set_domain_autonomy_mode=set_domain_autonomy_mode,
+        clear_domain_autonomy_mode=clear_domain_autonomy_mode,
+        set_killswitch_domain=set_killswitch_domain,
+        feature_flag_overrides=FEATURE_FLAG_OVERRIDES,
+        predict_feature_values_from_overrides=_predict_feature_values_from_overrides,
+        now_iso=_now_iso,
+        build_ops_incident_snapshot=_build_ops_incident_snapshot,
+        build_domain_autonomy_audit_rows=_build_domain_autonomy_audit_rows,
+        capability_payload=_capability_payload,
     )
 
 
 async def _ops_rollback_scenario_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    scenario = str(params.get("scenario", "")).strip().lower()
-    dry_run = bool(params.get("dry_run", False))
-    domain = str(params.get("domain", "")).strip().lower()
-    containment_strategy = str(params.get("containment_strategy", "default")).strip().lower() or "default"
-    reason = str(params.get("reason", "")).strip()
-    allowed = {"provider_outage", "latency_spike", "reliability_breach", "trust_drift_breach", "recover_to_stable"}
-    if scenario not in allowed:
-        return ActionResult(
-            success=False,
-            message=f"Cenario invalido. Opcoes: {', '.join(sorted(allowed))}.",
-            error="invalid scenario",
-        )
-
-    steps: list[JsonObject] = []
-    if scenario == "provider_outage":
-        steps = [{"playbook": "provider_degradation"}, {"playbook": "strict_guardrails"}]
-        if domain:
-            steps.append({"playbook": "block_domain", "domain": domain, "reason": reason or "provider outage containment"})
-    elif scenario == "latency_spike":
-        steps = [{"playbook": "provider_degradation"}]
-    elif scenario == "reliability_breach":
-        steps = [{"playbook": "strict_guardrails"}]
-        if domain:
-            if containment_strategy == "domain_autonomy":
-                steps.append(
-                    {
-                        "playbook": "degrade_domain_autonomy",
-                        "domain": domain,
-                        "reason": reason or "reliability containment via domain autonomy",
-                    }
-                )
-            else:
-                steps.append({"playbook": "block_domain", "domain": domain, "reason": reason or "reliability containment"})
-    elif scenario == "trust_drift_breach":
-        steps = [{"playbook": "strict_guardrails"}]
-        if domain:
-            steps.append({"playbook": "block_domain", "domain": domain, "reason": reason or "trust drift containment"})
-    elif scenario == "recover_to_stable":
-        steps = [{"playbook": "restore_runtime_overrides"}]
-        if domain:
-            steps.append({"playbook": "unblock_domain", "domain": domain})
-            steps.append({"playbook": "restore_domain_autonomy", "domain": domain})
-
-    before_flags = _feature_flags_snapshot()
-    before_killswitch = get_killswitch_status().to_payload()
-    before_mode = get_autonomy_mode(ctx.participant_identity, ctx.room)
-    before_rollout = _get_canary_rollout_percent()
-    before_canary_enabled = _is_feature_enabled("canary_v1", default=False)
-    step_reports: list[JsonObject] = []
-
-    for step in steps:
-        playbook_params: JsonObject = {"playbook": step.get("playbook"), "dry_run": dry_run}
-        if isinstance(step.get("domain"), str) and step.get("domain"):
-            playbook_params["domain"] = step.get("domain")
-        if isinstance(step.get("reason"), str) and step.get("reason"):
-            playbook_params["reason"] = step.get("reason")
-        step_result = await _ops_apply_playbook_action(playbook_params, ctx)
-        if not step_result.success:
-            return step_result
-        if isinstance(step_result.data, dict) and isinstance(step_result.data.get("ops_playbook_report"), dict):
-            step_reports.append(dict(step_result.data["ops_playbook_report"]))
-
-    mode_change: JsonObject | None = None
-    if scenario == "recover_to_stable":
-        if dry_run:
-            mode_change = {
-                "type": "autonomy_mode",
-                "target": f"{ctx.participant_identity}:{ctx.room}",
-                "from": before_mode,
-                "to": "aggressive",
-                "note": "Dry-run: retornaria autonomia para agressivo apos recuperacao.",
-            }
-        else:
-            after_set = set_autonomy_mode(ctx.participant_identity, ctx.room, "aggressive")
-            mode_change = {
-                "type": "autonomy_mode",
-                "target": f"{ctx.participant_identity}:{ctx.room}",
-                "from": before_mode,
-                "to": after_set,
-                "note": "Retorno para perfil padrao apos rollback.",
-            }
-    if mode_change is not None:
-        step_reports.append({"playbook": "autonomy_mode_adjustment", "changes": [mode_change], "dry_run": dry_run})
-
-    canary_changes: list[JsonObject] = []
-    if scenario in {"provider_outage", "latency_spike", "reliability_breach", "trust_drift_breach"}:
-        canary_changes.append(
-            {
-                "type": "feature_flag_override",
-                "target": "canary_v1",
-                "from": before_canary_enabled,
-                "to": False,
-                "note": "Congela canario durante rollback de incidente.",
-            }
-        )
-        canary_changes.append(
-            {
-                "type": "canary_rollout",
-                "target": "rollout_percent",
-                "from": before_rollout,
-                "to": 0,
-                "note": "Zera rollout para evitar expandir regressao.",
-            }
-        )
-        if not dry_run:
-            _set_runtime_feature_override("canary_v1", False)
-            _set_canary_rollout_percent(0)
-    elif scenario == "recover_to_stable":
-        canary_changes.append(
-            {
-                "type": "feature_flag_override",
-                "target": "canary_v1",
-                "from": before_canary_enabled,
-                "to": None,
-                "note": "Remove override manual de canario e volta para o default configurado.",
-            }
-        )
-        canary_changes.append(
-            {
-                "type": "canary_rollout",
-                "target": "rollout_percent",
-                "from": before_rollout,
-                "to": 10,
-                "note": "Retoma rollout em 10% apos recuperacao.",
-            }
-        )
-        if not dry_run:
-            FEATURE_FLAG_OVERRIDES.pop("canary_v1", None)
-            _set_canary_rollout_percent(10)
-    if canary_changes:
-        step_reports.append({"playbook": "canary_control", "changes": canary_changes, "dry_run": dry_run})
-
-    after_flags = _feature_flags_snapshot()
-    after_killswitch = get_killswitch_status().to_payload()
-    after_mode = get_autonomy_mode(ctx.participant_identity, ctx.room)
-    after_domain_modes = list_domain_autonomy_modes(ctx.participant_identity, ctx.room)
-    if dry_run:
-        mode_rank = {"aggressive": 0, "safe": 1, "manual": 2}
-        for step_report in step_reports:
-            after_payload = step_report.get("after") if isinstance(step_report, dict) else None
-            if not isinstance(after_payload, dict):
-                continue
-            if isinstance(after_payload.get("autonomy_mode"), str) and after_payload.get("autonomy_mode"):
-                candidate_mode = str(after_payload.get("autonomy_mode"))
-                if mode_rank.get(candidate_mode, 0) >= mode_rank.get(after_mode, 0):
-                    after_mode = candidate_mode
-            if isinstance(after_payload.get("domain_autonomy_modes"), list):
-                after_domain_modes = [
-                    item
-                    for item in after_payload.get("domain_autonomy_modes", [])
-                    if isinstance(item, dict)
-                ]
-
-    scenario_report: JsonObject = {
-        "playbook": f"rollback_scenario:{scenario}",
-        "dry_run": dry_run,
-        "applied": not dry_run,
-        "steps_executed": [str(step.get("playbook") or "") for step in steps],
-        "step_reports": step_reports,
-        "before": {
-            "feature_flags": before_flags,
-            "kill_switch": before_killswitch,
-            "autonomy_mode": before_mode,
-        },
-        "after": {
-            "feature_flags": after_flags,
-            "kill_switch": after_killswitch,
-            "autonomy_mode": after_mode,
-            "domain_autonomy_modes": after_domain_modes,
-        },
-        "notes": (
-            ["Dry-run em multiplos passos e nao transacional; revisar `step_reports` antes de aplicar."]
-            if dry_run and len(steps) > 1
-            else []
-        ),
-        "generated_at": _now_iso(),
-    }
-
-    snapshot = _build_ops_incident_snapshot(
-        participant_identity=ctx.participant_identity,
-        room=ctx.room,
-        include_ping=False,
-        ping_prompt="Responda apenas: ok",
-        metrics_limit=300,
-    )
-    snapshot["autonomy_mode"] = after_mode
-    snapshot["domain_autonomy_modes"] = after_domain_modes
-    snapshot["domain_autonomy_status"] = _build_domain_autonomy_audit_rows(
-        participant_identity=ctx.participant_identity,
-        room=ctx.room,
-        metrics_summary=snapshot.get("metrics_summary") if isinstance(snapshot.get("metrics_summary"), dict) else None,
-        domain_mode_rows_override=after_domain_modes,
-        autonomy_mode_override=after_mode,
-    )
-
-    return ActionResult(
-        success=True,
-        message=f"Rollback de cenario `{scenario}` {'simulado' if dry_run else 'aplicado'} com {len(steps)} passo(s).",
-        data={
-            "ops_playbook_report": scenario_report,
-            "ops_incident_snapshot": snapshot,
-            "canary_state": snapshot.get("canary_state"),
-            "feature_flags": snapshot.get("feature_flags"),
-            "kill_switch": snapshot.get("kill_switch"),
-            "autonomy_mode": snapshot.get("autonomy_mode"),
-            "domain_autonomy_modes": snapshot.get("domain_autonomy_modes"),
-            "providers_health": snapshot.get("providers_health"),
-            "eval_metrics_summary": snapshot.get("metrics_summary"),
-            "slo_report": snapshot.get("slo_report"),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_ops_rollback_scenario_action(
+        params,
+        ctx,
+        feature_flags_snapshot=_feature_flags_snapshot,
+        get_killswitch_payload=lambda: get_killswitch_status().to_payload(),
+        get_autonomy_mode=get_autonomy_mode,
+        set_autonomy_mode=set_autonomy_mode,
+        get_canary_rollout_percent=_get_canary_rollout_percent,
+        is_feature_enabled=_is_feature_enabled,
+        set_runtime_feature_override=_set_runtime_feature_override,
+        set_canary_rollout_percent=_set_canary_rollout_percent,
+        feature_flag_overrides=FEATURE_FLAG_OVERRIDES,
+        list_domain_autonomy_modes=list_domain_autonomy_modes,
+        ops_apply_playbook_action=_ops_apply_playbook_action,
+        now_iso=_now_iso,
+        build_ops_incident_snapshot=_build_ops_incident_snapshot,
+        build_domain_autonomy_audit_rows=_build_domain_autonomy_audit_rows,
+        capability_payload=_capability_payload,
     )
 
 
 async def _code_worker_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    response, worker_error = _code_worker_request("/health")
-    if worker_error is not None:
-        return ActionResult(
-            success=False,
-            message=worker_error.message,
-            data={
-                "worker_status": {"success": False, "message": worker_error.message},
-                **_active_project_payload(ctx.participant_identity, ctx.room),
-            },
-            error=worker_error.error,
-        )
-    return ActionResult(
-        success=True,
-        message="Code worker online.",
-        data={
-            "worker_status": {"success": True, "message": str(response.get("message", "Code worker online."))},
-            "worker_info": response.get("data"),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_code_worker_status_action(
+        params,
+        ctx,
+        code_worker_request=_code_worker_request,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _code_read_file_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    path = str(params.get("path", "")).strip()
-    if not path:
-        return ActionResult(success=False, message="Informe o arquivo que devo ler.", error="missing path")
-    record, error = _resolve_project_record(params, ctx)
-    if error is not None:
-        return error
-    assert record is not None
-    worker_payload: JsonObject = {
-        "project_id": record.project_id,
-        "path": path,
-    }
-    if isinstance(params.get("start_line"), int):
-        worker_payload["start_line"] = params.get("start_line")
-    if isinstance(params.get("end_line"), int):
-        worker_payload["end_line"] = params.get("end_line")
-    response, worker_error = _code_worker_request("/read-file", worker_payload)
-    if worker_error is not None:
-        return worker_error
-    return ActionResult(
-        success=True,
-        message=f"Arquivo lido em {record.name}.",
-        data={
-            "project": _project_record_to_payload(record),
-            "file": response.get("data"),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_code_read_file_action(
+        params,
+        ctx,
+        resolve_project_record=_resolve_project_record,
+        code_worker_request=_code_worker_request,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _code_search_in_active_project_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    query = str(params.get("query", "")).strip()
-    if not query:
-        return ActionResult(success=False, message="Informe a busca de codigo.", error="missing query")
-    limit = int(params.get("limit", 5))
-    record, error = _resolve_project_record(params, ctx)
-    if error is not None:
-        return error
-    assert record is not None
-    indexed = _get_code_index().search(query, limit=limit, project_id=record.project_id)
-    worker_response, worker_error = _code_worker_request(
-        "/search-files",
-        {"project_id": record.project_id, "query": query, "limit": limit},
-    )
-    file_hits = [] if worker_error is not None else list((worker_response or {}).get("data", {}).get("results", []))
-    return ActionResult(
-        success=True,
-        message=f"Busca de codigo concluida em {record.name}.",
-        data={
-            "project": _project_record_to_payload(record),
-            "query": query,
-            "results": indexed,
-            "file_hits": file_hits,
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_code_search_in_active_project_action(
+        params,
+        ctx,
+        resolve_project_record=_resolve_project_record,
+        get_code_index=_get_code_index,
+        code_worker_request=_code_worker_request,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _code_git_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    record, error = _resolve_project_record(params, ctx)
-    if error is not None:
-        return error
-    assert record is not None
-    response, worker_error = _code_worker_request("/git-status", {"project_id": record.project_id})
-    if worker_error is not None:
-        return worker_error
-    return ActionResult(
-        success=True,
-        message=f"Git status coletado para {record.name}.",
-        data={
-            "project": _project_record_to_payload(record),
-            "git_status": response.get("data"),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_code_git_status_action(
+        params,
+        ctx,
+        resolve_project_record=_resolve_project_record,
+        code_worker_request=_code_worker_request,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _code_git_diff_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    record, error = _resolve_project_record(params, ctx)
-    if error is not None:
-        return error
-    assert record is not None
-    paths = params.get("paths", [])
-    worker_payload: JsonObject = {"project_id": record.project_id}
-    if isinstance(paths, list):
-        worker_payload["paths"] = [item for item in paths if isinstance(item, str) and item.strip()]
-    response, worker_error = _code_worker_request("/git-diff", worker_payload)
-    if worker_error is not None:
-        return worker_error
-    diff_data = response.get("data") if isinstance(response.get("data"), dict) else {}
-    diff_text = str(diff_data.get("stdout", "") or diff_data.get("stderr", "")).strip()
-    diff_summary = summarize_diff(project=_project_record_to_payload(record), diff_text=diff_text) if diff_text else None
-    return ActionResult(
-        success=True,
-        message=f"Git diff coletado para {record.name}.",
-        data={
-            "project": _project_record_to_payload(record),
-            "git_diff": diff_data,
-            "git_diff_summary": diff_summary,
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_code_git_diff_action(
+        params,
+        ctx,
+        resolve_project_record=_resolve_project_record,
+        code_worker_request=_code_worker_request,
+        project_record_to_payload=_project_record_to_payload,
+        summarize_diff=summarize_diff,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _code_explain_project_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    request_text = str(params.get("request", "")).strip() or str(params.get("query", "")).strip()
-    if not request_text:
-        return ActionResult(success=False, message="Descreva o que devo analisar no projeto.", error="missing request")
-    limit = int(params.get("limit", 4))
-    record, error = _resolve_project_record(params, ctx)
-    if error is not None:
-        return error
-    assert record is not None
-
-    snippets = _get_code_index().search(request_text, limit=limit, project_id=record.project_id)
-    extra_files: list[JsonObject] = []
-    read_paths = params.get("read_paths", [])
-    if isinstance(read_paths, list):
-        for item in read_paths[:2]:
-            if not isinstance(item, str) or not item.strip():
-                continue
-            response, worker_error = _code_worker_request(
-                "/read-file",
-                {"project_id": record.project_id, "path": item},
-            )
-            if worker_error is None and isinstance(response.get("data"), dict):
-                file_payload = response.get("data") or {}
-                extra_files.append(
-                    {
-                        "path": file_payload.get("relative_path") or file_payload.get("path"),
-                        "content": file_payload.get("content", ""),
-                    }
-                )
-
-    explanation = explain_project_state(
-        user_request=request_text,
-        project=_project_record_to_payload(record),
-        snippets=snippets,
-        extra_files=extra_files,
-    )
-    return ActionResult(
-        success=True,
-        message=f"Analise preparada para {record.name}.",
-        data={
-            "project": _project_record_to_payload(record),
-            "project_analysis": explanation,
-            "context_results": snippets,
-            "context_files": extra_files,
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_code_explain_project_action(
+        params,
+        ctx,
+        resolve_project_record=_resolve_project_record,
+        get_code_index=_get_code_index,
+        code_worker_request=_code_worker_request,
+        project_record_to_payload=_project_record_to_payload,
+        explain_project_state=explain_project_state,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _code_propose_change_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    request_text = str(params.get("request", "")).strip() or str(params.get("query", "")).strip()
-    if not request_text:
-        return ActionResult(success=False, message="Descreva a mudanca ou pergunta de engenharia.", error="missing request")
-    limit = int(params.get("limit", 4))
-    record, error = _resolve_project_record(params, ctx)
-    if error is not None:
-        return error
-    assert record is not None
-
-    snippets = _get_code_index().search(request_text, limit=limit, project_id=record.project_id)
-    extra_files: list[JsonObject] = []
-    read_paths = params.get("read_paths", [])
-    if isinstance(read_paths, list):
-        for item in read_paths[:2]:
-            if not isinstance(item, str) or not item.strip():
-                continue
-            response, worker_error = _code_worker_request(
-                "/read-file",
-                {"project_id": record.project_id, "path": item},
-            )
-            if worker_error is None and isinstance(response.get("data"), dict):
-                file_payload = response.get("data") or {}
-                extra_files.append(
-                    {
-                        "path": file_payload.get("relative_path") or file_payload.get("path"),
-                        "content": file_payload.get("content", ""),
-                    }
-                )
-
-    proposal = propose_patch_plan(
-        user_request=request_text,
-        project=_project_record_to_payload(record),
-        snippets=snippets,
-        extra_files=extra_files,
-    )
-    return ActionResult(
-        success=True,
-        message=f"Proposta de mudanca preparada para {record.name}.",
-        data={
-            "project": _project_record_to_payload(record),
-            "proposed_code_change": proposal,
-            "context_results": snippets,
-            "context_files": extra_files,
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-            **_capability_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_code_propose_change_action(
+        params,
+        ctx,
+        resolve_project_record=_resolve_project_record,
+        get_code_index=_get_code_index,
+        code_worker_request=_code_worker_request,
+        project_record_to_payload=_project_record_to_payload,
+        propose_patch_plan=propose_patch_plan,
+        active_project_payload=_active_project_payload,
+        capability_payload=_capability_payload,
     )
 
 
 async def _code_apply_patch_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    changes = params.get("changes", [])
-    if not isinstance(changes, list) or not changes:
-        return ActionResult(success=False, message="Envie ao menos uma mudanca para aplicar.", error="missing changes")
-    record, error = _resolve_project_record(params, ctx)
-    if error is not None:
-        return error
-    assert record is not None
-    response, worker_error = _code_worker_request(
-        "/apply-patch",
-        {"project_id": record.project_id, "changes": changes},
-    )
-    if worker_error is not None:
-        return worker_error
-    return ActionResult(
-        success=True,
-        message=f"Patch aplicado em {record.name}.",
-        data={
-            "project": _project_record_to_payload(record),
-            "patch_result": response.get("data"),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_code_apply_patch_action(
+        params,
+        ctx,
+        resolve_project_record=_resolve_project_record,
+        code_worker_request=_code_worker_request,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _code_run_command_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    command = str(params.get("command", "")).strip()
-    arguments = params.get("arguments", [])
-    if not command:
-        return ActionResult(success=False, message="Informe o comando para validacao.", error="missing command")
-    if not isinstance(arguments, list) or any(not isinstance(item, str) for item in arguments):
-        return ActionResult(success=False, message="`arguments` precisa ser uma lista de textos.", error="invalid arguments")
-    record, error = _resolve_project_record(params, ctx)
-    if error is not None:
-        return error
-    assert record is not None
-    response, worker_error = _code_worker_request(
-        "/run-command",
-        {
-            "project_id": record.project_id,
-            "command": command,
-            "arguments": arguments,
-            "timeout_seconds": int(params.get("timeout_seconds", 60) or 60),
-        },
-    )
-    if worker_error is not None:
-        return worker_error
-    return ActionResult(
-        success=True,
-        message=f"Comando executado em {record.name}.",
-        data={
-            "project": _project_record_to_payload(record),
-            "command_execution": response.get("data"),
-            **_active_project_payload(ctx.participant_identity, ctx.room),
-        },
+    return await domain_code_run_command_action(
+        params,
+        ctx,
+        resolve_project_record=_resolve_project_record,
+        code_worker_request=_code_worker_request,
+        project_record_to_payload=_project_record_to_payload,
+        active_project_payload=_active_project_payload,
     )
 
 
 async def _rpg_get_knowledge_stats(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    index = _get_rpg_index()
-    return ActionResult(success=True, message="Estatisticas da base RPG.", data={"knowledge_stats": index.stats()})
+    return await domain_rpg_get_knowledge_stats(
+        params,
+        ctx,
+        get_rpg_index=_get_rpg_index,
+    )
 
 
 async def _rpg_save_lore_note(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    title = str(params.get("title", "")).strip()
-    content = str(params.get("content", "")).strip()
-    world = str(params.get("world", "geral")).strip() or "geral"
-    if not content:
-        return ActionResult(success=False, message="Conteudo vazio para nota de lore.", error="missing content")
-
-    index = _get_rpg_index()
-    try:
-        saved = index.save_note(title=title or "nota_rpg", content=content, world=world, notes_dir=_rpg_notes_dir())
-    except ValueError as error:
-        return ActionResult(success=False, message="Nao consegui salvar a nota RPG.", error=str(error))
-
-    reindex_summary = index.ingest_paths([Path(saved["file_path"])])
-    return ActionResult(
-        success=True,
-        message=f"Nota de lore salva em {saved['world']} e indexada.",
-        data={"saved_note": saved, "ingest_summary": reindex_summary, "knowledge_stats": index.stats()},
+    return await domain_rpg_save_lore_note(
+        params,
+        ctx,
+        get_rpg_index=_get_rpg_index,
+        rpg_notes_dir=_rpg_notes_dir,
     )
 
 
 async def _rpg_create_character_sheet(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    name = str(params.get("name", "")).strip()
-    if not name:
-        return ActionResult(success=False, message="Informe o nome do personagem.", error="missing name")
-
-    world = str(params.get("world", "tormenta20")).strip() or "tormenta20"
-    class_name = (
-        str(params.get("class_name", "")).strip()
-        or str(params.get("class", "")).strip()
-        or str(params.get("character_class", "")).strip()
-        or "A definir"
-    )
-    safe_world = _safe_file_part(world)
-    safe_name = _safe_file_part(name)
-    target_dir = _rpg_characters_dir() / safe_world
-    target_dir.mkdir(parents=True, exist_ok=True)
-    md_path = target_dir / f"{safe_name}.md"
-    json_path = target_dir / f"{safe_name}.json"
-    pdf_dir = _rpg_character_pdfs_dir() / safe_world
-    pdf_dir.mkdir(parents=True, exist_ok=True)
-    pdf_path = pdf_dir / f"{safe_name}.pdf"
-
-    try:
-        generation = generate_character_sheet(params)
-    except InvalidCharacterBuildError as error:
-        return ActionResult(success=False, message=str(error), error=str(error))
-
-    sheet_data = generation.normalized_sheet
-    sheet_md = generation.markdown
-    builder_source = generation.source
-    md_path.write_text(sheet_md, encoding="utf-8")
-    json_path.write_text(
-        json.dumps(sheet_data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    pdf_exported = False
-    pdf_error: str | None = None
-    if _rpg_pdf_export_enabled():
-        pdf_exported, pdf_error = _export_tormenta20_sheet_pdf(sheet_data, pdf_path)
-    template_paths = [
-        item.strip()
-        for item in os.getenv("RPG_CHARACTER_TEMPLATE_PDFS", "").split(";")
-        if item.strip()
-    ]
-    existing_templates = [path for path in template_paths if Path(path).exists()]
-    one_note_sync_status = "skipped"
-    one_note_sync_error: str | None = None
-    active_character = get_active_character(ctx.participant_identity, ctx.room)
-    target_page_id: str | None = None
-    if active_character and active_character.page_id and active_character.name.casefold() == name.casefold():
-        target_page_id = active_character.page_id
-    else:
-        match = _find_onenote_character_page(name)
-        if match and isinstance(match, dict):
-            page = match.get("page")
-            if isinstance(page, dict):
-                target_page_id = str(page.get("id", "")).strip() or None
-    if target_page_id:
-        skill_summary = sheet_data.get("recommended_skills")
-        if not isinstance(skill_summary, list) or not skill_summary:
-            skill_summary = []
-        artifact_summary = (
-            f"Arquivos locais: JSON {json_path.resolve()} | MD {md_path.resolve()} | "
-            f"PDF {pdf_path.resolve() if pdf_exported else 'indisponivel'}."
-        )
-        append_text = (
-            f"Ficha Tormenta20 atualizada. Classe: {class_name}. Nivel: {sheet_data.get('level', 1)}. "
-            f"Builder: {builder_source}. Status: {generation.status}. "
-            f"PV {sheet_data['derived']['pv']}, PM {sheet_data['derived']['pm']}, Defesa {sheet_data['derived']['defense']}. "
-            f"Pericias recomendadas: {', '.join(str(item) for item in skill_summary[:6])}. "
-            f"{artifact_summary}"
-        )
-        append_result = await _onenote_append_to_page({"page_id": target_page_id, "content": append_text}, ctx)
-        if append_result.success:
-            one_note_sync_status = "appended"
-        else:
-            one_note_sync_status = "failed"
-            one_note_sync_error = append_result.message
-    if active_character and active_character.name.casefold() == name.casefold():
-        active_character.sheet_json_path = str(json_path.resolve())
-        active_character.sheet_markdown_path = str(md_path.resolve())
-        active_character.sheet_pdf_path = str(pdf_path.resolve()) if pdf_exported else None
-        set_active_character(ctx.participant_identity, ctx.room, active_character)
-
-    pdf_status = "created" if pdf_exported else ("skipped" if not _rpg_pdf_export_enabled() else "failed")
-    logger.info(
-        "rpg_sheet_pipeline %s",
-        json.dumps(
-            {
-                "character_name": name,
-                "world": world,
-                "builder_source": builder_source,
-                "generation_status": generation.status,
-                "pdf_status": pdf_status,
-                "pdf_error": pdf_error,
-                "one_note_sync_status": one_note_sync_status,
-            },
-            ensure_ascii=False,
-        ),
-    )
-
-    return ActionResult(
-        success=True,
-        message=f"Ficha Tormenta20 base de {name} criada.",
-        data={
-            "character_name": name,
-            "sheet_markdown_path": str(md_path.resolve()),
-            "sheet_json_path": str(json_path.resolve()),
-            "sheet_pdf_path": str(pdf_path.resolve()) if pdf_exported else None,
-            "sheet_pdf_status": pdf_status,
-            "sheet_pdf_error": pdf_error,
-            "sheet_pdf_template_path": str(_tormenta20_pdf_template_path().resolve()) if _rpg_pdf_export_enabled() else None,
-            "sheet_data": sheet_data,
-            "sheet_builder_source": builder_source,
-            "sheet_builder_error": "; ".join(generation.errors) if generation.errors else None,
-            "sheet_generation_status": generation.status,
-            "sheet_generation_warnings": generation.warnings,
-            "sheet_applied_choices": generation.applied_choices,
-            "sheet_unsupported_fields": generation.unsupported_fields,
-            "template_references": existing_templates,
-            "one_note_character_page_sync": one_note_sync_status,
-            "one_note_character_page_error": one_note_sync_error,
-        },
+    return await domain_rpg_create_character_sheet(
+        params,
+        ctx,
+        safe_file_part=_safe_file_part,
+        rpg_characters_dir=_rpg_characters_dir,
+        rpg_character_pdfs_dir=_rpg_character_pdfs_dir,
+        generate_character_sheet=generate_character_sheet,
+        invalid_character_build_error_cls=InvalidCharacterBuildError,
+        rpg_pdf_export_enabled=_rpg_pdf_export_enabled,
+        export_tormenta20_sheet_pdf=_export_tormenta20_sheet_pdf,
+        get_active_character=get_active_character,
+        find_onenote_character_page=_find_onenote_character_page,
+        onenote_append_to_page=_onenote_append_to_page,
+        set_active_character=set_active_character,
+        tormenta20_pdf_template_path=_tormenta20_pdf_template_path,
+        log_info=logger.info,
     )
 
 
 async def _rpg_create_threat_sheet(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    name = str(params.get("name", "")).strip()
-    if not name:
-        return ActionResult(success=False, message="Informe o nome da ameaça.", error="missing name")
-
-    try:
-        generation = generate_threat_sheet(params)
-    except InvalidThreatDefinitionError as error:
-        return ActionResult(success=False, message=str(error), error=str(error))
-
-    threat_data = generation.normalized_threat
-    world = str(threat_data.get("world", "tormenta20")).strip() or "tormenta20"
-    safe_world = _safe_file_part(world)
-    safe_name = _safe_file_part(name)
-    target_dir = _rpg_threats_dir() / safe_world
-    target_dir.mkdir(parents=True, exist_ok=True)
-    md_path = target_dir / f"{safe_name}.md"
-    json_path = target_dir / f"{safe_name}.json"
-    pdf_dir = _rpg_threat_pdfs_dir() / safe_world
-    pdf_dir.mkdir(parents=True, exist_ok=True)
-    pdf_path = pdf_dir / f"{safe_name}.pdf"
-
-    md_path.write_text(generation.markdown, encoding="utf-8")
-    json_path.write_text(json.dumps(threat_data, ensure_ascii=False, indent=2), encoding="utf-8")
-    pdf_exported, pdf_error = _export_tormenta20_threat_pdf(threat_data, pdf_path)
-    pdf_status = "created" if pdf_exported else "failed"
-
-    logger.info(
-        "rpg_threat_pipeline %s",
-        json.dumps(
-            {
-                "threat_name": name,
-                "world": world,
-                "challenge_level": threat_data.get("challenge_level"),
-                "role": threat_data.get("role"),
-                "builder_source": threat_data.get("builder"),
-                "generation_status": generation.status,
-                "pdf_status": pdf_status,
-                "pdf_error": pdf_error,
-            },
-            ensure_ascii=False,
-        ),
-    )
-
-    return ActionResult(
-        success=True,
-        message=f"Ameaça Tormenta20 base de {name} criada.",
-        data={
-            "threat_name": name,
-            "threat_markdown_path": str(md_path.resolve()),
-            "threat_json_path": str(json_path.resolve()),
-            "threat_pdf_path": str(pdf_path.resolve()) if pdf_exported else None,
-            "threat_pdf_status": pdf_status,
-            "threat_pdf_error": pdf_error,
-            "threat_data": threat_data,
-            "threat_builder_source": str(threat_data.get("builder", "jarvez-threat-generator")),
-            "threat_generation_status": generation.status,
-            "threat_generation_warnings": generation.warnings,
-        },
+    return await domain_rpg_create_threat_sheet(
+        params,
+        ctx,
+        generate_threat_sheet=generate_threat_sheet,
+        invalid_threat_definition_error_cls=InvalidThreatDefinitionError,
+        safe_file_part=_safe_file_part,
+        rpg_threats_dir=_rpg_threats_dir,
+        rpg_threat_pdfs_dir=_rpg_threat_pdfs_dir,
+        export_tormenta20_threat_pdf=_export_tormenta20_threat_pdf,
+        log_info=logger.info,
     )
 
 async def _rpg_session_recording(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    mode = str(params.get("mode", "status")).strip().lower()
-    world = str(params.get("world", "geral")).strip() or "geral"
-    title = str(params.get("title", "")).strip() or f"sessao_{datetime.now().strftime('%Y%m%d_%H%M')}"
-    key = _recording_key(ctx.participant_identity, ctx.room)
-    current = RPG_ACTIVE_RECORDINGS.get(key)
-
-    if mode == "status":
-        if current and current.active:
-            return ActionResult(
-                success=True,
-                message="Gravacao de sessao ativa.",
-                data={
-                    "recording_active": True,
-                    "title": current.title,
-                    "world": current.world,
-                    "started_at": current.started_at.isoformat(),
-                },
-            )
-        return ActionResult(success=True, message="Nenhuma gravacao ativa.", data={"recording_active": False})
-
-    if mode == "start":
-        history_items = getattr(getattr(ctx.session, "history", None), "items", None)
-        start_index = len(history_items) if isinstance(history_items, list) else 0
-        RPG_ACTIVE_RECORDINGS[key] = RPGSessionRecordingState(
-            participant_identity=ctx.participant_identity,
-            room=ctx.room,
-            title=title,
-            world=world,
-            started_at=datetime.now(timezone.utc),
-            start_history_index=start_index,
-            active=True,
-        )
-        return ActionResult(
-            success=True,
-            message=f"Gravacao da sessao '{title}' iniciada.",
-            data={"recording_active": True, "title": title, "world": world},
-        )
-
-    if mode == "stop":
-        if not current or not current.active:
-            return ActionResult(success=False, message="Nao ha gravacao ativa para parar.", error="no active recording")
-        messages = _extract_history_since(ctx.session, current.start_history_index)
-        safe_world = _safe_file_part(current.world)
-        safe_title = _safe_file_part(current.title)
-        out_dir = _rpg_session_logs_dir() / safe_world
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_file = out_dir / f"{safe_title}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-        out_file.write_text(_build_session_markdown(state=current, messages=messages), encoding="utf-8")
-
-        current.output_file = str(out_file.resolve())
-        current.active = False
-        RPG_ACTIVE_RECORDINGS.pop(key, None)
-        RPG_LAST_SESSION_FILES[key] = str(out_file.resolve())
-        active_character = get_active_character(ctx.participant_identity, ctx.room)
-        one_note_sync_status = "skipped"
-        one_note_sync_error: str | None = None
-        if active_character and active_character.page_id:
-            session_notes = _infer_character_session_notes(messages)
-            first_user_lines = [
-                item.get("content", "").strip()
-                for item in messages
-                if item.get("role") == "user" and str(item.get("content", "")).strip()
-            ]
-            excerpt = " ".join(first_user_lines[:2]).strip()
-            if len(excerpt) > 240:
-                excerpt = excerpt[:240].rstrip() + "..."
-            sync_line = (
-                f"[{datetime.now().strftime('%d/%m/%Y %H:%M')}] Sessao '{current.title}' encerrada. "
-                f"Mundo: {current.world}. Falas registradas: {len(messages)}. "
-                f"Arquivo local: {out_file.resolve()}."
-            )
-            if excerpt:
-                sync_line += f" Abertura da sessao: {excerpt}"
-            inferred_chunks: list[str] = []
-            summary = str(session_notes.get("summary", "")).strip()
-            if summary:
-                inferred_chunks.append(f"Resumo: {summary}")
-            objectives = session_notes.get("objectives", [])
-            if isinstance(objectives, list) and objectives:
-                inferred_chunks.append(f"Objetivos observados: {' | '.join(str(item) for item in objectives)}")
-            relations = session_notes.get("relations", [])
-            if isinstance(relations, list) and relations:
-                inferred_chunks.append(f"Relacoes observadas: {' | '.join(str(item) for item in relations)}")
-            secrets = session_notes.get("secrets", [])
-            if isinstance(secrets, list) and secrets:
-                inferred_chunks.append(f"Segredos citados: {' | '.join(str(item) for item in secrets)}")
-            if inferred_chunks:
-                sync_line += " " + " ".join(inferred_chunks)
-            sync_line += " Revise a ficha do personagem se houve mudanca mecanica nesta sessao."
-            append_result = await _onenote_append_to_page(
-                {"page_id": active_character.page_id, "content": sync_line},
-                ctx,
-            )
-            if append_result.success:
-                one_note_sync_status = "appended"
-            else:
-                one_note_sync_status = "failed"
-                one_note_sync_error = append_result.message
-
-        return ActionResult(
-            success=True,
-            message=f"Gravacao encerrada e salva em {out_file.name}.",
-            data={
-                "recording_active": False,
-                "session_file": str(out_file.resolve()),
-                "messages_recorded": len(messages),
-                "active_character_name": active_character.name if active_character else None,
-                "one_note_character_page_sync": one_note_sync_status,
-                "one_note_character_page_error": one_note_sync_error,
-            },
-        )
-
-    return ActionResult(success=False, message="Modo invalido. Use start, stop ou status.", error="invalid mode")
+    return await domain_rpg_session_recording(
+        params,
+        ctx,
+        recording_key=_recording_key,
+        rpg_active_recordings=RPG_ACTIVE_RECORDINGS,
+        rpg_last_session_files=RPG_LAST_SESSION_FILES,
+        recording_state_cls=RPGSessionRecordingState,
+        extract_history_since=_extract_history_since,
+        safe_file_part=_safe_file_part,
+        rpg_session_logs_dir=_rpg_session_logs_dir,
+        build_session_markdown=_build_session_markdown,
+        get_active_character=get_active_character,
+        infer_character_session_notes=_infer_character_session_notes,
+        onenote_append_to_page=_onenote_append_to_page,
+    )
 
 
 async def _rpg_write_session_summary(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    key = _recording_key(ctx.participant_identity, ctx.room)
-    session_file = str(params.get("session_file", "")).strip() or RPG_LAST_SESSION_FILES.get(key, "")
-    if not session_file:
-        return ActionResult(success=False, message="Nao encontrei sessao para resumir.", error="missing session file")
-    path = Path(session_file)
-    if not path.exists():
-        return ActionResult(success=False, message="Arquivo de sessao nao encontrado.", error="file not found")
-
-    content = path.read_text(encoding="utf-8", errors="ignore")
-    messages: list[dict[str, str]] = []
-    for line in content.splitlines():
-        text = line.strip()
-        if text.startswith("**Jogador:**"):
-            messages.append({"role": "user", "content": text.replace("**Jogador:**", "", 1).strip()})
-        elif text.startswith("**Jarvez:**"):
-            messages.append({"role": "assistant", "content": text.replace("**Jarvez:**", "", 1).strip()})
-
-    summary_md = _build_session_summary(path.stem, messages)
-    summary_file = path.with_name(path.stem + "_resumo.md")
-    summary_file.write_text(summary_md, encoding="utf-8")
-    return ActionResult(
-        success=True,
-        message="Resumo da sessao criado com sucesso.",
-        data={"summary_file": str(summary_file.resolve()), "session_file": str(path.resolve())},
+    return await domain_rpg_write_session_summary(
+        params,
+        ctx,
+        recording_key=_recording_key,
+        rpg_last_session_files=RPG_LAST_SESSION_FILES,
+        build_session_summary=_build_session_summary,
     )
 
 
 async def _rpg_ideate_next_session(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    key = _recording_key(ctx.participant_identity, ctx.room)
-    session_file = str(params.get("session_file", "")).strip() or RPG_LAST_SESSION_FILES.get(key, "")
-    if not session_file:
-        return ActionResult(success=False, message="Nao encontrei sessao anterior para gerar ideias.", error="missing session file")
-    path = Path(session_file)
-    if not path.exists():
-        return ActionResult(success=False, message="Arquivo de sessao nao encontrado.", error="file not found")
-
-    raw = path.read_text(encoding="utf-8", errors="ignore")
-    seed = raw.lower()
-    ideas = [
-        "Abrir com consequencia direta da ultima decisao do grupo.",
-        "Introduzir um NPC com motivacao ambigua e informacao incompleta.",
-        "Criar um conflito com limite de tempo para aumentar tensao.",
-        "Conectar um gancho pessoal de um personagem ao arco principal.",
-    ]
-    if "morreu" in seed or "morte" in seed:
-        ideas.append("Explorar impacto da perda com chance de vinganca, luto ou legado.")
-    if "drag" in seed or "dragao" in seed:
-        ideas.append("Escalar para uma ameaca ancestral com pistas progressivas.")
-
-    ideas_dir = _rpg_notes_dir() / "next_session_ideas"
-    ideas_dir.mkdir(parents=True, exist_ok=True)
-    ideas_file = ideas_dir / f"ideias_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-    ideas_file.write_text("# Ideias para Proxima Sessao\n\n" + "\n".join(f"- {idea}" for idea in ideas) + "\n", encoding="utf-8")
-    return ActionResult(
-        success=True,
-        message="Ideias da proxima sessao geradas.",
-        data={"ideas": ideas, "ideas_file": str(ideas_file.resolve()), "session_file": str(path.resolve())},
+    return await domain_rpg_ideate_next_session(
+        params,
+        ctx,
+        recording_key=_recording_key,
+        rpg_last_session_files=RPG_LAST_SESSION_FILES,
+        rpg_notes_dir=_rpg_notes_dir,
     )
 
 
@@ -13997,7 +10905,7 @@ def register_default_actions() -> None:
     register_action(
         ActionSpec(
             name="ac_prepare_arrival",
-            description="Lê a temperatura atual do ambiente e decide se deve resfriar, só ventilar ou não mexer no ar quando voce estiver chegando em casa.",
+            description="LÃª a temperatura atual do ambiente e decide se deve resfriar, sÃ³ ventilar ou nÃ£o mexer no ar quando voce estiver chegando em casa.",
             params_schema={
                 "type": "object",
                 "properties": {
@@ -14417,6 +11325,44 @@ def register_default_actions() -> None:
             params_schema={"type": "object", "properties": {}, "additionalProperties": False},
             requires_confirmation=True,
             handler=_workflow_cancel,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="workflow_approve",
+            description="Decide o gate de aprovacao pendente do workflow.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "workflow_id": {"type": "string", "minLength": 3, "maxLength": 128},
+                    "gate_id": {"type": "string", "minLength": 3, "maxLength": 128},
+                    "approved": {"type": "boolean"},
+                    "note": {"type": "string", "minLength": 1, "maxLength": 1000},
+                },
+                "required": ["approved"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_workflow_approve,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="workflow_resume",
+            description="Retoma workflow pausado quando nao houver gate pendente.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "workflow_id": {"type": "string", "minLength": 3, "maxLength": 128},
+                },
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_workflow_resume,
             requires_auth=True,
         )
     )
