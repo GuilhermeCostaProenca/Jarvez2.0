@@ -92,7 +92,22 @@ class BrowserAgentRunnerTests(unittest.TestCase):
         self.assertEqual((state.evidence or {}).get("mode"), "execution")
         self.assertEqual((state.evidence or {}).get("resolved_page_url"), "https://example.com/")
 
-    def test_run_browser_task_blocks_write_mode(self) -> None:
+    @patch("browser_agent.runner.PlaywrightMcpClient")
+    def test_run_browser_task_allows_write_mode_after_gate(self, client_cls_mock) -> None:
+        client_instance = client_cls_mock.return_value
+        client_instance.healthcheck.return_value.ok = True
+        client_instance.healthcheck.return_value.status = "ok"
+        client_instance.healthcheck.return_value.detail = None
+        client_instance.healthcheck.return_value.tools = ["browser_navigate", "browser_snapshot"]
+        client_cls_mock.extract_text.side_effect = [
+            "### Page\n- Page URL: https://example.com/\n- Page Title: Example Domain",
+            "### Page\n- Page URL: https://example.com/\n- Page Title: Example Domain\n### Snapshot",
+        ]
+        client_cls_mock.extract_page_url.return_value = "https://example.com/"
+        client_instance.call_tool.side_effect = [
+            SimpleNamespace(ok=True, status="ok", detail=None, result={"content": [{"type": "text", "text": "ok"}]}),
+            SimpleNamespace(ok=True, status="ok", detail=None, result={"content": [{"type": "text", "text": "ok"}]}),
+        ]
         state, ok, error = run_browser_task(
             task_id="browser_3",
             request="faca login no portal",
@@ -100,9 +115,10 @@ class BrowserAgentRunnerTests(unittest.TestCase):
             read_only=False,
             mcp_url="http://127.0.0.1:3333",
         )
-        self.assertFalse(ok)
-        self.assertEqual(error, "write_mode_not_enabled")
-        self.assertEqual(state.status, "failed")
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        self.assertEqual(state.status, "completed")
+        self.assertFalse(bool((state.evidence or {}).get("read_only")))
 
     @patch("browser_agent.runner.PlaywrightMcpClient")
     def test_run_browser_task_supports_cooperative_cancellation(self, client_cls_mock) -> None:

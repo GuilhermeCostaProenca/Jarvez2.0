@@ -4264,6 +4264,9 @@ def _build_confirmation_message(name: str, params: JsonObject) -> str:
         readable = " ".join(part for part in command_parts if part).strip()
         return f"Confirma executar `{readable}`?"
 
+    if name == "browser_agent_run" and not bool(params.get("read_only", True)):
+        return "Confirma executar browser_agent_run em modo write (pode interagir na pagina)?"
+
     return f"Confirma executar {name} com os parametros informados?"
 
 
@@ -6215,6 +6218,25 @@ async def _browser_agent_run(params: JsonObject, ctx: ActionContext) -> ActionRe
     request = str(params.get("request") or "").strip()
     allowed_domains = params.get("allowed_domains", [])
     read_only = bool(params.get("read_only", True))
+    write_confirmed = bool(params.get("write_confirmed", False))
+    if not read_only and not write_confirmed:
+        confirmed_params = dict(params)
+        confirmed_params["write_confirmed"] = True
+        pending = _store_confirmation("browser_agent_run", confirmed_params, ctx)
+        return ActionResult(
+            success=False,
+            message="Modo write do browser agent exige confirmacao explicita. Confirma executar?",
+            data={
+                "confirmation_required": True,
+                "confirmation_token": pending.token,
+                "expires_in": _remaining_seconds(pending.expires_at),
+                "action_name": pending.action_name,
+                "params": pending.params,
+                "write_mode_requested": True,
+            },
+            error="write_confirmation_required",
+        )
+
     task_id = f"browser_{uuid.uuid4().hex[:10]}"
     from browser_agent.runner import run_browser_task
 
@@ -6224,7 +6246,11 @@ async def _browser_agent_run(params: JsonObject, ctx: ActionContext) -> ActionRe
         request=request,
         allowed_domains=allowed_domains if isinstance(allowed_domains, list) else [],
         read_only=read_only,
-        summary="Browser agent iniciou execucao com guardrails de dominio.",
+        summary=(
+            "Browser agent iniciou execucao com guardrails de dominio (modo leitura)."
+            if read_only
+            else "Browser agent iniciou execucao com guardrails de dominio (modo write confirmado)."
+        ),
     )
     _persist_event_namespace(ctx.participant_identity, ctx.room, "browser_tasks", started_task)
     await _publish_agent_event(ctx, {"type": "browser_task_started", "browser_task": started_task})
@@ -11301,6 +11327,7 @@ def register_default_actions() -> None:
                         "maxItems": 20,
                     },
                     "read_only": {"type": "boolean"},
+                    "write_confirmed": {"type": "boolean"},
                 },
                 "required": ["request", "allowed_domains"],
                 "additionalProperties": False,

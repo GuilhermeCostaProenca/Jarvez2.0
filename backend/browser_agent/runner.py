@@ -102,23 +102,6 @@ def run_browser_task(
             "invalid_request",
         )
 
-    if not read_only:
-        return (
-            BrowserTaskState(
-                task_id=task_id,
-                status="failed",
-                request=request,
-                allowed_domains=normalized_domains,
-                read_only=read_only,
-                summary="Modo write ainda nao habilitado neste ciclo. Use read_only=true.",
-                error="write_mode_not_enabled",
-                started_at=_now_iso(),
-                finished_at=_now_iso(),
-            ),
-            False,
-            "write_mode_not_enabled",
-        )
-
     target_url, target_error = _extract_target_url(request, normalized_domains)
     if target_error is not None or not target_url:
         return (
