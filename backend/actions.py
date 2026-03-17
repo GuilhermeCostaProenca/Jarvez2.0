@@ -2352,6 +2352,7 @@ def _resolve_github_repo(params: JsonObject) -> tuple[GitHubRepo | None, ActionR
 
 
 async def _github_list_repos_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    # DEPRECATED: migrated to jarvez-mcp-github; keep wrapper while Jarvez still resolves GitHub metadata locally.
     return await domain_github_list_repos_action(
         params,
         ctx,
@@ -2361,6 +2362,7 @@ async def _github_list_repos_action(params: JsonObject, ctx: ActionContext) -> A
 
 
 async def _github_find_repo_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    # DEPRECATED: migrated to jarvez-mcp-github; keep wrapper while Jarvez still resolves GitHub metadata locally.
     return await domain_github_find_repo_action(
         params,
         ctx,

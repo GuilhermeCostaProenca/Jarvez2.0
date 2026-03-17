@@ -340,20 +340,20 @@ Contexto tecnico: `backend/actions_domains/ac.py` depende do dominio ThinQ e das
 
 ##### Dominio: github
 Contexto tecnico: `github_*` hoje esta misturado em `backend/actions_domains/projects.py`; antes de publicar `jarvez-mcp-github`, e preciso separar busca/metadata GitHub do catalogo e da selecao de projeto local.
-- [ ] Criar repo `jarvez-mcp-github`
-  Notas:
-- [ ] Migrar codigo de `backend/actions_domains/projects.py`
-  Notas:
-- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
-  Notas:
-- [ ] Criar CHANGELOG.md com v0.1.0
-  Notas:
-- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-github com tag v0.1.0
-  Notas:
-- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
-  Notas:
-- [ ] Registrar em AGENTS.md como repositorio de referencia
-  Notas:
+- [x] Criar repo `jarvez-mcp-github`
+  Notas: repo criado em `../jarvez-mcp-github` seguindo a estrutura standalone de `../jarvez-mcp-spotify` e `../jarvez-mcp-thinq`, com `server.py`, `core/` e `tools/`.
+- [x] Migrar codigo de `backend/actions_domains/projects.py`
+  Notas: foram portados apenas `github_list_repos` e `github_find_repo` para `../jarvez-mcp-github/tools/github.py`; `github_clone_and_register`, catalogo local, projeto ativo e selecao continuam no Jarvez.
+- [x] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas: `../jarvez-mcp-github/README.md` documenta instalacao, `claude mcp add --transport stdio`, variaveis de ambiente e a fronteira exata entre metadata GitHub e glue local do Jarvez.
+- [x] Criar CHANGELOG.md com v0.1.0
+  Notas: `../jarvez-mcp-github/CHANGELOG.md` criado com a entrada `v0.1.0 - 2026-03-17`.
+- [x] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-github com tag v0.1.0
+  Notas: repo publicado em `https://github.com/GuilhermeCostaProenca/jarvez-mcp-github`, branch `main` enviada, tag `v0.1.0` criada e HEAD local em `a42d65097c3035de7ccfa46e39a20c7f8d8f1102`.
+- [x] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas: `backend/actions.py` e `backend/actions_domains/projects.py` agora marcam `github_list_repos` e `github_find_repo` como compatibilidade temporaria; `github_clone_and_register` segue local porque mistura clone, catalogo e selecao.
+- [x] Registrar em AGENTS.md como repositorio de referencia
+  Notas: `AGENTS.md` ganhou a entrada `jarvez-mcp-github` na tabela de repositorios de referencia.
 
 ##### Dominio: projects
 Contexto tecnico: `backend/actions_domains/projects.py` depende de `ProjectCatalog`, de projeto ativo em sessao, de indexacao local e do glue de `git_clone_repository`; a extracao precisa manter o Jarvez como fonte de verdade do catalogo e do projeto selecionado.
@@ -529,7 +529,7 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 
 ## Aceite final
 - [ ] Todos os dominios extraiveis tem repo publico no GitHub
-  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp` e `jarvez-mcp-ac`.
+  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac` e `jarvez-mcp-github`.
 - [ ] Jarvez consome MCPs reais pelo client interno e nao apenas por repos publicados
   Notas: integrar e validar no backend principal pelo menos `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`.
 - [ ] `actions.py` nao tem mais handlers de dominio, so glue code
@@ -537,8 +537,9 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 - [ ] Jarvez conecta nos MCP servers externos via `claude mcp add`
   Notas: alem do fluxo manual no Claude, o backend principal precisa conseguir subir, descobrir tools e chamar MCPs reais via `backend/mcp/`.
 - [ ] AGENTS.md atualizado com todos os novos repos
-  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp` e `jarvez-mcp-ac`; seguem pendentes os proximos dominios extraidos.
+  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac` e `jarvez-mcp-github`; seguem pendentes os proximos dominios extraidos.
 
 ## Nota de sincronizacao
 - A ordem restante continua fazendo sentido. A Fase B fica fechada para os dominios priorizados (`whatsapp`, `onenote`, `ac`) sem mover journal, preferências, policy ou automações locais para fora do Jarvez.
+- A Fase C comeca por `github` no recorte puro de busca/metadata/clone URL; catalogo local, projeto ativo, selecao e clone fisico continuam no Jarvez.
 - Na Fase E, o piloto recomendado de integracao real e `jarvez-mcp-spotify`, porque oferece o melhor equilibrio entre baixo acoplamento no Jarvez principal e cobertura real de manifesto, env, discovery, `call_tool` e fallback legacy.

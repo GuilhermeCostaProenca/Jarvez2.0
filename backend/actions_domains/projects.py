@@ -16,6 +16,7 @@ async def github_list_repos_action(
     get_github_catalog_client: Callable[[], Any],
     github_repo_to_payload: Callable[[Any], JsonObject],
 ) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-github; keep legacy compatibility until MCP routing replaces github_* metadata handlers.
     _ = ctx
     client = get_github_catalog_client()
     if not client.is_configured():
@@ -56,6 +57,7 @@ async def github_find_repo_action(
     resolve_github_repo: Callable[[JsonObject], tuple[Any | None, ActionResult | None]],
     github_repo_to_payload: Callable[[Any], JsonObject],
 ) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-github; keep legacy compatibility until MCP routing replaces github_* metadata handlers.
     _ = ctx
     repo, error = resolve_github_repo(params)
     if error is not None:
