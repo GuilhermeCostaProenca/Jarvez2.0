@@ -58,8 +58,43 @@ def _pilot_spotify_config() -> McpServerConfig:
     )
 
 
+def _pilot_onenote_config() -> McpServerConfig:
+    onenote_root = _jarvez_root().parent / "jarvez-mcp-onenote"
+    return McpServerConfig(
+        name="onenote",
+        command=sys.executable,
+        args=["server.py"],
+        cwd=str(onenote_root),
+        enabled=True,
+        timeout_seconds=20,
+        legacy_fallback_enabled=True,
+        env_allowlist=[
+            "PATH",
+            "PATHEXT",
+            "SYSTEMROOT",
+            "WINDIR",
+            "COMSPEC",
+            "TEMP",
+            "TMP",
+            "LOCALAPPDATA",
+            "APPDATA",
+            "PROGRAMDATA",
+            "USERPROFILE",
+            "ONENOTE_CLIENT_ID",
+            "ONENOTE_CLIENT_SECRET",
+            "ONENOTE_REDIRECT_URI",
+            "ONENOTE_SCOPES",
+            "ONENOTE_ACCESS_TOKEN",
+            "ONENOTE_REFRESH_TOKEN",
+            "ONENOTE_ACCESS_TOKEN_EXPIRES_AT",
+            "ONENOTE_TOKENS_PATH",
+            "JARVEZ_FRONTEND_URL",
+        ],
+    )
+
+
 def create_default_mcp_registry() -> "McpRegistry":
-    return McpRegistry([_pilot_spotify_config()])
+    return McpRegistry([_pilot_spotify_config(), _pilot_onenote_config()])
 
 
 class McpRegistry:

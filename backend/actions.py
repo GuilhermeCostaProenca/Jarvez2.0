@@ -7430,6 +7430,71 @@ async def _spotify_route_via_mcp(
     )
 
 
+async def _onenote_route_via_mcp(
+    tool_name: str,
+    params: JsonObject,
+    legacy_handler: Callable[[], Awaitable[ActionResult]],
+) -> ActionResult:
+    try:
+        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
+            "onenote",
+            tool_name,
+            params,
+            legacy_handler=legacy_handler,
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.warning(
+            "onenote MCP route failed unexpectedly; using legacy handler",
+            extra={"tool": tool_name, "error": str(error)},
+            exc_info=True,
+        )
+        legacy_result = await legacy_handler()
+        evidence = dict(legacy_result.evidence or {})
+        evidence.update(
+            {
+                "provider": "legacy",
+                "mcp_server": "onenote",
+                "mcp_tool": tool_name,
+                "fallback_reason": "transport_exception",
+            }
+        )
+        legacy_result.evidence = evidence
+        legacy_result.fallback_used = True
+        return legacy_result
+
+    if legacy_value is not None:
+        if isinstance(legacy_value, ActionResult):
+            legacy_result = legacy_value
+        else:
+            legacy_result = ActionResult(
+                success=True,
+                message=f"Fallback legacy executado para '{tool_name}'.",
+                data={"value": legacy_value} if isinstance(legacy_value, dict) else None,
+            )
+        evidence = dict(legacy_result.evidence or {})
+        evidence.update(
+            {
+                "provider": "legacy",
+                "mcp_server": "onenote",
+                "mcp_tool": tool_name,
+                "fallback_reason": fallback_reason or "legacy_fallback",
+            }
+        )
+        legacy_result.evidence = evidence
+        legacy_result.fallback_used = True
+        return legacy_result
+
+    if mcp_result is None:
+        return await legacy_handler()
+
+    return _action_result_from_mcp_result(
+        mcp_result,
+        server_name="onenote",
+        tool_name=tool_name,
+        fallback_used=False,
+    )
+
+
 # DEPRECATED: wrappers Spotify permanecem aqui apenas como compatibilidade enquanto o dominio e migrado para ../jarvez-mcp-spotify.
 async def _spotify_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     async def _legacy_handler() -> ActionResult:
@@ -7544,28 +7609,37 @@ async def _spotify_create_surprise_playlist(params: JsonObject, ctx: ActionConte
 
 
 async def _onenote_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_onenote_status(
-        params,
-        ctx,
-        onenote_initialize_cache=_onenote_initialize_cache,
-        onenote_api_request=_onenote_api_request,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_onenote_status(
+            params,
+            ctx,
+            onenote_initialize_cache=_onenote_initialize_cache,
+            onenote_api_request=_onenote_api_request,
+        )
+
+    return await _onenote_route_via_mcp("onenote_status", params, _legacy_handler)
 
 
 async def _onenote_list_notebooks(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_onenote_list_notebooks(
-        params,
-        ctx,
-        onenote_api_request=_onenote_api_request,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_onenote_list_notebooks(
+            params,
+            ctx,
+            onenote_api_request=_onenote_api_request,
+        )
+
+    return await _onenote_route_via_mcp("onenote_list_notebooks", params, _legacy_handler)
 
 
 async def _onenote_list_sections(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_onenote_list_sections(
-        params,
-        ctx,
-        onenote_api_request=_onenote_api_request,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_onenote_list_sections(
+            params,
+            ctx,
+            onenote_api_request=_onenote_api_request,
+        )
+
+    return await _onenote_route_via_mcp("onenote_list_sections", params, _legacy_handler)
 
 
 async def _onenote_list_pages(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001

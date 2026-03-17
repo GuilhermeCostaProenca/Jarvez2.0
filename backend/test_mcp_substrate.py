@@ -21,14 +21,21 @@ load_dotenv(Path(__file__).with_name(".env"), override=False)
 
 
 class McpSubstrateTests(unittest.TestCase):
-    def test_spotify_manifest_registers_only_pilot_server(self) -> None:
+    def test_default_manifest_registers_spotify_and_onenote(self) -> None:
         registry = create_default_mcp_registry()
         snapshot = registry.manifest_snapshot()
-        self.assertEqual(len(snapshot), 1)
-        self.assertEqual(snapshot[0]["name"], "spotify")
-        self.assertTrue(snapshot[0]["enabled"])
-        self.assertTrue(str(snapshot[0]["cwd"]).endswith("jarvez-mcp-spotify"))
-        self.assertIn("SPOTIFY_CLIENT_ID", snapshot[0]["env_allowlist"])
+        self.assertEqual(len(snapshot), 2)
+        snapshot_by_name = {row["name"]: row for row in snapshot}
+
+        self.assertIn("spotify", snapshot_by_name)
+        self.assertTrue(snapshot_by_name["spotify"]["enabled"])
+        self.assertTrue(str(snapshot_by_name["spotify"]["cwd"]).endswith("jarvez-mcp-spotify"))
+        self.assertIn("SPOTIFY_CLIENT_ID", snapshot_by_name["spotify"]["env_allowlist"])
+
+        self.assertIn("onenote", snapshot_by_name)
+        self.assertTrue(snapshot_by_name["onenote"]["enabled"])
+        self.assertTrue(str(snapshot_by_name["onenote"]["cwd"]).endswith("jarvez-mcp-onenote"))
+        self.assertIn("ONENOTE_CLIENT_ID", snapshot_by_name["onenote"]["env_allowlist"])
 
     def test_spotify_pilot_can_list_tools_and_call_real_tool(self) -> None:
         audit_rows: list[dict[str, object]] = []
