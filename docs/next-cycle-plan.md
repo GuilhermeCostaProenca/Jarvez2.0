@@ -321,20 +321,20 @@ Contexto tecnico: `backend/actions_domains/onenote.py` ja esta isolado, mas os h
 
 ##### Dominio: ac
 Contexto tecnico: `backend/actions_domains/ac.py` depende do dominio ThinQ e das preferencias/automacoes locais de chegada; so entra depois de `jarvez-mcp-thinq` estar definido.
-- [ ] Criar repo `jarvez-mcp-ac`
-  Notas:
-- [ ] Migrar codigo de `backend/actions_domains/ac.py`
-  Notas:
-- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
-  Notas:
-- [ ] Criar CHANGELOG.md com v0.1.0
-  Notas:
-- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-ac com tag v0.1.0
-  Notas:
-- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
-  Notas:
-- [ ] Registrar em AGENTS.md como repositorio de referencia
-  Notas:
+- [x] Criar repo `jarvez-mcp-ac`
+  Notas: repo criado em `../jarvez-mcp-ac` seguindo a estrutura standalone de `../jarvez-mcp-thinq` e `../jarvez-mcp-spotify`, com `server.py`, `core/` e `tools/`.
+- [x] Migrar codigo de `backend/actions_domains/ac.py`
+  Notas: o recorte `ac_get_status/ac_turn_on/ac_turn_off/ac_set_mode/ac_set_temperature` foi portado para `../jarvez-mcp-ac/tools/ac.py`, com helpers ThinQ alinhados em `../jarvez-mcp-ac/core/ac_client.py`; `ac_configure_arrival_prefs`, `ac_prepare_arrival`, policy e automacoes continuam locais no Jarvez.
+- [x] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas: `../jarvez-mcp-ac/README.md` documenta instalacao, variaveis de ambiente, execucao standalone, `claude mcp add --transport stdio`, dependencia funcional de `jarvez-mcp-thinq` e a fronteira com o Jarvez.
+- [x] Criar CHANGELOG.md com v0.1.0
+  Notas: `../jarvez-mcp-ac/CHANGELOG.md` criado com a entrada `v0.1.0 - 2026-03-17`.
+- [x] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-ac com tag v0.1.0
+  Notas: repo publicado em `https://github.com/GuilhermeCostaProenca/jarvez-mcp-ac`, branch `main` enviada, tag `v0.1.0` criada em `2026-03-17` e HEAD local em `156ec7b50795f97f9976a7a9249ebb3517aacdb0`.
+- [x] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas: `backend/actions.py` agora marca `ac_get_status`, `ac_turn_on`, `ac_turn_off`, `ac_set_mode` e `ac_set_temperature` como compatibilidade temporaria enquanto o Jarvez preserva localmente preferencias de chegada e automacoes.
+- [x] Registrar em AGENTS.md como repositorio de referencia
+  Notas: `AGENTS.md` ganhou a entrada `jarvez-mcp-ac` na tabela de repositorios de referencia.
 
 #### Fase C — Superficie de engenharia local
 
@@ -529,7 +529,7 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 
 ## Aceite final
 - [ ] Todos os dominios extraiveis tem repo publico no GitHub
-  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`.
+  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp` e `jarvez-mcp-ac`.
 - [ ] Jarvez consome MCPs reais pelo client interno e nao apenas por repos publicados
   Notas: integrar e validar no backend principal pelo menos `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`.
 - [ ] `actions.py` nao tem mais handlers de dominio, so glue code
@@ -537,8 +537,8 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 - [ ] Jarvez conecta nos MCP servers externos via `claude mcp add`
   Notas: alem do fluxo manual no Claude, o backend principal precisa conseguir subir, descobrir tools e chamar MCPs reais via `backend/mcp/`.
 - [ ] AGENTS.md atualizado com todos os novos repos
-  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`; seguem pendentes os proximos dominios extraidos.
+  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp` e `jarvez-mcp-ac`; seguem pendentes os proximos dominios extraidos.
 
 ## Nota de sincronizacao
-- A ordem restante continua fazendo sentido. Proximo dominio recomendado da Fase B: `ac`, mas so depois de fixar explicitamente a fronteira entre controle remoto via `thinq` e as preferencias/automacoes locais que continuam no Jarvez.
+- A ordem restante continua fazendo sentido. A Fase B fica fechada para os dominios priorizados (`whatsapp`, `onenote`, `ac`) sem mover journal, preferências, policy ou automações locais para fora do Jarvez.
 - Na Fase E, o piloto recomendado de integracao real e `jarvez-mcp-spotify`, porque oferece o melhor equilibrio entre baixo acoplamento no Jarvez principal e cobertura real de manifesto, env, discovery, `call_tool` e fallback legacy.

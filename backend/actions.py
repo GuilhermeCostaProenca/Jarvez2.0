@@ -6868,7 +6868,8 @@ async def _thinq_control_device(params: JsonObject, ctx: ActionContext) -> Actio
         quote_path_segment=lambda value: quote(value, safe=""),
     )
 
-
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-ac
+# This handler stays for compatibility while Jarvez keeps local arrival prefs, policy and automation glue.
 async def _ac_get_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     async def _legacy_handler() -> ActionResult:
         return await domain_ac_get_status(
@@ -6951,7 +6952,8 @@ def _normalize_ac_fan_speed(value: str) -> str:
     compact = normalized.replace(" ", "")
     return mapping.get(compact, mapping.get(normalized, value.strip().upper()))
 
-
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-ac
+# This handler stays for compatibility while Jarvez keeps local arrival prefs, policy and automation glue.
 async def _ac_turn_on(params: JsonObject, ctx: ActionContext) -> ActionResult:
     async def _legacy_handler() -> ActionResult:
         return await domain_ac_turn_on(
@@ -6969,7 +6971,8 @@ async def _ac_turn_on(params: JsonObject, ctx: ActionContext) -> ActionResult:
     result = await _thinq_route_via_mcp("thinq_control_device", mcp_params, _legacy_handler)
     return _ac_result_with_mcp_message(result, action_name="ac_turn_on")
 
-
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-ac
+# This handler stays for compatibility while Jarvez keeps local arrival prefs, policy and automation glue.
 async def _ac_turn_off(params: JsonObject, ctx: ActionContext) -> ActionResult:
     async def _legacy_handler() -> ActionResult:
         return await domain_ac_turn_off(
@@ -6987,7 +6990,8 @@ async def _ac_turn_off(params: JsonObject, ctx: ActionContext) -> ActionResult:
     result = await _thinq_route_via_mcp("thinq_control_device", mcp_params, _legacy_handler)
     return _ac_result_with_mcp_message(result, action_name="ac_turn_off")
 
-
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-ac
+# This handler stays for compatibility while Jarvez keeps local arrival prefs, policy and automation glue.
 async def _ac_set_mode(params: JsonObject, ctx: ActionContext) -> ActionResult:
     return await domain_ac_set_mode(
         params,
@@ -7007,7 +7011,8 @@ async def _ac_set_fan_speed(params: JsonObject, ctx: ActionContext) -> ActionRes
         ac_send_command=_ac_send_command,
     )
 
-
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-ac
+# This handler stays for compatibility while Jarvez keeps local arrival prefs, policy and automation glue.
 async def _ac_set_temperature(params: JsonObject, ctx: ActionContext) -> ActionResult:
     return await domain_ac_set_temperature(
         params,
