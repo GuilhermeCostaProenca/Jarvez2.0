@@ -6709,26 +6709,32 @@ async def _rpg_clear_character_mode(params: JsonObject, ctx: ActionContext) -> A
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-thinq
 # These wrappers stay local only while Jarvez still routes ThinQ through backend/actions.py and ac_* keeps using the local helpers.
 async def _thinq_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_thinq_status(
-        params,
-        ctx,
-        thinq_api_request=_thinq_api_request,
-        thinq_list_devices_payload=_thinq_list_devices_payload,
-        thinq_pat=_thinq_pat,
-        thinq_country=_thinq_country,
-        thinq_api_base=_thinq_api_base,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_thinq_status(
+            params,
+            ctx,
+            thinq_api_request=_thinq_api_request,
+            thinq_list_devices_payload=_thinq_list_devices_payload,
+            thinq_pat=_thinq_pat,
+            thinq_country=_thinq_country,
+            thinq_api_base=_thinq_api_base,
+        )
+
+    return await _thinq_route_via_mcp("thinq_status", params, _legacy_handler)
 
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-thinq
 # These wrappers stay local only while Jarvez still routes ThinQ through backend/actions.py and ac_* keeps using the local helpers.
 async def _thinq_list_devices(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_thinq_list_devices(
-        params,
-        ctx,
-        thinq_list_devices_payload=_thinq_list_devices_payload,
-        thinq_simplify_device=_thinq_simplify_device,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_thinq_list_devices(
+            params,
+            ctx,
+            thinq_list_devices_payload=_thinq_list_devices_payload,
+            thinq_simplify_device=_thinq_simplify_device,
+        )
+
+    return await _thinq_route_via_mcp("thinq_list_devices", params, _legacy_handler)
 
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-thinq
@@ -7571,6 +7577,71 @@ async def _home_assistant_route_via_mcp(
     return _action_result_from_mcp_result(
         mcp_result,
         server_name="home_assistant",
+        tool_name=tool_name,
+        fallback_used=False,
+    )
+
+
+async def _thinq_route_via_mcp(
+    tool_name: str,
+    params: JsonObject,
+    legacy_handler: Callable[[], Awaitable[ActionResult]],
+) -> ActionResult:
+    try:
+        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
+            "thinq",
+            tool_name,
+            params,
+            legacy_handler=legacy_handler,
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.warning(
+            "thinq MCP route failed unexpectedly; using legacy handler",
+            extra={"tool": tool_name, "error": str(error)},
+            exc_info=True,
+        )
+        legacy_result = await legacy_handler()
+        evidence = dict(legacy_result.evidence or {})
+        evidence.update(
+            {
+                "provider": "legacy",
+                "mcp_server": "thinq",
+                "mcp_tool": tool_name,
+                "fallback_reason": "transport_exception",
+            }
+        )
+        legacy_result.evidence = evidence
+        legacy_result.fallback_used = True
+        return legacy_result
+
+    if legacy_value is not None:
+        if isinstance(legacy_value, ActionResult):
+            legacy_result = legacy_value
+        else:
+            legacy_result = ActionResult(
+                success=True,
+                message=f"Fallback legacy executado para '{tool_name}'.",
+                data={"value": legacy_value} if isinstance(legacy_value, dict) else None,
+            )
+        evidence = dict(legacy_result.evidence or {})
+        evidence.update(
+            {
+                "provider": "legacy",
+                "mcp_server": "thinq",
+                "mcp_tool": tool_name,
+                "fallback_reason": fallback_reason or "legacy_fallback",
+            }
+        )
+        legacy_result.evidence = evidence
+        legacy_result.fallback_used = True
+        return legacy_result
+
+    if mcp_result is None:
+        return await legacy_handler()
+
+    return _action_result_from_mcp_result(
+        mcp_result,
+        server_name="thinq",
         tool_name=tool_name,
         fallback_used=False,
     )

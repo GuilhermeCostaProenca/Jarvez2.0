@@ -124,11 +124,44 @@ def _pilot_home_assistant_config() -> McpServerConfig:
     )
 
 
+def _pilot_thinq_config() -> McpServerConfig:
+    thinq_root = _jarvez_root().parent / "jarvez-mcp-thinq"
+    return McpServerConfig(
+        name="thinq",
+        command=sys.executable,
+        args=["server.py"],
+        cwd=str(thinq_root),
+        enabled=True,
+        timeout_seconds=20,
+        legacy_fallback_enabled=True,
+        env_allowlist=[
+            "PATH",
+            "PATHEXT",
+            "SYSTEMROOT",
+            "WINDIR",
+            "COMSPEC",
+            "TEMP",
+            "TMP",
+            "LOCALAPPDATA",
+            "APPDATA",
+            "PROGRAMDATA",
+            "USERPROFILE",
+            "THINQ_PAT",
+            "THINQ_COUNTRY",
+            "THINQ_SERVICE_PHASE",
+            "THINQ_API_BASE",
+            "THINQ_CLIENT_ID",
+            "THINQ_DEFAULT_AC_NAME",
+        ],
+    )
+
+
 def create_default_mcp_registry() -> "McpRegistry":
     return McpRegistry([
         _pilot_spotify_config(),
         _pilot_onenote_config(),
         _pilot_home_assistant_config(),
+        _pilot_thinq_config(),
     ])
 
 
