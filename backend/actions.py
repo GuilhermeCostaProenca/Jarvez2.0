@@ -6135,6 +6135,8 @@ def _log_action_result(
         logger.debug("failed to append local metrics", exc_info=True)
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant
+# This handler will be removed after the desktop split keeps only open_desktop_resource/run_local_command/git_clone_repository locally.
 async def _turn_light_on(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_turn_light_on(
         params,
@@ -6143,6 +6145,8 @@ async def _turn_light_on(params: JsonObject, ctx: ActionContext) -> ActionResult
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant
+# This handler will be removed after the desktop split keeps only open_desktop_resource/run_local_command/git_clone_repository locally.
 async def _turn_light_off(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_turn_light_off(
         params,
@@ -6151,6 +6155,8 @@ async def _turn_light_off(params: JsonObject, ctx: ActionContext) -> ActionResul
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant
+# This handler will be removed after the desktop split keeps only open_desktop_resource/run_local_command/git_clone_repository locally.
 async def _set_light_brightness(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_set_light_brightness(
         params,
@@ -6159,6 +6165,8 @@ async def _set_light_brightness(params: JsonObject, ctx: ActionContext) -> Actio
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant
+# This handler will be removed after the desktop split keeps only open_desktop_resource/run_local_command/git_clone_repository locally.
 async def _call_service(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_call_service(
         params,
@@ -6681,6 +6689,8 @@ async def _rpg_clear_character_mode(params: JsonObject, ctx: ActionContext) -> A
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-thinq
+# These wrappers stay local only while Jarvez still routes ThinQ through backend/actions.py and ac_* keeps using the local helpers.
 async def _thinq_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_thinq_status(
         params,
@@ -6693,6 +6703,8 @@ async def _thinq_status(params: JsonObject, ctx: ActionContext) -> ActionResult:
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-thinq
+# These wrappers stay local only while Jarvez still routes ThinQ through backend/actions.py and ac_* keeps using the local helpers.
 async def _thinq_list_devices(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_thinq_list_devices(
         params,
@@ -6702,6 +6714,8 @@ async def _thinq_list_devices(params: JsonObject, ctx: ActionContext) -> ActionR
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-thinq
+# These wrappers stay local only while Jarvez still routes ThinQ through backend/actions.py and ac_* keeps using the local helpers.
 async def _thinq_get_device_profile(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_thinq_get_device_profile(
         params,
@@ -6716,6 +6730,8 @@ async def _thinq_get_device_profile(params: JsonObject, ctx: ActionContext) -> A
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-thinq
+# These wrappers stay local only while Jarvez still routes ThinQ through backend/actions.py and ac_* keeps using the local helpers.
 async def _thinq_get_device_state(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_thinq_get_device_state(
         params,
@@ -6730,6 +6746,8 @@ async def _thinq_get_device_state(params: JsonObject, ctx: ActionContext) -> Act
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-thinq
+# These wrappers stay local only while Jarvez still routes ThinQ through backend/actions.py and ac_* keeps using the local helpers.
 async def _thinq_control_device(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_thinq_control_device(
         params,
@@ -10804,6 +10822,7 @@ def register_default_actions() -> None:
         )
     )
 
+    # DEPRECATED: the thinq_* surface remains registered locally until Jarvez points to jarvez-mcp-thinq.
     register_action(
         ActionSpec(
             name="thinq_status",
@@ -11405,6 +11424,7 @@ def register_default_actions() -> None:
         )
     )
 
+    # DEPRECATED: the Home Assistant light/control surface remains registered locally until Jarvez points to jarvez-mcp-home-assistant.
     register_action(
         ActionSpec(
             name="turn_light_on",

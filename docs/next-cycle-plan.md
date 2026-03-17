@@ -251,37 +251,37 @@ Contexto tecnico: `backend/actions_domains/spotify.py` ja esta isolado, mas aind
 
 ##### Dominio: home-assistant
 Contexto tecnico: `backend/actions_domains/home_assistant.py` esta misturado com `open_desktop_resource`, `run_local_command` e `git_clone_repository`; nesta fase migram so `call_service`, `turn_light_on`, `turn_light_off` e `set_light_brightness`.
-- [ ] Criar repo `jarvez-mcp-home-assistant`
-  Notas:
-- [ ] Migrar codigo de `backend/actions_domains/home_assistant.py`
-  Notas:
-- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
-  Notas:
-- [ ] Criar CHANGELOG.md com v0.1.0
-  Notas:
-- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant com tag v0.1.0
-  Notas:
-- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
-  Notas:
-- [ ] Registrar em AGENTS.md como repositorio de referencia
-  Notas:
+- [x] Criar repo `jarvez-mcp-home-assistant`
+  Notas: repo criado em `../jarvez-mcp-home-assistant` seguindo a estrutura standalone de `../jarvez-mcp-rpg` e `../jarvez-mcp-spotify`, com `server.py`, `core/` e `tools/`.
+- [x] Migrar codigo de `backend/actions_domains/home_assistant.py`
+  Notas: foram portados apenas `call_service`, `turn_light_on`, `turn_light_off` e `set_light_brightness` para `../jarvez-mcp-home-assistant/tools/home_assistant.py`; `open_desktop_resource`, `run_local_command` e `git_clone_repository` ficaram no Jarvez para a futura extracao `desktop`.
+- [x] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas: `../jarvez-mcp-home-assistant/README.md` documenta instalacao, `claude mcp add --transport stdio`, variaveis de ambiente e o recorte exato do dominio.
+- [x] Criar CHANGELOG.md com v0.1.0
+  Notas: `../jarvez-mcp-home-assistant/CHANGELOG.md` criado com a entrada `v0.1.0 - 2026-03-17`.
+- [x] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant com tag v0.1.0
+  Notas: repo publicado em `https://github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant`, branch `main` enviada e tag `v0.1.0` criada em `2026-03-17`.
+- [x] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas: `backend/actions.py` agora marca `turn_light_on`, `turn_light_off`, `set_light_brightness` e `call_service` como compatibilidade temporaria enquanto o Jarvez ainda nao aponta para `jarvez-mcp-home-assistant`.
+- [x] Registrar em AGENTS.md como repositorio de referencia
+  Notas: `AGENTS.md` ganhou a entrada `jarvez-mcp-home-assistant` na tabela de repositorios de referencia.
 
 ##### Dominio: thinq
 Contexto tecnico: `backend/actions_domains/thinq.py` esta isolado, mas continua dependente de credenciais e helpers ThinQ na facade; nao houve MCP publico confirmado para este dominio.
-- [ ] Criar repo `jarvez-mcp-thinq`
-  Notas:
-- [ ] Migrar codigo de `backend/actions_domains/thinq.py`
-  Notas:
-- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
-  Notas:
-- [ ] Criar CHANGELOG.md com v0.1.0
-  Notas:
-- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-thinq com tag v0.1.0
-  Notas:
-- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
-  Notas:
-- [ ] Registrar em AGENTS.md como repositorio de referencia
-  Notas:
+- [x] Criar repo `jarvez-mcp-thinq`
+  Notas: repo criado em `../jarvez-mcp-thinq` seguindo a estrutura standalone de `../jarvez-mcp-rpg`, `../jarvez-mcp-spotify` e `../jarvez-mcp-home-assistant`, com `server.py`, `core/` e `tools/`.
+- [x] Migrar codigo de `backend/actions_domains/thinq.py`
+  Notas: handlers `thinq_status/list_devices/get_device_profile/get_device_state/control_device` foram portados para `../jarvez-mcp-thinq/tools/thinq.py`; o repo novo tambem recebeu o nucleo de auth, headers e descoberta de device em `../jarvez-mcp-thinq/core/thinq_client.py`.
+- [x] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas: `../jarvez-mcp-thinq/README.md` documenta instalacao, `claude mcp add --transport stdio`, variaveis de ambiente e a fronteira atual entre `thinq_*` e `ac_*`.
+- [x] Criar CHANGELOG.md com v0.1.0
+  Notas: `../jarvez-mcp-thinq/CHANGELOG.md` criado com a entrada `v0.1.0 - 2026-03-17`.
+- [x] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-thinq com tag v0.1.0
+  Notas: repo publicado em `https://github.com/GuilhermeCostaProenca/jarvez-mcp-thinq`, branch `main` enviada e tag `v0.1.0` criada em `2026-03-17`.
+- [x] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas: `backend/actions.py` agora marca `thinq_status`, `thinq_list_devices`, `thinq_get_device_profile`, `thinq_get_device_state` e `thinq_control_device` como compatibilidade temporaria; os helpers locais continuam por enquanto porque `ac_*` ainda depende deles.
+- [x] Registrar em AGENTS.md como repositorio de referencia
+  Notas: `AGENTS.md` ganhou a entrada `jarvez-mcp-thinq` na tabela de repositorios de referencia.
 
 #### Fase B — Integracoes com estado local e callbacks
 

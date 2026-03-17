@@ -109,7 +109,9 @@ Estão em `./references/`. **Consulte antes de implementar qualquer feature nova
 | `references/playwright-mcp` | Browser agent MCP oficial Microsoft | Browser automation, scraping, "entre no LinkedIn" |
 | `references/whatsapp-mcp` | WhatsApp MCP bidirecional (Python + Go) | Melhorar integração WhatsApp, acesso de qualquer lugar |
 | `references/spotify-mcp-server` | Spotify MCP leve | Referência para migrar integração Spotify atual |
+| `jarvez-mcp-home-assistant` | MCP server standalone do domínio Home Assistant | Extrair `call_service` e controle de luzes sem misturar helpers de desktop |
 | `jarvez-mcp-spotify` | MCP server standalone do domínio Spotify | Extrair playback, devices e playlist surpresa sem manter helpers na facade |
+| `jarvez-mcp-thinq` | MCP server standalone do domínio ThinQ | Extrair status, discovery e controle bruto dos dispositivos LG ThinQ |
 | `jarvez-mcp-rpg` | MCP server standalone do domínio RPG | Qualquer feature RPG |
 
 **Consulta online** (não clonar, usar como catálogo):
