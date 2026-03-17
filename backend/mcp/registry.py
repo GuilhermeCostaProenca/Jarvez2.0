@@ -192,6 +192,32 @@ def _pilot_rpg_config() -> McpServerConfig:
     )
 
 
+def _pilot_whatsapp_config() -> McpServerConfig:
+    whatsapp_root = _jarvez_root() / "references" / "whatsapp-mcp" / "whatsapp-mcp-server"
+    return McpServerConfig(
+        name="whatsapp",
+        command=sys.executable,
+        args=["main.py"],
+        cwd=str(whatsapp_root),
+        enabled=True,
+        timeout_seconds=20,
+        legacy_fallback_enabled=True,
+        env_allowlist=[
+            "PATH",
+            "PATHEXT",
+            "SYSTEMROOT",
+            "WINDIR",
+            "COMSPEC",
+            "TEMP",
+            "TMP",
+            "LOCALAPPDATA",
+            "APPDATA",
+            "PROGRAMDATA",
+            "USERPROFILE",
+        ],
+    )
+
+
 def create_default_mcp_registry() -> "McpRegistry":
     return McpRegistry([
         _pilot_spotify_config(),
@@ -199,6 +225,7 @@ def create_default_mcp_registry() -> "McpRegistry":
         _pilot_home_assistant_config(),
         _pilot_thinq_config(),
         _pilot_rpg_config(),
+        _pilot_whatsapp_config(),
     ])
 
 

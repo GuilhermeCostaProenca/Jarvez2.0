@@ -6529,6 +6529,88 @@ async def _workflow_resume(params: JsonObject, ctx: ActionContext) -> ActionResu
 
 
 async def _whatsapp_channel_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    async def _legacy_handler() -> ActionResult:
+        return await _build_whatsapp_channel_status_result()
+
+    probe_params: JsonObject = {
+        "limit": 1,
+        "page": 0,
+        "include_last_message": False,
+        "sort_by": "last_active",
+    }
+    try:
+        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
+            "whatsapp",
+            "list_chats",
+            probe_params,
+            legacy_handler=_legacy_handler,
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.warning(
+            "whatsapp MCP route failed unexpectedly; using legacy handler",
+            extra={"tool": "list_chats", "error": str(error)},
+            exc_info=True,
+        )
+        legacy_result = await _legacy_handler()
+        evidence = dict(legacy_result.evidence or {})
+        evidence.update(
+            {
+                "provider": "legacy",
+                "mcp_server": "whatsapp",
+                "mcp_tool": "list_chats",
+                "fallback_reason": "transport_exception",
+            }
+        )
+        legacy_result.evidence = evidence
+        legacy_result.fallback_used = True
+        return legacy_result
+
+    if legacy_value is not None:
+        if isinstance(legacy_value, ActionResult):
+            legacy_result = legacy_value
+        else:
+            legacy_result = await _legacy_handler()
+        evidence = dict(legacy_result.evidence or {})
+        evidence.update(
+            {
+                "provider": "legacy",
+                "mcp_server": "whatsapp",
+                "mcp_tool": "list_chats",
+                "fallback_reason": fallback_reason or "legacy_fallback",
+            }
+        )
+        legacy_result.evidence = evidence
+        legacy_result.fallback_used = True
+        return legacy_result
+
+    result = await _legacy_handler()
+    if mcp_result is None:
+        return result
+
+    whatsapp_channel = result.data.get("whatsapp_channel") if isinstance(result.data, dict) else None
+    if isinstance(whatsapp_channel, dict):
+        probe_payload = mcp_result.structured_content
+        probe_count = len(probe_payload) if isinstance(probe_payload, list) else None
+        whatsapp_channel["mcp_stdio"] = {
+            "connected": bool(mcp_result.ok),
+            "tool": "list_chats",
+            "probe_result_count": probe_count,
+        }
+    evidence = dict(result.evidence or {})
+    evidence.update(
+        {
+            "provider": "mcp",
+            "mcp_server": "whatsapp",
+            "mcp_tool": "list_chats",
+            "mcp_status": mcp_result.status,
+        }
+    )
+    result.evidence = evidence
+    result.fallback_used = False
+    return result
+
+
+async def _build_whatsapp_channel_status_result() -> ActionResult:
     from actions_domains.whatsapp_channel import build_whatsapp_channel_status
 
     status = build_whatsapp_channel_status()
@@ -7756,6 +7838,71 @@ async def _rpg_route_via_mcp(
     )
 
 
+async def _whatsapp_route_via_mcp(
+    tool_name: str,
+    params: JsonObject,
+    legacy_handler: Callable[[], Awaitable[ActionResult]],
+) -> ActionResult:
+    try:
+        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
+            "whatsapp",
+            tool_name,
+            params,
+            legacy_handler=legacy_handler,
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.warning(
+            "whatsapp MCP route failed unexpectedly; using legacy handler",
+            extra={"tool": tool_name, "error": str(error)},
+            exc_info=True,
+        )
+        legacy_result = await legacy_handler()
+        evidence = dict(legacy_result.evidence or {})
+        evidence.update(
+            {
+                "provider": "legacy",
+                "mcp_server": "whatsapp",
+                "mcp_tool": tool_name,
+                "fallback_reason": "transport_exception",
+            }
+        )
+        legacy_result.evidence = evidence
+        legacy_result.fallback_used = True
+        return legacy_result
+
+    if legacy_value is not None:
+        if isinstance(legacy_value, ActionResult):
+            legacy_result = legacy_value
+        else:
+            legacy_result = ActionResult(
+                success=True,
+                message=f"Fallback legacy executado para '{tool_name}'.",
+                data={"value": legacy_value} if isinstance(legacy_value, dict) else None,
+            )
+        evidence = dict(legacy_result.evidence or {})
+        evidence.update(
+            {
+                "provider": "legacy",
+                "mcp_server": "whatsapp",
+                "mcp_tool": tool_name,
+                "fallback_reason": fallback_reason or "legacy_fallback",
+            }
+        )
+        legacy_result.evidence = evidence
+        legacy_result.fallback_used = True
+        return legacy_result
+
+    if mcp_result is None:
+        return await legacy_handler()
+
+    return _action_result_from_mcp_result(
+        mcp_result,
+        server_name="whatsapp",
+        tool_name=tool_name,
+        fallback_used=False,
+    )
+
+
 # DEPRECATED: wrappers Spotify permanecem aqui apenas como compatibilidade enquanto o dominio e migrado para ../jarvez-mcp-spotify.
 async def _spotify_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     async def _legacy_handler() -> ActionResult:
@@ -7960,19 +8107,43 @@ async def _whatsapp_get_recent_messages(params: JsonObject, ctx: ActionContext) 
 
 async def _whatsapp_send_text(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     # Normaliza alias: o modelo pode enviar 'contact' ou 'to', 'message' ou 'text'
-    if "to" not in params and "contact" in params:
-        params["to"] = params["contact"]
-    if "text" not in params and "message" in params:
-        params["text"] = params["message"]
-    result = await domain_whatsapp_send_text(
-        params,
-        ctx,
-        normalize_whatsapp_to=_normalize_whatsapp_to,
-        whatsapp_send_message=_whatsapp_send_message,
+    normalized_params = dict(params)
+    if "to" not in normalized_params and "contact" in normalized_params:
+        normalized_params["to"] = normalized_params["contact"]
+    if "text" not in normalized_params and "message" in normalized_params:
+        normalized_params["text"] = normalized_params["message"]
+    to = _normalize_whatsapp_to(str(normalized_params.get("to", "")).strip())
+    text = str(normalized_params.get("text", "")).strip()
+    if not to or not text:
+        return ActionResult(success=False, message="Parametros invalidos para WhatsApp.", error="missing to/text")
+
+    async def _legacy_handler() -> ActionResult:
+        return await domain_whatsapp_send_text(
+            normalized_params,
+            ctx,
+            normalize_whatsapp_to=_normalize_whatsapp_to,
+            whatsapp_send_message=_whatsapp_send_message,
+        )
+
+    result = await _whatsapp_route_via_mcp(
+        "send_message",
+        {"recipient": to, "message": text},
+        _legacy_handler,
     )
     if result.success:
-        to = _normalize_whatsapp_to(str(params.get("to", "")).strip())
-        text = str(params.get("text", "")).strip() or None
+        if not isinstance(result.data, dict):
+            result.data = {}
+        if result.evidence.get("provider") == "mcp":
+            result.data.setdefault("whatsapp_transport", "mcp_stdio")
+            result.data.setdefault(
+                "whatsapp_response",
+                {
+                    "success": True,
+                    "message": result.message,
+                },
+            )
+        result.message = f"Mensagem enviada para {to}."
+        text = text or None
         response_payload = result.data.get("whatsapp_response") if isinstance(result.data, dict) else None
         _store_whatsapp_channel_message(
             direction="outbound",
