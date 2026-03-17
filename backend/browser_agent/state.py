@@ -14,6 +14,7 @@ class BrowserTaskState:
     error: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
+    evidence: dict[str, object] | None = None
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -31,4 +32,6 @@ class BrowserTaskState:
             payload["started_at"] = self.started_at
         if self.finished_at is not None:
             payload["finished_at"] = self.finished_at
+        if self.evidence is not None:
+            payload["evidence"] = dict(self.evidence)
         return payload

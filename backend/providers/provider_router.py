@@ -87,14 +87,33 @@ def preview_route(task_type: TaskType, risk: RiskTier) -> tuple[str, str | None]
     return primary, fallback
 
 
+def _normalize_provider_order(
+    *,
+    task_type: TaskType,
+    risk: RiskTier,
+    provider_order: list[str] | None = None,
+) -> list[str]:
+    base_order = choose_provider_order(task_type, risk)
+    merged_order: list[str] = []
+    for provider_name in (provider_order or []) + base_order + ["local_mock"]:
+        normalized = str(provider_name or "").strip()
+        if not normalized:
+            continue
+        if normalized in merged_order:
+            continue
+        merged_order.append(normalized)
+    return merged_order
+
+
 def route_request(
     *,
     request: str,
     task_type: TaskType,
     risk: RiskTier,
     providers: dict[str, ProviderClient],
+    provider_order: list[str] | None = None,
 ) -> tuple[str, ModelRouteDecision]:
-    order = choose_provider_order(task_type, risk)
+    order = _normalize_provider_order(task_type=task_type, risk=risk, provider_order=provider_order)
     primary = order[0]
     fallback = order[1] if len(order) > 1 else None
 

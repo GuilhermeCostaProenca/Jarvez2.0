@@ -27,6 +27,7 @@ from actions import (
     is_authenticated_session,
     record_autonomy_notice_delivery,
 )
+from channels.livekit_adapter import normalize_livekit_data_packet
 from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
 from runtime.model_gateway import resolve_runtime
 from runtime.realtime_adapters import build_realtime_model
@@ -124,18 +125,16 @@ def _handle_client_telemetry_packet(
     participant_identity: str,
     room_name: str,
 ) -> None:
-    if packet.topic != "jarvez.client.telemetry":
+    envelope = normalize_livekit_data_packet(packet, room=room_name)
+    if envelope is None:
         return
-    sender = getattr(packet, "participant", None)
-    sender_identity = getattr(sender, "identity", None)
-    if sender_identity and sender_identity != participant_identity:
+    if envelope.topic != "jarvez.client.telemetry":
         return
-    try:
-        payload = json.loads(packet.data.decode("utf-8"))
-    except Exception:
-        logger.warning("invalid client telemetry payload", exc_info=True)
+    if envelope.identity.participant_identity != participant_identity:
         return
+    payload = envelope.raw_payload.get("payload")
     if not isinstance(payload, dict):
+        logger.warning("invalid client telemetry payload")
         return
     if str(payload.get("type") or "").strip() != "autonomy_notice_delivery":
         return
@@ -532,6 +531,18 @@ async def entrypoint(ctx: agents.JobContext):
         ),
     )
     await publish_session_snapshot(session, participant_identity=user_id, room=room_name)
+    def _publish_snapshot_on_participant_connected(participant: rtc.RemoteParticipant) -> None:
+        identity = str(getattr(participant, "identity", "") or "").strip()
+        if not identity:
+            return
+        if identity != user_id:
+            return
+        asyncio.create_task(
+            publish_session_snapshot(session, participant_identity=user_id, room=room_name),
+            name=f"session_snapshot_reconnect_{identity}",
+        )
+
+    ctx.room.on("participant_connected", _publish_snapshot_on_participant_connected)
     ctx.room.on(
         "data_received",
         lambda packet: _handle_client_telemetry_packet(
@@ -576,10 +587,12 @@ async def entrypoint(ctx: agents.JobContext):
 
     ctx.add_shutdown_callback(lambda: shutdown_hook(agent.chat_ctx, mem0))
     ctx.add_shutdown_callback(_cancel_voice_capture)
-    ctx.add_shutdown_callback(_cancel_control_loop)
-    await session.generate_reply(
-        instructions=SESSION_INSTRUCTION + '\nCumprimente o usuario de forma breve e confiante.'
-    )
+    try:
+        await session.generate_reply(
+            instructions=SESSION_INSTRUCTION + '\nCumprimente o usuario de forma breve e confiante.'
+        )
+    except Exception as error:
+        logger.error('Failed to generate initial reply: %s', error)
 
 
 if __name__ == '__main__':

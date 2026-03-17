@@ -99,6 +99,9 @@ interface CodexStreamEvent {
   codex_task?: CodexTaskState | null;
   codex_event?: CodexTaskEvent | null;
   codex_history?: CodexTaskHistoryEntry[];
+  browser_task?: BrowserTaskState | null;
+  workflow_state?: WorkflowState | null;
+  automation_state?: AutomationState | null;
   notice?: SecuritySessionState['autonomyNotice'];
   snapshot?: SessionSnapshot | null;
 }
@@ -618,6 +621,35 @@ export function useAgentActionEvents() {
         }
         if (codexHistoryItems.length) {
           replaceCodexTaskHistory(codexHistoryItems);
+        }
+        continue;
+      }
+
+      if (
+        genericPayload.type === 'browser_task_started' ||
+        genericPayload.type === 'browser_task_progress' ||
+        genericPayload.type === 'browser_task_completed' ||
+        genericPayload.type === 'browser_task_failed'
+      ) {
+        const browserTaskPayload = (genericPayload as CodexStreamEvent).browser_task;
+        if (browserTaskPayload && typeof browserTaskPayload === 'object') {
+          const nextTask = browserTaskPayload as BrowserTaskState;
+          setBrowserTask(nextTask);
+          writeStoredBrowserTask(nextTask);
+        }
+        continue;
+      }
+
+      if (
+        genericPayload.type === 'workflow_started' ||
+        genericPayload.type === 'workflow_progress' ||
+        genericPayload.type === 'workflow_completed' ||
+        genericPayload.type === 'workflow_failed'
+      ) {
+        const workflowPayload = (genericPayload as CodexStreamEvent).workflow_state;
+        if (workflowPayload && typeof workflowPayload === 'object') {
+          setWorkflowState(workflowPayload as WorkflowState);
+          writeStoredWorkflowState(workflowPayload as WorkflowState);
         }
         continue;
       }

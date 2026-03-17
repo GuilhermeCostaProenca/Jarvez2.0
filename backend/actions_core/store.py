@@ -106,6 +106,29 @@ class JarvezStateStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS channel_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    participant_identity TEXT NOT NULL,
+                    room TEXT,
+                    address TEXT,
+                    text TEXT,
+                    payload_json TEXT NOT NULL,
+                    external_message_id TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(channel, direction, external_message_id)
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_channel_messages_lookup
+                ON channel_messages(channel, direction, created_at DESC)
+                """
+            )
 
     def upsert_session_state(
         self,
@@ -361,12 +384,162 @@ class JarvezStateStore:
             "last_activity_at": str(row["last_activity_at"]),
         }
 
+    def append_channel_message(
+        self,
+        *,
+        channel: str,
+        direction: str,
+        participant_identity: str,
+        room: str | None,
+        address: str | None,
+        text: str | None,
+        payload: Any,
+        external_message_id: str | None = None,
+        created_at: str | None = None,
+    ) -> bool:
+        normalized_external_id = (
+            str(external_message_id or "").strip() if external_message_id is not None else None
+        )
+        if normalized_external_id == "":
+            normalized_external_id = None
+        try:
+            with self._connect() as conn:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO channel_messages (
+                        channel,
+                        direction,
+                        participant_identity,
+                        room,
+                        address,
+                        text,
+                        payload_json,
+                        external_message_id,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(channel, direction, external_message_id)
+                    DO NOTHING
+                    """,
+                    (
+                        channel,
+                        direction,
+                        participant_identity,
+                        room,
+                        address,
+                        text,
+                        json.dumps(_to_payload(payload), ensure_ascii=False),
+                        normalized_external_id,
+                        created_at or _now_iso(),
+                    ),
+                )
+                return cursor.rowcount > 0
+        except sqlite3.IntegrityError:
+            return False
+
+    def list_channel_messages(
+        self,
+        *,
+        channel: str,
+        limit: int = 50,
+        direction: str | None = None,
+        participant_identity: str | None = None,
+        address: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = ["channel = ?"]
+        args: list[Any] = [channel]
+        if direction:
+            clauses.append("direction = ?")
+            args.append(direction)
+        if participant_identity:
+            clauses.append("participant_identity = ?")
+            args.append(participant_identity)
+        if address:
+            clauses.append("address = ?")
+            args.append(address)
+        safe_limit = max(1, min(int(limit), 500))
+        where = " AND ".join(clauses)
+        rows: list[dict[str, Any]] = []
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"""
+                SELECT
+                    id,
+                    channel,
+                    direction,
+                    participant_identity,
+                    room,
+                    address,
+                    text,
+                    payload_json,
+                    external_message_id,
+                    created_at
+                FROM channel_messages
+                WHERE {where}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                [*args, safe_limit],
+            )
+            for row in cursor.fetchall():
+                try:
+                    payload = json.loads(str(row["payload_json"]))
+                except Exception:
+                    payload = None
+                rows.append(
+                    {
+                        "id": int(row["id"]),
+                        "channel": str(row["channel"]),
+                        "direction": str(row["direction"]),
+                        "participant_identity": str(row["participant_identity"]),
+                        "room": str(row["room"]) if row["room"] is not None else None,
+                        "address": str(row["address"]) if row["address"] is not None else None,
+                        "text": str(row["text"]) if row["text"] is not None else None,
+                        "payload": payload if isinstance(payload, dict) else payload,
+                        "external_message_id": str(row["external_message_id"])
+                        if row["external_message_id"] is not None
+                        else None,
+                        "created_at": str(row["created_at"]),
+                    }
+                )
+        return rows
+
+    def count_channel_messages(self, *, channel: str, direction: str | None = None) -> int:
+        clauses = ["channel = ?"]
+        args: list[Any] = [channel]
+        if direction:
+            clauses.append("direction = ?")
+            args.append(direction)
+        where = " AND ".join(clauses)
+        with self._connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT COUNT(1) AS total
+                FROM channel_messages
+                WHERE {where}
+                """,
+                args,
+            ).fetchone()
+        if row is None:
+            return 0
+        try:
+            return int(row["total"])
+        except Exception:
+            return 0
+
+    def latest_channel_message(self, *, channel: str, direction: str | None = None) -> dict[str, Any] | None:
+        rows = self.list_channel_messages(channel=channel, limit=1, direction=direction)
+        if not rows:
+            return None
+        return rows[0]
+
     def clear_all(self) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM session_state")
             conn.execute("DELETE FROM event_state")
             conn.execute("DELETE FROM pending_confirmations")
             conn.execute("DELETE FROM authenticated_sessions")
+            conn.execute("DELETE FROM channel_messages")
 
 
 _STATE_STORE: JarvezStateStore | None = None

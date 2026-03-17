@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import base64
@@ -5227,7 +5227,8 @@ def _get_code_index() -> CodeKnowledgeIndex:
 def _normalize_whatsapp_to(raw_to: str) -> str:
     digits = re.sub(r"\D+", "", raw_to or "")
     if not digits:
-        return ""
+        # Sem dígitos: pode ser nome de contato (ex: "Hugo") — retorna o valor original
+        return raw_to.strip()
     if digits.startswith("0"):
         digits = digits.lstrip("0")
     if not digits.startswith(_whatsapp_default_country_code()):
@@ -7275,6 +7276,162 @@ async def _onenote_append_to_page(params: JsonObject, ctx: ActionContext) -> Act
     )
 
 
+async def _spotify_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_spotify_status(
+        params,
+        ctx,
+        spotify_initialize_cache=_spotify_initialize_cache,
+        spotify_api_request=_spotify_api_request,
+    )
+
+
+async def _spotify_get_devices(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_spotify_get_devices(
+        params,
+        ctx,
+        spotify_api_request=_spotify_api_request,
+    )
+
+
+async def _spotify_transfer_playback(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_spotify_transfer_playback(
+        params,
+        ctx,
+        coerce_optional_str=_coerce_optional_str,
+        spotify_find_device=_spotify_find_device,
+        spotify_api_request=_spotify_api_request,
+        spotify_remember_device_alias=_spotify_remember_device_alias,
+    )
+
+
+async def _spotify_play(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_spotify_play(
+        params,
+        ctx,
+        coerce_optional_str=_coerce_optional_str,
+        normalize_spotify_uri=_normalize_spotify_uri,
+        spotify_find_device=_spotify_find_device,
+        spotify_api_request=_spotify_api_request,
+        is_spotify_restriction_error=_is_spotify_restriction_error,
+        spotify_remember_device_alias=_spotify_remember_device_alias,
+    )
+
+
+async def _spotify_pause(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_spotify_pause(
+        params,
+        ctx,
+        spotify_api_request=_spotify_api_request,
+    )
+
+
+async def _spotify_next_track(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_spotify_next_track(
+        params,
+        ctx,
+        spotify_api_request=_spotify_api_request,
+    )
+
+
+async def _spotify_previous_track(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_spotify_previous_track(
+        params,
+        ctx,
+        spotify_api_request=_spotify_api_request,
+    )
+
+
+async def _spotify_set_volume(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_spotify_set_volume(
+        params,
+        ctx,
+        coerce_optional_str=_coerce_optional_str,
+        spotify_find_device=_spotify_find_device,
+        spotify_api_request=_spotify_api_request,
+        spotify_remember_device_alias=_spotify_remember_device_alias,
+    )
+
+
+async def _spotify_create_surprise_playlist(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_spotify_create_surprise_playlist(
+        params,
+        ctx,
+        spotify_api_request=_spotify_api_request,
+        spotify_pick_surprise_tracks=_spotify_pick_surprise_tracks,
+    )
+
+
+async def _onenote_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_onenote_status(
+        params,
+        ctx,
+        onenote_initialize_cache=_onenote_initialize_cache,
+        onenote_api_request=_onenote_api_request,
+    )
+
+
+async def _onenote_list_notebooks(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_onenote_list_notebooks(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
+    )
+
+
+async def _onenote_list_sections(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_onenote_list_sections(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
+    )
+
+
+async def _onenote_list_pages(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_onenote_list_pages(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
+        quote_path_segment=_quote_path_segment,
+    )
+
+
+async def _onenote_search_pages(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_onenote_search_pages(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
+        quote_path_segment=_quote_path_segment,
+    )
+
+
+async def _onenote_get_page_content(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_onenote_get_page_content(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
+        quote_path_segment=_quote_path_segment,
+        strip_html_for_preview=_strip_html_for_preview,
+    )
+
+
+async def _onenote_create_character_page(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_onenote_create_character_page(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
+        quote_path_segment=_quote_path_segment,
+    )
+
+
+async def _onenote_append_to_page(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    return await domain_onenote_append_to_page(
+        params,
+        ctx,
+        onenote_api_request=_onenote_api_request,
+        quote_path_segment=_quote_path_segment,
+    )
+
+
 async def _whatsapp_get_recent_messages(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_whatsapp_get_recent_messages(
         params,
@@ -7285,6 +7442,11 @@ async def _whatsapp_get_recent_messages(params: JsonObject, ctx: ActionContext) 
 
 
 async def _whatsapp_send_text(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    # Normaliza alias: o modelo pode enviar 'contact' ou 'to', 'message' ou 'text'
+    if "to" not in params and "contact" in params:
+        params["to"] = params["contact"]
+    if "text" not in params and "message" in params:
+        params["text"] = params["message"]
     result = await domain_whatsapp_send_text(
         params,
         ctx,
@@ -7315,6 +7477,11 @@ async def _whatsapp_send_text(params: JsonObject, ctx: ActionContext) -> ActionR
 
 
 async def _whatsapp_send_audio_tts(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    # Normaliza alias: o modelo pode enviar 'contact' ou 'to', 'message' ou 'text'
+    if "to" not in params and "contact" in params:
+        params["to"] = params["contact"]
+    if "text" not in params and "message" in params:
+        params["text"] = params["message"]
     result = await domain_whatsapp_send_audio_tts(
         params,
         ctx,
@@ -10124,7 +10291,6 @@ def register_default_actions() -> None:
             requires_confirmation=True,
             handler=_code_run_command_action,
             requires_auth=True,
-            expose_to_model=False,
         )
     )
 
@@ -11177,11 +11343,11 @@ def register_default_actions() -> None:
     register_action(
         ActionSpec(
             name="whatsapp_send_text",
-            description="Envia mensagem de texto no WhatsApp para um contato.",
+            description="Envia mensagem de texto no WhatsApp para um numero de contato. O parametro 'to' deve ser um numero no formato E.164.",
             params_schema={
                 "type": "object",
                 "properties": {
-                    "to": {"type": "string", "minLength": 8, "maxLength": 32},
+                    "to": {"type": "string", "minLength": 1, "maxLength": 64},
                     "text": {"type": "string", "minLength": 1, "maxLength": 4096},
                 },
                 "required": ["to", "text"],
@@ -11196,11 +11362,11 @@ def register_default_actions() -> None:
     register_action(
         ActionSpec(
             name="whatsapp_send_audio_tts",
-            description="Envia audio com a voz do Jarvez (TTS) no WhatsApp para um contato.",
+            description="Envia audio com a voz do Jarvez (TTS) no WhatsApp. O parametro 'to' deve ser um numero no formato E.164.",
             params_schema={
                 "type": "object",
                 "properties": {
-                    "to": {"type": "string", "minLength": 8, "maxLength": 32},
+                    "to": {"type": "string", "minLength": 1, "maxLength": 64},
                     "text": {"type": "string", "minLength": 1, "maxLength": 1200},
                 },
                 "required": ["to", "text"],

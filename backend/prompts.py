@@ -126,8 +126,8 @@ SESSION_INSTRUCTION = """
 - Use spotify_transfer_playback apenas quando o pedido for so trocar o speaker, sem trocar a musica.
 - Para criar playlist surpresa, use spotify_create_surprise_playlist e informe o link retornado.
 - Para ler mensagens do WhatsApp, use whatsapp_get_recent_messages.
-- Para enviar texto no WhatsApp, use whatsapp_send_text.
-- Para enviar audio com a voz do Jarvez, use whatsapp_send_audio_tts.
+- Para enviar texto no WhatsApp, use whatsapp_send_text (parametros: `to` e `text`).
+- Para enviar audio com a voz do Jarvez, use whatsapp_send_audio_tts (parametros: `to` e `text`).
 - Para diagnosticar o canal WhatsApp (MCP x legado), use whatsapp_channel_status antes de assumir disponibilidade bidirecional.
 - Para consultar cadernos/secoes/paginas do OneNote, use onenote_status, onenote_list_notebooks, onenote_list_sections, onenote_list_pages, onenote_search_pages e onenote_get_page_content.
 - Para LG ThinQ, use thinq_status, thinq_list_devices, thinq_get_device_profile, thinq_get_device_state e thinq_control_device.

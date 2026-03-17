@@ -129,6 +129,15 @@ export interface ActionResultPayload {
         connected?: boolean;
         detail?: string | null;
         url_configured?: boolean;
+        history_available?: boolean;
+        messages_db_path?: string | null;
+      };
+      messages?: {
+        total?: number;
+        inbound_total?: number;
+        outbound_total?: number;
+        last_inbound_at?: string | null;
+        last_outbound_at?: string | null;
       };
     };
     web_dashboard?: {

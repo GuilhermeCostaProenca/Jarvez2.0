@@ -1,5 +1,5 @@
-livekit-agents[images]
-livekit-plugins-google
+livekit-agents[images]>=0.12.18
+livekit-plugins-google>=0.4.5
 livekit-plugins-noise-cancellation
 python-dotenv
 requests

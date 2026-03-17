@@ -21,3 +21,4 @@ output/
 tmp/
 .tmp_*
 .tmp_t20_builder_pkg/
+.codex-orchestrator/
