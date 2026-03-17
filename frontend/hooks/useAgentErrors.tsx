@@ -1,6 +1,7 @@
 import { ReactNode, useEffect } from 'react';
 import { toast as sonnerToast } from 'sonner';
 import { useAgent, useSessionContext } from '@livekit/components-react';
+import { RoomEvent } from 'livekit-client';
 import { WarningIcon } from '@phosphor-icons/react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
@@ -26,7 +27,79 @@ function toastAlert(toast: ToastProps) {
 
 export function useAgentErrors() {
   const agent = useAgent();
-  const { isConnected, end } = useSessionContext();
+  const { isConnected, end, room } = useSessionContext();
+
+  useEffect(() => {
+    const LIVEKIT_STREAM_DISCONNECT_SNIPPET =
+      'unexpectedly disconnected in the middle of sending data';
+
+    const swallowKnownDataStreamError = (message?: string) => {
+      if (!message?.includes(LIVEKIT_STREAM_DISCONNECT_SNIPPET)) {
+        return false;
+      }
+
+      console.warn('Ignorando DataStreamError conhecido do LiveKit após desconexão do agente.');
+      return true;
+    };
+
+    const handleWindowError = (event: ErrorEvent) => {
+      const message =
+        event.message ||
+        (event.error instanceof Error ? event.error.message : undefined) ||
+        undefined;
+      if (swallowKnownDataStreamError(message)) {
+        event.preventDefault();
+      }
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      const message =
+        typeof reason === 'string'
+          ? reason
+          : reason instanceof Error
+            ? reason.message
+            : typeof reason?.message === 'string'
+              ? reason.message
+              : undefined;
+
+      if (swallowKnownDataStreamError(message)) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('error', handleWindowError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('error', handleWindowError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!room) {
+      return;
+    }
+
+    const handleParticipantDisconnected = () => {
+      if (!isConnected) {
+        return;
+      }
+
+      toastAlert({
+        title: 'Agent disconnected',
+        description: <p className="w-full">O agente caiu no meio da sessao. Encerrando para limpar streams pendentes.</p>,
+      });
+
+      end();
+    };
+
+    room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+    return () => {
+      room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+    };
+  }, [room, isConnected, end]);
 
   useEffect(() => {
     if (isConnected && agent.state === 'failed') {

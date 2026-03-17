@@ -1,0 +1,22 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DeityName = void 0;
+var DeityName;
+(function (DeityName) {
+    DeityName["valkaria"] = "valkaria";
+    DeityName["khalmyr"] = "khalmyr";
+    DeityName["marah"] = "marah";
+    DeityName["lena"] = "lena";
+    DeityName["thyatis"] = "thyatis";
+    DeityName["tannatoh"] = "tannatoh";
+    DeityName["kallyadranoch"] = "kallyadranoch";
+    DeityName["allihanna"] = "allihanna";
+    DeityName["sszzzaas"] = "sszzzaas";
+    DeityName["tenebra"] = "tenebra";
+    DeityName["azgher"] = "azgher";
+    DeityName["aharadak"] = "aharadak";
+    DeityName["nimb"] = "nimb";
+    DeityName["megalokk"] = "megalokk";
+    DeityName["thwor"] = "thwor";
+    DeityName["linwuh"] = "linwuh";
+})(DeityName || (exports.DeityName = DeityName = {}));

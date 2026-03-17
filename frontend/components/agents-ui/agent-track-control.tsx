@@ -178,7 +178,10 @@ function TrackDeviceSelect({
     >
       <SelectTrigger className={cn(selectVariants({ size, variant }), className)} {...props}>
         {size !== 'sm' && (
-          <SelectValue className="font-mono text-sm" placeholder={`Alternar ${kind === 'audioinput' ? 'microfone' : 'câmera'}`} />
+          <SelectValue
+            className="font-mono text-sm"
+            placeholder={`Alternar ${kind === 'audioinput' ? 'microfone' : 'câmera'}`}
+          />
         )}
       </SelectTrigger>
       <SelectContent position="popper">

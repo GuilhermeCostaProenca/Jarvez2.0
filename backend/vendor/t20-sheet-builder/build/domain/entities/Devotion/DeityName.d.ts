@@ -1,0 +1,18 @@
+export declare enum DeityName {
+    valkaria = "valkaria",
+    khalmyr = "khalmyr",
+    marah = "marah",
+    lena = "lena",
+    thyatis = "thyatis",
+    tannatoh = "tannatoh",
+    kallyadranoch = "kallyadranoch",
+    allihanna = "allihanna",
+    sszzzaas = "sszzzaas",
+    tenebra = "tenebra",
+    azgher = "azgher",
+    aharadak = "aharadak",
+    nimb = "nimb",
+    megalokk = "megalokk",
+    thwor = "thwor",
+    linwuh = "linwuh"
+}

@@ -88,10 +88,10 @@ export function useInputControls({
   const micTrackRef = useMemo(() => {
     return localParticipant && microphoneTrack
       ? {
-        participant: localParticipant,
-        source: Track.Source.Microphone,
-        publication: microphoneTrack,
-      }
+          participant: localParticipant,
+          source: Track.Source.Microphone,
+          publication: microphoneTrack,
+        }
       : undefined;
   }, [localParticipant, microphoneTrack]);
 

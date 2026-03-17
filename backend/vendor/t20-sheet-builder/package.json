@@ -1,0 +1,30 @@
+{
+  "name": "t20-sheet-builder",
+  "version": "1.26.0",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "exports": "./build/index.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/isaacbatst/t20-sheet-builder"
+  },
+  "scripts": {
+    "build": "rm -rf ./build && npx tsc",
+    "prepack": "yarn build",
+    "dev": "npx ts-node src/main.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^18.7.18",
+    "@typescript-eslint/eslint-plugin": ">=5.57.0",
+    "@typescript-eslint/parser": ">=5.57.0",
+    "eslint": ">=8.0.0",
+    "eslint-config-xo": "^0.43.1",
+    "eslint-config-xo-typescript": "^1",
+    "eslint-plugin-import": "^2.27.5",
+    "typescript": "^5.0.4",
+    "vitest": "^0.30.1"
+  }
+}

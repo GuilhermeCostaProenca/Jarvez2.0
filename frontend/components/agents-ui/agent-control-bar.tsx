@@ -66,7 +66,7 @@ interface AgentChatInputProps {
   className?: string;
 }
 
-function AgentChatInput({ chatOpen, onSend = async () => { }, className }: AgentChatInputProps) {
+function AgentChatInput({ chatOpen, onSend = async () => {}, className }: AgentChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [isSending, setIsSending] = useState(false);
   const [message, setMessage] = useState<string>('');
@@ -301,12 +301,16 @@ export function AgentControlBar({
       initial={false}
       animate={{
         y: isVisible || isChatOpen || isChatOpenUncontrolled || isLocked ? 0 : 20,
-        opacity: isVisible || isChatOpen || isChatOpenUncontrolled || isLocked ? 1 : 0
+        opacity: isVisible || isChatOpen || isChatOpenUncontrolled || isLocked ? 1 : 0,
       }}
-      transition={{ duration: 0.4, ease: "easeInOut" }}
+      transition={{ duration: 0.4, ease: 'easeInOut' }}
       className={cn(
-        "relative mx-auto w-fit min-w-[300px] z-50",
-        !isVisible && !isChatOpen && !isChatOpenUncontrolled && !isLocked && "pointer-events-none transition-all"
+        'relative z-50 mx-auto w-fit min-w-[300px]',
+        !isVisible &&
+          !isChatOpen &&
+          !isChatOpenUncontrolled &&
+          !isLocked &&
+          'pointer-events-none transition-all'
       )}
       onMouseEnter={() => {
         setIsVisible(true);
@@ -316,7 +320,7 @@ export function AgentControlBar({
       <div
         aria-label="Controles do assistente de voz"
         className={cn(
-          'backdrop-blur-xl bg-black/40 border-[#1da3b9]/20 flex flex-col border p-3 shadow-2xl shadow-[#1da3b9]/5',
+          'flex flex-col border border-[#1da3b9]/20 bg-black/40 p-3 shadow-2xl shadow-[#1da3b9]/5 backdrop-blur-xl',
           variant === 'livekit' ? 'rounded-[31px]' : 'rounded-xl',
           className
         )}
@@ -336,19 +340,21 @@ export function AgentControlBar({
         </motion.div>
 
         <div className="flex gap-1">
-          <div className="flex grow gap-1 items-center">
+          <div className="flex grow items-center gap-1">
             {/* Botão Discreto de Trava (Pin) */}
             <button
               onClick={() => setIsLocked(!isLocked)}
               className={cn(
-                "p-2 rounded-full transition-all duration-300 mr-2",
-                isLocked ? "text-[#43d9f0] bg-[#1da3b9]/20" : "text-white/40 hover:text-white/60 hover:bg-white/5"
+                'mr-2 rounded-full p-2 transition-all duration-300',
+                isLocked
+                  ? 'bg-[#1da3b9]/20 text-[#43d9f0]'
+                  : 'text-white/40 hover:bg-white/5 hover:text-white/60'
               )}
-              title={isLocked ? "Auto-hide desativado" : "Ativar auto-hide"}
+              title={isLocked ? 'Auto-hide desativado' : 'Ativar auto-hide'}
             >
               <motion.div
                 animate={{ rotate: isLocked ? 45 : 0 }}
-                transition={{ type: "spring", stiffness: 300 }}
+                transition={{ type: 'spring', stiffness: 300 }}
               >
                 <Pin className="size-4" />
               </motion.div>
@@ -438,7 +444,7 @@ export function AgentControlBar({
               disabled={!isConnected}
               className={cn(
                 variant === 'livekit' &&
-                'bg-destructive/10 dark:bg-destructive/10 text-destructive hover:bg-destructive/20 dark:hover:bg-destructive/20 focus:bg-destructive/20 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/4 rounded-full font-mono text-xs font-bold tracking-wider'
+                  'bg-destructive/10 dark:bg-destructive/10 text-destructive hover:bg-destructive/20 dark:hover:bg-destructive/20 focus:bg-destructive/20 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/4 rounded-full font-mono text-xs font-bold tracking-wider'
               )}
             >
               <span className="hidden md:inline">ENCERRAR CHAMADA</span>
