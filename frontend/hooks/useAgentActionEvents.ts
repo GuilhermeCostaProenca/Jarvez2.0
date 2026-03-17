@@ -239,6 +239,7 @@ export function useAgentActionEvents() {
   const spokenAutonomyNoticeAt = useRef<Map<string, number>>(new Map());
   const reportedAutonomyNoticeDelivery = useRef<Set<string>>(new Set());
   const spokenVoiceCueAt = useRef<Map<string, number>>(new Map());
+  const visualVoiceNoticeAt = useRef<Map<string, number>>(new Map());
   const lastPublishedVoiceState = useRef<string>('');
   const lastWakeWordAt = useRef<number>(0);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingActionConfirmation | null>(
@@ -718,6 +719,38 @@ export function useAgentActionEvents() {
         return;
       }
       setVoiceInteractivity(nextState);
+
+      if (nextState.source === 'backend') {
+        const dedupeKey =
+          nextState.trace_id ??
+          `${nextState.state}:${nextState.action_name ?? 'voice'}:${nextState.updated_at ?? nextState.display_message ?? ''}`;
+        const now = Date.now();
+        const lastVisualNoticeAt = visualVoiceNoticeAt.current.get(dedupeKey) ?? 0;
+        if (now - lastVisualNoticeAt > 4_000) {
+          visualVoiceNoticeAt.current.set(dedupeKey, now);
+          if (visualVoiceNoticeAt.current.size > 80) {
+            for (const [key, value] of visualVoiceNoticeAt.current.entries()) {
+              if (now - value > 45_000) {
+                visualVoiceNoticeAt.current.delete(key);
+              }
+            }
+          }
+
+          if (nextState.state === 'error') {
+            toast.error(nextState.display_message ?? 'Nao consegui concluir a acao.', {
+              description: nextState.can_retry
+                ? 'Voce pode tentar de novo ou escolher outra abordagem.'
+                : undefined,
+            });
+          } else if (nextState.state === 'background') {
+            toast.message(nextState.display_message ?? 'Tarefa em segundo plano.', {
+              description: nextState.action_name
+                ? `Acompanhando ${nextState.action_name.replaceAll('_', ' ')}.`
+                : 'O Jarvez continua executando isso sem bloquear a conversa.',
+            });
+          }
+        }
+      }
 
       if (
         !speak ||

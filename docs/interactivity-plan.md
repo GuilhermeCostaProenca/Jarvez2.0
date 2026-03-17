@@ -100,20 +100,20 @@ Contexto tecnico: ja existe substrato de automacao em `backend/automation/` com 
 
 Contexto tecnico: a UI ja hidrata snapshot em `useAgentActionEvents`, tem `session-view`, `audio-visualizer`, toasts, HUD chips, banner de reconnect e prompt de confirmacao. Tambem ja recebe muitos estados de backend como automation, workflows, browser tasks, codex e WhatsApp. O que falta e um feedback visual fiel ao estado real do assistente, em vez de animacao generica ou inferida, preservando a sessao principal limpa como pede o `AGENTS.md`.
 
-- [ ] UI1. Expor estado do assistente na sessao principal
-  Notas: `ouvindo`, `pensando`, `executando`, `background` e `erro`, com payload tipado e sincronizado com backend.
+- [x] UI1. Expor estado do assistente na sessao principal
+  Notas: `session-view.tsx` agora consome `voice_interactivity` tipado e mostra estado compacto com microcopy real no HUD principal.
 
-- [ ] UI2. Sincronizar animacoes com o estado real do backend
-  Notas: usar eventos/snapshot do runtime e nao animacao fake desacoplada da execucao real.
+- [x] UI2. Sincronizar animacoes com o estado real do backend
+  Notas: o orb principal passou a variar escala, opacidade e caos a partir de `voice_interactivity`, em vez de animacao generica desacoplada.
 
-- [ ] UI3. Mostrar acoes em background sem bloquear a conversa
-  Notas: toast, pill ou badge com progresso resumido, especialmente para tarefas demoradas.
+- [x] UI3. Mostrar acoes em background sem bloquear a conversa
+  Notas: tarefas em `background` e estados longos de browser/workflow/automation/codex agora aparecem como pills compactas e toast resumido, sem abrir painel novo.
 
-- [ ] UI4. Tornar falhas impossiveis de passar em silencio
-  Notas: toda falha operacional precisa aparecer visualmente e, quando aplicavel, acionar resposta falada.
+- [x] UI4. Tornar falhas impossiveis de passar em silencio
+  Notas: `useAgentActionEvents.ts` passou a emitir toast deduplicado para `voice_interactivity.error`, somando feedback visual ao erro falado da Frente V.
 
-- [ ] UI5. Consolidar design system de interatividade
-  Notas: cores, motion, intensidade visual e microcopy por estado do assistente, sem transformar a sessao em painel pesado.
+- [x] UI5. Consolidar design system de interatividade
+  Notas: estados principais agora compartilham palette, motion e microcopy consistentes no HUD e no orb, preservando a sessao limpa em mobile e desktop.
 
 ## Frente G - Gestos e interacao fisica
 

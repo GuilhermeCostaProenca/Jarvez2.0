@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpenText,
   Disc3,
@@ -108,10 +108,138 @@ interface VantaScriptWindow extends Window {
   };
 }
 
+type AssistantUiState =
+  | 'idle'
+  | 'listening'
+  | 'transcribing'
+  | 'thinking'
+  | 'confirming'
+  | 'executing'
+  | 'background'
+  | 'speaking'
+  | 'error';
+
+const ASSISTANT_STATE_META: Record<
+  AssistantUiState,
+  {
+    label: string;
+    hint: string;
+    chipClassName: string;
+    panelClassName: string;
+    pulseClassName: string;
+    orbScale: number;
+    orbOpacity: number;
+    orbBlur: string;
+    chaosBase: number;
+  }
+> = {
+  idle: {
+    label: 'Pronto',
+    hint: 'Aguardando o proximo turno.',
+    chipClassName: 'border-white/10 bg-white/5 text-white/80',
+    panelClassName: 'border-white/10 bg-black/20',
+    pulseClassName: 'bg-white/60',
+    orbScale: 1,
+    orbOpacity: 0.82,
+    orbBlur: 'saturate(100%)',
+    chaosBase: 3,
+  },
+  listening: {
+    label: 'Ouvindo',
+    hint: 'Captando sua fala agora.',
+    chipClassName: 'border-emerald-300/30 bg-emerald-500/12 text-emerald-100',
+    panelClassName: 'border-emerald-300/20 bg-emerald-500/6',
+    pulseClassName: 'bg-emerald-300',
+    orbScale: 1.05,
+    orbOpacity: 1,
+    orbBlur: 'saturate(130%) brightness(1.05)',
+    chaosBase: 4.4,
+  },
+  transcribing: {
+    label: 'Transcrevendo',
+    hint: 'Convertendo audio em texto.',
+    chipClassName: 'border-sky-300/30 bg-sky-500/10 text-sky-100',
+    panelClassName: 'border-sky-300/20 bg-sky-500/6',
+    pulseClassName: 'bg-sky-300',
+    orbScale: 1.03,
+    orbOpacity: 0.96,
+    orbBlur: 'saturate(118%) brightness(1.04)',
+    chaosBase: 3.8,
+  },
+  thinking: {
+    label: 'Pensando',
+    hint: 'Montando a resposta.',
+    chipClassName: 'border-amber-300/30 bg-amber-500/10 text-amber-100',
+    panelClassName: 'border-amber-300/20 bg-amber-500/6',
+    pulseClassName: 'bg-amber-300',
+    orbScale: 1.06,
+    orbOpacity: 1,
+    orbBlur: 'saturate(115%) brightness(1.08)',
+    chaosBase: 5.1,
+  },
+  confirming: {
+    label: 'Confirmando',
+    hint: 'Preparando a acao para voce.',
+    chipClassName: 'border-cyan-300/30 bg-cyan-500/10 text-cyan-100',
+    panelClassName: 'border-cyan-300/20 bg-cyan-500/6',
+    pulseClassName: 'bg-cyan-300',
+    orbScale: 1.04,
+    orbOpacity: 0.98,
+    orbBlur: 'saturate(122%) brightness(1.05)',
+    chaosBase: 4.6,
+  },
+  executing: {
+    label: 'Executando',
+    hint: 'Rodando a acao agora.',
+    chipClassName: 'border-indigo-300/30 bg-indigo-500/12 text-indigo-100',
+    panelClassName: 'border-indigo-300/20 bg-indigo-500/7',
+    pulseClassName: 'bg-indigo-300',
+    orbScale: 1.08,
+    orbOpacity: 1,
+    orbBlur: 'saturate(130%) brightness(1.1)',
+    chaosBase: 6.1,
+  },
+  background: {
+    label: 'Em segundo plano',
+    hint: 'A conversa segue enquanto a tarefa continua.',
+    chipClassName: 'border-violet-300/30 bg-violet-500/12 text-violet-100',
+    panelClassName: 'border-violet-300/20 bg-violet-500/7',
+    pulseClassName: 'bg-violet-300',
+    orbScale: 1.02,
+    orbOpacity: 0.92,
+    orbBlur: 'saturate(108%) brightness(1.02)',
+    chaosBase: 3.7,
+  },
+  speaking: {
+    label: 'Falando',
+    hint: 'Respondendo em voz agora.',
+    chipClassName: 'border-cyan-300/30 bg-cyan-500/14 text-cyan-100',
+    panelClassName: 'border-cyan-300/25 bg-cyan-500/8',
+    pulseClassName: 'bg-cyan-300',
+    orbScale: 1.09,
+    orbOpacity: 1,
+    orbBlur: 'saturate(140%) brightness(1.12)',
+    chaosBase: 6.5,
+  },
+  error: {
+    label: 'Erro',
+    hint: 'A interface mostrou a falha e o Jarvez pode tentar de novo.',
+    chipClassName: 'border-rose-300/30 bg-rose-500/14 text-rose-100',
+    panelClassName: 'border-rose-300/25 bg-rose-500/8',
+    pulseClassName: 'bg-rose-300',
+    orbScale: 0.98,
+    orbOpacity: 0.94,
+    orbBlur: 'saturate(90%) brightness(0.98)',
+    chaosBase: 2.4,
+  },
+};
+
 const VantaController = ({
   vantaRef,
+  voiceState,
 }: {
   vantaRef: React.MutableRefObject<VantaEffect | null>;
+  voiceState: AssistantUiState;
 }) => {
   const { audioTrack } = useVoiceAssistant();
   const volume = useTrackVolume(audioTrack);
@@ -120,14 +248,14 @@ const VantaController = ({
     const effect = vantaRef.current;
     if (!effect) return;
 
-    const baseChaos = 3.0;
+    const baseChaos = ASSISTANT_STATE_META[voiceState].chaosBase;
     const voiceChaos = volume * 7.0;
     const finalChaos = baseChaos + voiceChaos;
 
     if (Math.abs(effect.options.chaos - finalChaos) > 0.05) {
       effect.setOptions({ chaos: finalChaos });
     }
-  }, [volume, vantaRef]);
+  }, [voiceState, volume, vantaRef]);
 
   return null;
 };
@@ -243,6 +371,9 @@ export const SessionView = ({
     latestGitDiffSummary,
     codingHistory,
     activeCodexTask,
+    browserTask,
+    workflowState,
+    automationState,
     codexTaskEvents,
     codexTaskHistory,
     voiceInteractivity,
@@ -277,6 +408,56 @@ export const SessionView = ({
     modeFallbackColor ??
     PERSONA_COLORS[agentPersona as keyof typeof PERSONA_COLORS] ??
     PERSONA_COLORS.jarvis;
+  const assistantUiState = (voiceInteractivity?.state ?? 'idle') as AssistantUiState;
+  const assistantUiMeta = ASSISTANT_STATE_META[assistantUiState] ?? ASSISTANT_STATE_META.idle;
+  const assistantDisplayMessage =
+    voiceInteractivity?.display_message ?? assistantUiMeta.label;
+  const assistantHint =
+    voiceInteractivity?.state === 'error' && voiceInteractivity?.can_retry
+      ? 'Voce pode tentar de novo sem perder a conversa.'
+      : assistantUiMeta.hint;
+  const backgroundSummaries = useMemo(() => {
+    const entries: Array<{ key: string; label: string; detail: string }> = [];
+    if (voiceInteractivity?.state === 'background') {
+      entries.push({
+        key: `voice-${voiceInteractivity.trace_id ?? voiceInteractivity.action_name ?? 'background'}`,
+        label: 'Assistente',
+        detail: voiceInteractivity.display_message ?? 'Tarefa em segundo plano.',
+      });
+    }
+    if (browserTask?.status === 'running') {
+      entries.push({
+        key: `browser-${browserTask.task_id ?? 'running'}`,
+        label: 'Browser',
+        detail: browserTask.summary ?? browserTask.request ?? 'Automacao em andamento.',
+      });
+    }
+    if (workflowState && ['planning', 'awaiting_confirmation', 'running'].includes(workflowState.status ?? '')) {
+      entries.push({
+        key: `workflow-${workflowState.workflow_id ?? workflowState.status ?? 'running'}`,
+        label: 'Workflow',
+        detail: workflowState.summary ?? workflowState.current_step ?? 'Fluxo em andamento.',
+      });
+    }
+    if (automationState && ['scheduled', 'running'].includes(automationState.status ?? '')) {
+      entries.push({
+        key: `automation-${automationState.automation_id ?? automationState.status ?? 'running'}`,
+        label: 'Automacao',
+        detail: automationState.summary ?? 'Automacao ativa.',
+      });
+    }
+    if (activeCodexTask?.status === 'running') {
+      entries.push({
+        key: `codex-${activeCodexTask.task_id ?? 'running'}`,
+        label: 'Codex',
+        detail: activeCodexTask.summary ?? activeCodexTask.request ?? 'Tarefa de codigo em andamento.',
+      });
+    }
+    return entries.slice(0, 3);
+  }, [activeCodexTask, automationState, browserTask, voiceInteractivity, workflowState]);
+  const hasCompactFeedbackRow =
+    Boolean(voiceInteractivity?.state && voiceInteractivity.state !== 'idle') ||
+    backgroundSummaries.length > 0;
 
   useEffect(() => {
     const loadScript = (src: string): Promise<boolean> => {
@@ -616,7 +797,7 @@ export const SessionView = ({
 
   return (
     <section className="relative flex h-svh w-svw flex-col overflow-hidden bg-black" {...props}>
-      <VantaController vantaRef={vantaEffectRef} />
+      <VantaController vantaRef={vantaEffectRef} voiceState={assistantUiState} />
 
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
@@ -624,9 +805,13 @@ export const SessionView = ({
             <motion.div
               key={session.isConnected ? `vanta-${agentPersona}` : 'vanta-disconnected'}
               initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              animate={{
+                opacity: assistantUiMeta.orbOpacity,
+                scale: assistantUiMeta.orbScale,
+                filter: assistantUiMeta.orbBlur,
+              }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 1.5, ease: 'easeInOut' }}
+              transition={{ duration: 0.45, ease: 'easeInOut' }}
               className="p5-canvas-container absolute inset-0 flex items-center justify-center"
             >
               <VantaOrb
@@ -654,7 +839,10 @@ export const SessionView = ({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.25, ease: 'easeOut' }}
-              className="pointer-events-auto mx-auto w-full max-w-2xl rounded-2xl border border-white/10 bg-black/20 px-3 py-2 backdrop-blur-xl"
+              className={cn(
+                'pointer-events-auto mx-auto w-full max-w-2xl rounded-2xl px-3 py-2 backdrop-blur-xl',
+                assistantUiMeta.panelClassName
+              )}
             >
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/90">
                 <span
@@ -710,30 +898,11 @@ export const SessionView = ({
                   <span
                     className={cn(
                       'rounded-full border px-2 py-1',
-                      voiceInteractivity.state === 'error'
-                        ? 'border-rose-300/30 bg-rose-500/10 text-rose-100'
-                        : voiceInteractivity.state === 'speaking'
-                          ? 'border-cyan-300/30 bg-cyan-500/10 text-cyan-100'
-                          : voiceInteractivity.state === 'listening'
-                            ? 'border-emerald-300/30 bg-emerald-500/10 text-emerald-100'
-                            : voiceInteractivity.state === 'background'
-                              ? 'border-violet-300/30 bg-violet-500/10 text-violet-100'
-                              : 'border-white/10 bg-white/5 text-white/80'
+                      assistantUiMeta.chipClassName
                     )}
                     title={voiceInteractivity.display_message ?? undefined}
                   >
-                    {voiceInteractivity.display_message ??
-                      ({
-                        idle: 'Pronto',
-                        listening: 'Ouvindo',
-                        transcribing: 'Transcrevendo',
-                        thinking: 'Pensando',
-                        confirming: 'Confirmando',
-                        executing: 'Executando',
-                        background: 'Em segundo plano',
-                        speaking: 'Falando',
-                        error: 'Erro',
-                      }[voiceInteractivity.state] ?? 'Estado')}
+                    {assistantDisplayMessage}
                   </span>
                 )}
                 <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-white/70">
@@ -763,6 +932,50 @@ export const SessionView = ({
                   </Button>
                 </div>
               </div>
+              <AnimatePresence initial={false}>
+                {hasCompactFeedbackRow && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                    animate={{ opacity: 1, height: 'auto', marginTop: 8 }}
+                    exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                    transition={{ duration: 0.22, ease: 'easeOut' }}
+                    className="overflow-hidden border-t border-white/8 pt-2"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div
+                        className={cn(
+                          'flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px]',
+                          assistantUiMeta.chipClassName
+                        )}
+                      >
+                        <motion.span
+                          className={cn('size-2 rounded-full', assistantUiMeta.pulseClassName)}
+                          animate={{
+                            opacity:
+                              assistantUiState === 'idle' ? [0.35, 0.55, 0.35] : [0.45, 1, 0.45],
+                            scale:
+                              assistantUiState === 'idle' ? [1, 1.05, 1] : [1, 1.35, 1],
+                          }}
+                          transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                        />
+                        <span className="font-medium">{assistantUiMeta.label}</span>
+                        <span className="text-white/70">{assistantHint}</span>
+                      </div>
+
+                      {backgroundSummaries.map((entry) => (
+                        <div
+                          key={entry.key}
+                          className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/80"
+                          title={entry.detail}
+                        >
+                          <span className="font-medium text-white">{entry.label}:</span>{' '}
+                          <span>{entry.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           </AnimatePresence>
         </div>
@@ -782,7 +995,11 @@ export const SessionView = ({
                 {...SHIMMER_MOTION_PROPS}
                 className="pointer-events-none mx-auto block w-full max-w-2xl pb-8 text-center text-sm font-semibold"
               >
-                O Jarvis esta ouvindo, pode falar...
+                {assistantUiState === 'error'
+                  ? assistantDisplayMessage
+                  : assistantUiState === 'background'
+                    ? 'O Jarvez segue trabalhando em segundo plano.'
+                    : assistantDisplayMessage || 'O Jarvez esta pronto, pode falar...'}
               </MotionMessage>
             )}
           </AnimatePresence>
