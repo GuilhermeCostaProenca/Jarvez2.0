@@ -21,10 +21,10 @@ load_dotenv(Path(__file__).with_name(".env"), override=False)
 
 
 class McpSubstrateTests(unittest.TestCase):
-    def test_default_manifest_registers_spotify_onenote_home_assistant_and_thinq(self) -> None:
+    def test_default_manifest_registers_spotify_onenote_home_assistant_thinq_and_rpg(self) -> None:
         registry = create_default_mcp_registry()
         snapshot = registry.manifest_snapshot()
-        self.assertEqual(len(snapshot), 4)
+        self.assertEqual(len(snapshot), 5)
         snapshot_by_name = {row["name"]: row for row in snapshot}
 
         self.assertIn("spotify", snapshot_by_name)
@@ -46,6 +46,11 @@ class McpSubstrateTests(unittest.TestCase):
         self.assertTrue(snapshot_by_name["thinq"]["enabled"])
         self.assertTrue(str(snapshot_by_name["thinq"]["cwd"]).endswith("jarvez-mcp-thinq"))
         self.assertIn("THINQ_PAT", snapshot_by_name["thinq"]["env_allowlist"])
+
+        self.assertIn("rpg", snapshot_by_name)
+        self.assertTrue(snapshot_by_name["rpg"]["enabled"])
+        self.assertTrue(str(snapshot_by_name["rpg"]["cwd"]).endswith("jarvez-mcp-rpg"))
+        self.assertIn("RPG_KNOWLEDGE_DB_PATH", snapshot_by_name["rpg"]["env_allowlist"])
 
     def test_spotify_pilot_can_list_tools_and_call_real_tool(self) -> None:
         audit_rows: list[dict[str, object]] = []

@@ -156,12 +156,49 @@ def _pilot_thinq_config() -> McpServerConfig:
     )
 
 
+def _pilot_rpg_config() -> McpServerConfig:
+    rpg_root = _jarvez_root().parent / "jarvez-mcp-rpg"
+    return McpServerConfig(
+        name="rpg",
+        command=sys.executable,
+        args=["server.py"],
+        cwd=str(rpg_root),
+        enabled=True,
+        timeout_seconds=20,
+        legacy_fallback_enabled=True,
+        env_allowlist=[
+            "PATH",
+            "PATHEXT",
+            "SYSTEMROOT",
+            "WINDIR",
+            "COMSPEC",
+            "TEMP",
+            "TMP",
+            "LOCALAPPDATA",
+            "APPDATA",
+            "PROGRAMDATA",
+            "USERPROFILE",
+            "RPG_SOURCE_PATHS",
+            "RPG_KNOWLEDGE_DB_PATH",
+            "RPG_NOTES_DIR",
+            "RPG_SESSION_LOGS_DIR",
+            "RPG_CHARACTERS_DIR",
+            "RPG_CHARACTER_TEMPLATE_PDFS",
+            "RPG_CHARACTER_PDFS_DIR",
+            "RPG_THREATS_DIR",
+            "RPG_THREAT_PDFS_DIR",
+            "RPG_CHARACTER_PDF_TEMPLATE_PATH",
+        ],
+    )
+
+
 def create_default_mcp_registry() -> "McpRegistry":
     return McpRegistry([
         _pilot_spotify_config(),
         _pilot_onenote_config(),
         _pilot_home_assistant_config(),
         _pilot_thinq_config(),
+        _pilot_rpg_config(),
     ])
 
 
