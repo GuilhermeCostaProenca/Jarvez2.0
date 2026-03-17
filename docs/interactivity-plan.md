@@ -22,8 +22,8 @@ Decisoes base deste plano:
 - [ ] V. Voz e naturalidade
   Notas: latencia percebida, confirmacao curta, erro falado, wake word e state machine de interatividade.
 
-- [ ] M. Memoria e contexto
-  Notas: memoria conversacional estruturada em SQLite somada a Mem0, com preferencias e ultimos turnos relevantes.
+- [x] M. Memoria e contexto
+  Notas: camada hibrida `SQLite + Mem0` implementada em `backend/memory/memory_manager.py`, com turnos, preferencias e resumo de sessao persistidos.
 
 - [ ] P. Proatividade
   Notas: motor de sugestao ligado a heuristicas locais, memoria e ao substrato de automacoes de `F2.3`.
@@ -62,20 +62,20 @@ Contexto tecnico: o runtime realtime ja existe em `backend/runtime/realtime_adap
 
 Contexto tecnico: `backend/agent.py` ja carrega e persiste memoria publica/privada via Mem0 entre sessoes. `backend/actions_core/store.py` ja persiste `session_state`, `event_state`, `pending_confirmations`, `authenticated_sessions`, `channel_messages` e auditoria MCP em SQLite. Ainda nao existe uma camada dedicada de memoria conversacional estruturada que alimente voz, UI e decisao de proatividade com ownership claro entre SQLite e Mem0.
 
-- [ ] M1. Introduzir memoria conversacional estruturada em SQLite
-  Notas: persistir ultimos turnos relevantes, resumos por sessao, fatos operacionais e referencias recentes usadas pela conversa.
+- [x] M1. Introduzir memoria conversacional estruturada em SQLite
+  Notas: `backend/actions_core/store.py` agora cria `conversation_turns` e `session_summaries`, e `backend/memory/memory_manager.py` persiste turnos estruturados por sessao.
 
-- [ ] M2. Definir politica hibrida SQLite + Mem0
-  Notas: SQLite para contexto estruturado/recente e preferencia explicita; Mem0 para memoria semantica de longo prazo entre sessoes.
+- [x] M2. Definir politica hibrida SQLite + Mem0
+  Notas: `backend/memory/memory_manager.py` passou a centralizar a leitura; SQLite guarda contexto estruturado/recente e preferencias, Mem0 segue como memoria semantica de longo prazo.
 
-- [ ] M3. Alimentar o contexto de voz com memoria persistida
-  Notas: injetar ultimos N turnos relevantes, preferencias e resumo da sessao anterior antes de iniciar a conversa.
+- [x] M3. Alimentar o contexto de voz com memoria persistida
+  Notas: `backend/agent.py` agora injeta no bootstrap os ultimos turnos relevantes, preferencias, resumo da sessao anterior e memorias Mem0 via `MemoryManager`.
 
-- [ ] M4. Persistir preferencias do usuario
-  Notas: tom de resposta, apps favoritos, dispositivos preferidos, rotina recorrente e escolhas frequentes de integracao.
+- [x] M4. Persistir preferencias do usuario
+  Notas: `user_preferences` foi adicionada ao SQLite e `MemoryManager` expoe `set_preference`, `get_preference` e `list_preferences`.
 
-- [ ] M5. Criar politica de resumo e expurgo
-  Notas: evitar crescimento infinito; resumir contexto antigo, manter fatos duraveis e permitir revisao de escopo publico/privado.
+- [x] M5. Criar politica de resumo e expurgo
+  Notas: turnos antigos agora viram `session_summaries` por sessao e saem de `conversation_turns`; a cobertura entrou em `backend/test_memory_manager.py`.
 
 ## Frente P - Proatividade
 

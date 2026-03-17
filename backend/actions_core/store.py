@@ -152,6 +152,70 @@ class JarvezStateStore:
                 ON mcp_call_audit(server_name, tool_name, created_at DESC)
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS conversation_turns (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    participant_identity TEXT NOT NULL,
+                    room TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    relevance_score REAL NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_conversation_turns_lookup
+                ON conversation_turns(participant_identity, room, timestamp DESC)
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_conversation_turns_session
+                ON conversation_turns(session_id, timestamp DESC)
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_summaries (
+                    session_id TEXT PRIMARY KEY,
+                    participant_identity TEXT NOT NULL,
+                    room TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    started_at TEXT,
+                    ended_at TEXT NOT NULL,
+                    turns_count INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_session_summaries_lookup
+                ON session_summaries(participant_identity, room, ended_at DESC)
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    participant_identity TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (participant_identity, key)
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_user_preferences_lookup
+                ON user_preferences(participant_identity, updated_at DESC)
+                """
+            )
 
     def upsert_session_state(
         self,
@@ -564,6 +628,262 @@ class JarvezStateStore:
             conn.execute("DELETE FROM authenticated_sessions")
             conn.execute("DELETE FROM channel_messages")
             conn.execute("DELETE FROM mcp_call_audit")
+            conn.execute("DELETE FROM conversation_turns")
+            conn.execute("DELETE FROM session_summaries")
+            conn.execute("DELETE FROM user_preferences")
+
+    def append_conversation_turn(
+        self,
+        *,
+        session_id: str,
+        participant_identity: str,
+        room: str,
+        role: str,
+        content: str,
+        timestamp: str | None = None,
+        relevance_score: float = 1.0,
+    ) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO conversation_turns (
+                    session_id,
+                    participant_identity,
+                    room,
+                    role,
+                    content,
+                    timestamp,
+                    relevance_score,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    participant_identity,
+                    room,
+                    role,
+                    content,
+                    timestamp or _now_iso(),
+                    float(relevance_score),
+                    _now_iso(),
+                ),
+            )
+            return int(cursor.lastrowid or 0)
+
+    def list_conversation_turns(
+        self,
+        *,
+        participant_identity: str,
+        room: str,
+        limit: int = 12,
+        session_id: str | None = None,
+        older_than: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = ["participant_identity = ?", "room = ?"]
+        args: list[Any] = [participant_identity, room]
+        if session_id:
+            clauses.append("session_id = ?")
+            args.append(session_id)
+        if older_than:
+            clauses.append("timestamp < ?")
+            args.append(older_than)
+        safe_limit = max(1, min(int(limit), 500))
+        where = " AND ".join(clauses)
+        rows: list[dict[str, Any]] = []
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"""
+                SELECT id, session_id, participant_identity, room, role, content, timestamp, relevance_score
+                FROM conversation_turns
+                WHERE {where}
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                """,
+                [*args, safe_limit],
+            )
+            fetched = cursor.fetchall()
+        for row in reversed(fetched):
+            rows.append(
+                {
+                    "id": int(row["id"]),
+                    "session_id": str(row["session_id"]),
+                    "participant_identity": str(row["participant_identity"]),
+                    "room": str(row["room"]),
+                    "role": str(row["role"]),
+                    "content": str(row["content"]),
+                    "timestamp": str(row["timestamp"]),
+                    "relevance_score": float(row["relevance_score"]),
+                }
+            )
+        return rows
+
+    def delete_conversation_turns(self, turn_ids: list[int]) -> None:
+        normalized_ids = [int(item) for item in turn_ids if int(item) > 0]
+        if not normalized_ids:
+            return
+        placeholders = ",".join("?" for _ in normalized_ids)
+        with self._connect() as conn:
+            conn.execute(
+                f"DELETE FROM conversation_turns WHERE id IN ({placeholders})",
+                normalized_ids,
+            )
+
+    def save_session_summary(
+        self,
+        *,
+        session_id: str,
+        participant_identity: str,
+        room: str,
+        summary: str,
+        turns_count: int,
+        ended_at: str | None = None,
+        started_at: str | None = None,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO session_summaries (
+                    session_id,
+                    participant_identity,
+                    room,
+                    summary,
+                    started_at,
+                    ended_at,
+                    turns_count,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_id)
+                DO UPDATE SET
+                    participant_identity=excluded.participant_identity,
+                    room=excluded.room,
+                    summary=excluded.summary,
+                    started_at=excluded.started_at,
+                    ended_at=excluded.ended_at,
+                    turns_count=excluded.turns_count,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    session_id,
+                    participant_identity,
+                    room,
+                    summary,
+                    started_at,
+                    ended_at or _now_iso(),
+                    int(turns_count),
+                    _now_iso(),
+                ),
+            )
+
+    def get_session_summary(self, *, session_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT session_id, participant_identity, room, summary, started_at, ended_at, turns_count, updated_at
+                FROM session_summaries
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "session_id": str(row["session_id"]),
+            "participant_identity": str(row["participant_identity"]),
+            "room": str(row["room"]),
+            "summary": str(row["summary"]),
+            "started_at": str(row["started_at"]) if row["started_at"] is not None else None,
+            "ended_at": str(row["ended_at"]),
+            "turns_count": int(row["turns_count"]),
+            "updated_at": str(row["updated_at"]),
+        }
+
+    def get_latest_session_summary(self, *, participant_identity: str, room: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT session_id, participant_identity, room, summary, started_at, ended_at, turns_count, updated_at
+                FROM session_summaries
+                WHERE participant_identity = ? AND room = ?
+                ORDER BY ended_at DESC, updated_at DESC
+                LIMIT 1
+                """,
+                (participant_identity, room),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "session_id": str(row["session_id"]),
+            "participant_identity": str(row["participant_identity"]),
+            "room": str(row["room"]),
+            "summary": str(row["summary"]),
+            "started_at": str(row["started_at"]) if row["started_at"] is not None else None,
+            "ended_at": str(row["ended_at"]),
+            "turns_count": int(row["turns_count"]),
+            "updated_at": str(row["updated_at"]),
+        }
+
+    def set_user_preference(
+        self,
+        *,
+        participant_identity: str,
+        key: str,
+        value: Any,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO user_preferences (participant_identity, key, value_json, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(participant_identity, key)
+                DO UPDATE SET
+                    value_json=excluded.value_json,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    participant_identity,
+                    key,
+                    json.dumps(_to_payload(value), ensure_ascii=False),
+                    _now_iso(),
+                ),
+            )
+
+    def get_user_preference(self, *, participant_identity: str, key: str) -> Any | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT value_json
+                FROM user_preferences
+                WHERE participant_identity = ? AND key = ?
+                """,
+                (participant_identity, key),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            return json.loads(str(row["value_json"]))
+        except Exception:
+            return None
+
+    def list_user_preferences(self, *, participant_identity: str) -> dict[str, Any]:
+        rows: dict[str, Any] = {}
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                SELECT key, value_json
+                FROM user_preferences
+                WHERE participant_identity = ?
+                ORDER BY updated_at DESC, key ASC
+                """,
+                (participant_identity,),
+            )
+            for row in cursor.fetchall():
+                try:
+                    rows[str(row["key"])] = json.loads(str(row["value_json"]))
+                except Exception:
+                    continue
+        return rows
 
     def append_mcp_call_audit(
         self,

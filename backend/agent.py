@@ -2,8 +2,8 @@ import asyncio
 import json
 import logging
 import os
-import re
 import secrets
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +29,7 @@ from actions import (
     record_autonomy_notice_delivery,
 )
 from channels.livekit_adapter import normalize_livekit_data_packet
+from memory import MemoryManager
 from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
 from runtime.model_gateway import resolve_runtime
 from runtime.realtime_adapters import build_realtime_runtime
@@ -45,22 +46,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 DEFAULT_USER_NAME = os.getenv('JARVEZ_USER_NAME', 'Usuario')
-PUBLIC_SCOPE = 'public'
-PRIVATE_SCOPE = 'private'
-SENSITIVE_MEMORY_RE = re.compile(
-    r'\b(senha|pin|cpf|cart[aã]o|banco|conta|endere[cç]o|telefone|email|segredo|doen[cç]a|sa[uú]de|trauma|intim[oa])\b',
-    re.IGNORECASE,
-)
-EXPLICIT_PRIVATE_RE = re.compile(
-    r'\b(segredo|privad[oa]|n[aã]o conta|nao conta|entre n[oó]s|isso e segredo)\b',
-    re.IGNORECASE,
-)
-EXPLICIT_PUBLIC_RE = re.compile(
-    r'\b(n[aã]o e segredo|nao e segredo|pode compartilhar|isso e publico|isso e p[uú]blico)\b',
-    re.IGNORECASE,
-)
-
-
+# Legacy memory scope detection moved to backend/memory/memory_manager.py.
 BOOL_FALSE_VALUES = {'0', 'false', 'off', 'no', 'nao', 'nÃ£o'}
 
 
@@ -289,104 +275,6 @@ async def _run_ops_control_loop(
         raise
 
 
-def _scoped_user_id(user_id: str, scope: str) -> str:
-    return f'{user_id}::{scope}'
-
-
-def _extract_item_text(item: Any) -> str:
-    content = getattr(item, 'content', None)
-    if content is None:
-        return ''
-    if isinstance(content, list):
-        return ''.join(part for part in content if isinstance(part, str)).strip()
-    return str(content).strip()
-
-
-def _detect_scope_for_text(text: str, fallback_scope: str) -> str:
-    if EXPLICIT_PUBLIC_RE.search(text):
-        return PUBLIC_SCOPE
-    if EXPLICIT_PRIVATE_RE.search(text):
-        return PRIVATE_SCOPE
-    if SENSITIVE_MEMORY_RE.search(text):
-        return PRIVATE_SCOPE
-    return fallback_scope
-
-
-def _prepare_memory_batches(
-    chat_ctx: ChatContext,
-    loaded_memory_blobs: set[str],
-    *,
-    participant_identity: str,
-    room: str,
-) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    public_batch: list[dict[str, str]] = []
-    private_batch: list[dict[str, str]] = []
-    current_scope = PUBLIC_SCOPE
-
-    for item in chat_ctx.items:
-        role = getattr(item, 'role', None)
-        if role not in {'user', 'assistant'}:
-            continue
-
-        text = _extract_item_text(item)
-        if not text:
-            continue
-        if any(blob and blob in text for blob in loaded_memory_blobs):
-            continue
-
-        if role == 'user':
-            override_scope = get_memory_scope_override(participant_identity, room)
-            if override_scope in {PUBLIC_SCOPE, PRIVATE_SCOPE}:
-                current_scope = override_scope
-            else:
-                current_scope = _detect_scope_for_text(text, current_scope)
-
-        target = private_batch if current_scope == PRIVATE_SCOPE else public_batch
-        target.append({'role': role, 'content': text})
-
-        # assistant answer follows same scope as triggering user message only once
-        if role == 'assistant':
-            current_scope = PUBLIC_SCOPE
-
-    return public_batch, private_batch
-
-
-async def _load_memories(mem0: AsyncMemoryClient, scoped_user_id: str) -> list[dict[str, Any]]:
-    results: list[dict[str, Any]] = []
-    try:
-        raw_results = await mem0.get_all(user_id=scoped_user_id)
-        if isinstance(raw_results, list):
-            results = [item for item in raw_results if isinstance(item, dict)]
-        logger.info('Retrieved %s memories for %s using get_all', len(results), scoped_user_id)
-    except Exception as error:
-        logger.warning('get_all failed for %s: %s', scoped_user_id, error)
-        try:
-            response = await mem0.search('informacoes preferencias contexto', filters={'user_id': scoped_user_id})
-            candidate = response['results'] if isinstance(response, dict) and 'results' in response else response
-            if isinstance(candidate, list):
-                results = [item for item in candidate if isinstance(item, dict)]
-            logger.info('Retrieved %s memories for %s using search', len(results), scoped_user_id)
-        except Exception as search_error:
-            logger.warning('search failed for %s: %s', scoped_user_id, search_error)
-            results = []
-    return results
-
-
-def _memory_json_blob(memories: list[dict[str, Any]]) -> str:
-    filtered = []
-    for result in memories:
-        memory_text = result.get('memory')
-        if not memory_text:
-            continue
-        filtered.append(
-            {
-                'memory': memory_text,
-                'updated_at': result.get('updated_at', ''),
-            }
-        )
-    return json.dumps(filtered, ensure_ascii=False) if filtered else ''
-
-
 def resolve_user_identity(ctx: agents.JobContext) -> tuple[str, str]:
     participant = getattr(ctx.job, 'participant', None)
     participant_identity = getattr(participant, 'identity', None)
@@ -474,6 +362,7 @@ def build_action_tools(
     room_name: str,
     participant_identity: str,
     mem0: AsyncMemoryClient,
+    memory_manager: MemoryManager,
     user_id: str,
 ) -> list[object]:
     tools: list[object] = []
@@ -493,12 +382,15 @@ def build_action_tools(
             result = await dispatch_action(_action_name, params, action_ctx)
 
             if _action_name == 'authenticate_identity' and result.success:
-                private_results = await _load_memories(mem0, _scoped_user_id(user_id, PRIVATE_SCOPE))
-                private_blob = _memory_json_blob(private_results)
+                private_bundle = await memory_manager.load_scope_memories(
+                    participant_identity=user_id,
+                    scope="private",
+                )
+                private_blob = str(private_bundle.get("blob") or "").strip()
                 if private_blob:
                     if result.data is None:
                         result.data = {}
-                    result.data['private_memories_loaded'] = len(private_results)
+                    result.data['private_memories_loaded'] = int(private_bundle.get("count") or 0)
                     result.data['private_memories'] = private_blob
                     logger.info(
                         "private_memory_access %s",
@@ -507,7 +399,7 @@ def build_action_tools(
                                 "participant_identity": participant_identity,
                                 "room": room_name,
                                 "source": "authenticate_identity",
-                                "count": len(private_results),
+                                "count": int(private_bundle.get("count") or 0),
                             },
                             ensure_ascii=False,
                         ),
@@ -523,72 +415,47 @@ def build_action_tools(
 async def entrypoint(ctx: agents.JobContext):
     await ctx.connect()
     user_id, user_name = resolve_user_identity(ctx)
-    loaded_memory_blobs: set[str] = set()
+    room_name = getattr(getattr(ctx.job, 'room', None), 'name', 'room')
+    session_id = f"{room_name}:{user_id}:{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}:{secrets.token_hex(4)}"
 
-    async def shutdown_hook(chat_ctx: ChatContext, mem0: AsyncMemoryClient):
+    async def shutdown_hook(
+        chat_ctx: ChatContext,
+        memory_manager: MemoryManager,
+        loaded_memory_markers: set[str],
+    ):
         logging.info('Shutting down, saving chat context to memory...')
-        public_batch, private_batch = _prepare_memory_batches(
-            chat_ctx,
-            loaded_memory_blobs,
+        await memory_manager.finalize_session(
+            chat_ctx=chat_ctx,
             participant_identity=user_id,
-            room=getattr(ctx.room, 'name', 'room'),
+            room=room_name,
+            session_id=session_id,
+            loaded_memory_markers=loaded_memory_markers,
+            scope_override_getter=get_memory_scope_override,
         )
-
-        if public_batch:
-            await mem0.add(public_batch, user_id=_scoped_user_id(user_id, PUBLIC_SCOPE))
-            logging.info('Saved %s public messages to memory.', len(public_batch))
-
-        if private_batch:
-            await mem0.add(private_batch, user_id=_scoped_user_id(user_id, PRIVATE_SCOPE))
-            logging.info('Saved %s private messages to memory.', len(private_batch))
-
-        if not public_batch and not private_batch:
-            logging.info('No new messages to persist.')
 
     mem0 = AsyncMemoryClient()
+    memory_manager = MemoryManager(mem0=mem0, state_store=get_state_store())
     initial_ctx = ChatContext()
-    public_results = await _load_memories(mem0, _scoped_user_id(user_id, PUBLIC_SCOPE))
-    public_blob = _memory_json_blob(public_results)
-    if public_blob:
-        loaded_memory_blobs.add(public_blob)
-        initial_ctx.add_message(
-            role='assistant',
-            content=f'O nome do usuario e {user_name}. Memorias publicas conhecidas: {public_blob}.',
-        )
-
-    room_name = getattr(getattr(ctx.job, 'room', None), 'name', 'room')
-    if is_authenticated_session(user_id, room_name):
-        private_results = await _load_memories(mem0, _scoped_user_id(user_id, PRIVATE_SCOPE))
-        private_blob = _memory_json_blob(private_results)
-        if private_blob:
-            loaded_memory_blobs.add(private_blob)
-            initial_ctx.add_message(
-                role='assistant',
-                content=f'Memorias privadas liberadas para esta sessao: {private_blob}.',
-            )
-            logger.info(
-                "private_memory_access %s",
-                json.dumps(
-                    {
-                        "participant_identity": user_id,
-                        "room": room_name,
-                        "source": "session_start",
-                        "count": len(private_results),
-                    },
-                    ensure_ascii=False,
-                ),
-            )
-    elif not public_blob:
+    bootstrap_context = await memory_manager.load_bootstrap_context(
+        participant_identity=user_id,
+        room=room_name,
+        user_name=user_name,
+        authenticated=is_authenticated_session(user_id, room_name),
+    )
+    loaded_memory_markers = set(bootstrap_context.loaded_memory_markers)
+    for message in bootstrap_context.prompt_messages:
+        initial_ctx.add_message(role='assistant', content=message)
+    if not bootstrap_context.prompt_messages:
         logging.info('No memories found for this user. Starting fresh conversation.')
 
     session = AgentSession()
-    room_name = getattr(ctx.room, 'name', 'room')
     job_id = getattr(ctx.job, 'id', '')
     action_tools = build_action_tools(
         job_id=job_id,
         room_name=room_name,
         participant_identity=user_id,
         mem0=mem0,
+        memory_manager=memory_manager,
         user_id=user_id,
     )
     agent = Assistant(chat_ctx=initial_ctx, tools=action_tools)
@@ -679,7 +546,7 @@ async def entrypoint(ctx: agents.JobContext):
         except Exception:
             pass
 
-    ctx.add_shutdown_callback(lambda: shutdown_hook(agent.chat_ctx, mem0))
+    ctx.add_shutdown_callback(lambda: shutdown_hook(agent.chat_ctx, memory_manager, loaded_memory_markers))
     ctx.add_shutdown_callback(_cancel_voice_capture)
     try:
         await _publish_voice_interactivity(
