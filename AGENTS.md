@@ -110,6 +110,7 @@ Estão em `./references/`. **Consulte antes de implementar qualquer feature nova
 | `references/whatsapp-mcp` | WhatsApp MCP bidirecional (Python + Go) | Melhorar integração WhatsApp, acesso de qualquer lugar |
 | `references/spotify-mcp-server` | Spotify MCP leve | Referência para migrar integração Spotify atual |
 | `jarvez-mcp-home-assistant` | MCP server standalone do domínio Home Assistant | Extrair `call_service` e controle de luzes sem misturar helpers de desktop |
+| `jarvez-mcp-desktop` | MCP server standalone do domínio desktop/shell local | Extrair abertura de recursos, execução local e `git clone` sem arrastar Home Assistant |
 | `jarvez-mcp-spotify` | MCP server standalone do domínio Spotify | Extrair playback, devices e playlist surpresa sem manter helpers na facade |
 | `jarvez-mcp-onenote` | MCP server standalone do domínio OneNote | Extrair notebooks, seções, páginas e escrita sem manter OAuth/Graph na facade |
 | `jarvez-mcp-thinq` | MCP server standalone do domínio ThinQ | Extrair status, discovery e controle bruto dos dispositivos LG ThinQ |

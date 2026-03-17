@@ -408,20 +408,20 @@ Contexto tecnico: `backend/actions_domains/codex.py` depende do estado de task/h
 
 ##### Dominio: desktop
 Contexto tecnico: `open_desktop_resource` e `run_local_command` nascem dos helpers nao-HA hoje misturados em `backend/actions_domains/home_assistant.py`; esta extracao deve separar desktop/local shell do dominio de casa.
-- [ ] Criar repo `jarvez-mcp-desktop`
-  Notas:
-- [ ] Migrar codigo de `backend/actions_domains/home_assistant.py`
-  Notas:
-- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
-  Notas:
-- [ ] Criar CHANGELOG.md com v0.1.0
-  Notas:
-- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-desktop com tag v0.1.0
-  Notas:
-- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
-  Notas:
-- [ ] Registrar em AGENTS.md como repositorio de referencia
-  Notas:
+- [x] Criar repo `jarvez-mcp-desktop`
+  Notas: repo criado em `../jarvez-mcp-desktop` seguindo a estrutura standalone de `../jarvez-mcp-home-assistant` e `../jarvez-mcp-spotify`, com `server.py`, `core/` e `tools/`.
+- [x] Migrar codigo de `backend/actions_domains/home_assistant.py`
+  Notas: foram portados `open_desktop_resource`, `run_local_command` e `git_clone_repository` para `../jarvez-mcp-desktop/tools/desktop.py`; a superficie Home Assistant pura segue em `jarvez-mcp-home-assistant`.
+- [x] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas: `../jarvez-mcp-desktop/README.md` documenta instalacao, `claude mcp add --transport stdio`, variaveis de ambiente, aviso de seguranca para `run_local_command` e a fronteira com o Jarvez.
+- [x] Criar CHANGELOG.md com v0.1.0
+  Notas: `../jarvez-mcp-desktop/CHANGELOG.md` criado com a entrada `v0.1.0 - 2026-03-17`.
+- [x] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-desktop com tag v0.1.0
+  Notas: repo publicado em `https://github.com/GuilhermeCostaProenca/jarvez-mcp-desktop`, branch `main` enviada, tag `v0.1.0` criada em `2026-03-17` e HEAD local em `ba96c1f647803b0c7eaf9b0a16058df3ac9a7e3b`.
+- [x] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas: `backend/actions.py` e `backend/actions_domains/home_assistant.py` agora marcam `open_desktop_resource`, `run_local_command` e `git_clone_repository` como compatibilidade temporaria durante a migracao para `jarvez-mcp-desktop`.
+- [x] Registrar em AGENTS.md como repositorio de referencia
+  Notas: `AGENTS.md` ganhou a entrada `jarvez-mcp-desktop` na tabela de repositorios de referencia.
 
 #### Fase D — Conhecimento e workflows de app
 
@@ -529,7 +529,7 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 
 ## Aceite final
 - [ ] Todos os dominios extraiveis tem repo publico no GitHub
-  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex` e `jarvez-mcp-code-actions`.
+  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-desktop`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex` e `jarvez-mcp-code-actions`.
 - [ ] Jarvez consome MCPs reais pelo client interno e nao apenas por repos publicados
   Notas: integrar e validar no backend principal pelo menos `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`.
 - [ ] `actions.py` nao tem mais handlers de dominio, so glue code
@@ -537,7 +537,7 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 - [ ] Jarvez conecta nos MCP servers externos via `claude mcp add`
   Notas: alem do fluxo manual no Claude, o backend principal precisa conseguir subir, descobrir tools e chamar MCPs reais via `backend/mcp/`.
 - [ ] AGENTS.md atualizado com todos os novos repos
-  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex` e `jarvez-mcp-code-actions`; seguem pendentes os proximos dominios extraidos.
+  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-desktop`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex` e `jarvez-mcp-code-actions`; seguem pendentes os proximos dominios extraidos.
 
 ## Nota de sincronizacao
 - A ordem restante continua fazendo sentido. A Fase B fica fechada para os dominios priorizados (`whatsapp`, `onenote`, `ac`) sem mover journal, preferências, policy ou automações locais para fora do Jarvez.

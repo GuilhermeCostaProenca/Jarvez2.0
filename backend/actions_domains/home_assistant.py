@@ -10,6 +10,7 @@ from actions_core import ActionContext, ActionResult
 JsonObject = dict[str, Any]
 
 
+# DEPRECATED: migrated to jarvez-mcp-desktop
 async def open_desktop_resource(
     params: JsonObject,
     ctx: ActionContext,
@@ -63,6 +64,7 @@ async def open_desktop_resource(
     )
 
 
+# DEPRECATED: migrated to jarvez-mcp-desktop
 async def run_local_command(
     params: JsonObject,
     ctx: ActionContext,
@@ -145,6 +147,7 @@ async def run_local_command(
     )
 
 
+# DEPRECATED: migrated to jarvez-mcp-desktop
 async def git_clone_repository(
     params: JsonObject,
     ctx: ActionContext,

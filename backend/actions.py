@@ -2088,6 +2088,7 @@ async def _save_web_briefing_schedule(params: JsonObject, ctx: ActionContext) ->
         collapse_spaces=_collapse_spaces,
     )
 
+# DEPRECATED: migrated to jarvez-mcp-desktop
 async def _open_desktop_resource(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_open_desktop_resource(
         params,
@@ -2101,6 +2102,7 @@ async def _open_desktop_resource(params: JsonObject, ctx: ActionContext) -> Acti
     )
 
 
+# DEPRECATED: migrated to jarvez-mcp-desktop
 async def _run_local_command(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_run_local_command(
         params,
@@ -2114,6 +2116,7 @@ async def _run_local_command(params: JsonObject, ctx: ActionContext) -> ActionRe
     )
 
 
+# DEPRECATED: migrated to jarvez-mcp-desktop
 async def _git_clone_repository(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_git_clone_repository(
         params,
