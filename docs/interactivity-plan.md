@@ -56,7 +56,7 @@ Contexto tecnico: o runtime realtime ja existe em `backend/runtime/realtime_adap
   Notas: `StartAudioButton` publica ativacao por botao e o frontend usa `SpeechRecognition`/`webkitSpeechRecognition` como wake word progressivo com fallback explicito para o botao.
 
 - [x] V6. Ajustar tom de voz e prompt para naturalidade
-  Notas: `backend/prompts.py` e `backend/runtime/realtime_adapters.py` foram ajustados para tom mais natural, ack curto e menos rigidez nas transicoes de voz.
+  Notas: `backend/prompts.py` e `backend/runtime/realtime_adapters.py` foram ajustados para tom mais natural, ack curto e menos rigidez nas transicoes de voz; a voz agora tambem pode ser trocada por `.env` entre `google`, `openai`, `elevenlabs` e `kokoro`.
 
 ## Frente M - Memoria e contexto
 

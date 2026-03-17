@@ -31,7 +31,7 @@ from actions import (
 from channels.livekit_adapter import normalize_livekit_data_packet
 from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
 from runtime.model_gateway import resolve_runtime
-from runtime.realtime_adapters import build_realtime_model
+from runtime.realtime_adapters import build_realtime_runtime
 from session_snapshot import publish_session_snapshot
 from voice_interactivity import (
     VOICE_INTERACTIVITY_EVENT_TYPE,
@@ -80,13 +80,21 @@ class Assistant(Agent):
             risk="R1",
             required_capabilities=["realtime", "tools"],
         )
+        voice_runtime = build_realtime_runtime(runtime_decision)
+        agent_kwargs: dict[str, object] = {
+            "instructions": AGENT_INSTRUCTION,
+            "llm": voice_runtime.model,
+            "chat_ctx": chat_ctx,
+            "tools": tools,
+        }
+        if voice_runtime.tts is not None:
+            agent_kwargs["tts"] = voice_runtime.tts
         super().__init__(
-            instructions=AGENT_INSTRUCTION,
-            llm=build_realtime_model(runtime_decision),
-            chat_ctx=chat_ctx,
-            tools=tools,
+            **agent_kwargs,
         )
         self.runtime_decision = runtime_decision
+        self.voice_provider_name = voice_runtime.provider.provider_name
+        self.voice_name = voice_runtime.provider.voice_name
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
