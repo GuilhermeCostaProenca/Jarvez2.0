@@ -111,6 +111,7 @@ Estão em `./references/`. **Consulte antes de implementar qualquer feature nova
 | `references/spotify-mcp-server` | Spotify MCP leve | Referência para migrar integração Spotify atual |
 | `jarvez-mcp-home-assistant` | MCP server standalone do domínio Home Assistant | Extrair `call_service` e controle de luzes sem misturar helpers de desktop |
 | `jarvez-mcp-spotify` | MCP server standalone do domínio Spotify | Extrair playback, devices e playlist surpresa sem manter helpers na facade |
+| `jarvez-mcp-onenote` | MCP server standalone do domínio OneNote | Extrair notebooks, seções, páginas e escrita sem manter OAuth/Graph na facade |
 | `jarvez-mcp-thinq` | MCP server standalone do domínio ThinQ | Extrair status, discovery e controle bruto dos dispositivos LG ThinQ |
 | `jarvez-mcp-rpg` | MCP server standalone do domínio RPG | Qualquer feature RPG |
 

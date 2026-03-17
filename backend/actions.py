@@ -7252,6 +7252,8 @@ async def _spotify_create_surprise_playlist(params: JsonObject, ctx: ActionConte
     return await _spotify_route_via_mcp("spotify_create_surprise_playlist", params, _legacy_handler)
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-onenote
+# This handler will be removed after Jarvez points to the standalone MCP server.
 async def _onenote_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_onenote_status(
         params,
@@ -10830,6 +10832,7 @@ def register_default_actions() -> None:
         )
     )
 
+    # DEPRECATED: the onenote_* surface remains registered locally until Jarvez points to jarvez-mcp-onenote.
     register_action(
         ActionSpec(
             name="onenote_status",

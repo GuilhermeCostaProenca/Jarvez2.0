@@ -304,20 +304,20 @@ Contexto tecnico: a extracao precisa considerar `backend/actions_domains/whatsap
 
 ##### Dominio: onenote
 Contexto tecnico: `backend/actions_domains/onenote.py` ja esta isolado, mas os helpers de OAuth, token persistence e chamadas Graph ainda estao na facade de `backend/actions.py`.
-- [ ] Criar repo `jarvez-mcp-onenote`
-  Notas:
-- [ ] Migrar codigo de `backend/actions_domains/onenote.py`
-  Notas:
-- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
-  Notas:
-- [ ] Criar CHANGELOG.md com v0.1.0
-  Notas:
-- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-onenote com tag v0.1.0
-  Notas:
-- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
-  Notas:
-- [ ] Registrar em AGENTS.md como repositorio de referencia
-  Notas:
+- [x] Criar repo `jarvez-mcp-onenote`
+  Notas: repo criado em `../jarvez-mcp-onenote` seguindo a estrutura standalone de `../jarvez-mcp-spotify`, `../jarvez-mcp-home-assistant`, `../jarvez-mcp-thinq` e `../jarvez-mcp-rpg`, com `server.py`, `core/`, `tools/` e `data/`.
+- [x] Migrar codigo de `backend/actions_domains/onenote.py`
+  Notas: a superficie `onenote_status/list_notebooks/list_sections/list_pages/search_pages/get_page_content/create_character_page/append_to_page` foi portada para `../jarvez-mcp-onenote/tools/onenote.py`, e os helpers de OAuth, token persistence, preview HTML e chamadas Graph sairam para `../jarvez-mcp-onenote/core/onenote_client.py`.
+- [x] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas: `../jarvez-mcp-onenote/README.md` documenta instalacao, variaveis de ambiente, execucao standalone, `claude mcp add --transport stdio` e a integracao futura com o Jarvez.
+- [x] Criar CHANGELOG.md com v0.1.0
+  Notas: `../jarvez-mcp-onenote/CHANGELOG.md` criado com a entrada `v0.1.0 - 2026-03-17`.
+- [x] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-onenote com tag v0.1.0
+  Notas: repo publicado em `https://github.com/GuilhermeCostaProenca/jarvez-mcp-onenote`, branch `main` enviada, tag `v0.1.0` criada em `2026-03-17` e HEAD local em `bbf89e728b6e961c1f4100a850840869f0fbadb1`.
+- [x] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas: `backend/actions.py` agora marca a superficie `onenote_*` como compatibilidade temporaria ate o Jarvez apontar para `jarvez-mcp-onenote`.
+- [x] Registrar em AGENTS.md como repositorio de referencia
+  Notas: `AGENTS.md` ganhou a entrada `jarvez-mcp-onenote` na tabela de repositorios de referencia.
 
 ##### Dominio: ac
 Contexto tecnico: `backend/actions_domains/ac.py` depende do dominio ThinQ e das preferencias/automacoes locais de chegada; so entra depois de `jarvez-mcp-thinq` estar definido.
@@ -529,16 +529,16 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 
 ## Aceite final
 - [ ] Todos os dominios extraiveis tem repo publico no GitHub
-  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant` e `jarvez-mcp-thinq`.
+  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq` e `jarvez-mcp-onenote`.
 - [ ] Jarvez consome MCPs reais pelo client interno e nao apenas por repos publicados
-  Notas: integrar e validar no backend principal pelo menos `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant` e `jarvez-mcp-thinq`.
+  Notas: integrar e validar no backend principal pelo menos `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq` e `jarvez-mcp-onenote`.
 - [ ] `actions.py` nao tem mais handlers de dominio, so glue code
   Notas:
 - [ ] Jarvez conecta nos MCP servers externos via `claude mcp add`
   Notas: alem do fluxo manual no Claude, o backend principal precisa conseguir subir, descobrir tools e chamar MCPs reais via `backend/mcp/`.
 - [ ] AGENTS.md atualizado com todos os novos repos
-  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant` e `jarvez-mcp-thinq`; seguem pendentes os proximos dominios extraidos.
+  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq` e `jarvez-mcp-onenote`; seguem pendentes os proximos dominios extraidos.
 
 ## Nota de sincronizacao
-- A ordem restante continua fazendo sentido. Proximo dominio recomendado da Fase B: `onenote`, porque ja esta isolado em `backend/actions_domains/onenote.py`, tem melhor relacao risco/beneficio que `whatsapp` e nao depende do acoplamento ThinQ + automacao que segura `ac`.
+- A ordem restante continua fazendo sentido. Proximo dominio recomendado da Fase B: `whatsapp`, porque `onenote` ja foi extraido e `ac` ainda depende do acoplamento ThinQ + automacao local.
 - Na Fase E, o piloto recomendado de integracao real e `jarvez-mcp-spotify`, porque oferece o melhor equilibrio entre baixo acoplamento no Jarvez principal e cobertura real de manifesto, env, discovery, `call_tool` e fallback legacy.
