@@ -161,6 +161,7 @@ async def project_list_action(
     active_project_payload: Callable[[str, str], JsonObject],
     capability_payload: Callable[[str, str], JsonObject],
 ) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-projects for pure metadata listing; keep legacy compatibility while ProjectCatalog and session state stay local.
     include_inactive = bool(params.get("include_inactive", False))
     projects = get_project_catalog().list_projects(include_inactive=include_inactive)
     return ActionResult(
@@ -206,6 +207,7 @@ async def project_update_action(
     project_record_to_payload: Callable[[Any], JsonObject],
     active_project_payload: Callable[[str, str], JsonObject],
 ) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-projects for pure metadata updates; keep legacy compatibility while ProjectCatalog and active-session glue stay local.
     project_id = str(params.get("project_id", "")).strip()
     if not project_id:
         return ActionResult(success=False, message="Informe o project_id para atualizar.", error="missing project_id")

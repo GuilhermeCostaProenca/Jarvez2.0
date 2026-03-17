@@ -8261,6 +8261,7 @@ async def _code_search_repo(params: JsonObject, ctx: ActionContext) -> ActionRes
 
 
 async def _project_list_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    # DEPRECATED: migrated to jarvez-mcp-projects for pure metadata listing; keep wrapper while Jarvez still owns ProjectCatalog and active session.
     return await domain_project_list_action(
         params,
         ctx,
@@ -8282,6 +8283,7 @@ async def _project_scan_action(params: JsonObject, ctx: ActionContext) -> Action
 
 
 async def _project_update_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-projects for pure metadata updates; keep wrapper while Jarvez still owns ProjectCatalog and active session.
     return await domain_project_update_action(
         params,
         ctx,

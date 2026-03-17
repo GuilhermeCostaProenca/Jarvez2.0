@@ -116,6 +116,7 @@ Estão em `./references/`. **Consulte antes de implementar qualquer feature nova
 | `jarvez-mcp-whatsapp` | MCP server standalone do domínio WhatsApp | Extrair status/conectividade e envio simples sem mover journal, fallback e channel state do Jarvez |
 | `jarvez-mcp-ac` | MCP server standalone do domínio de ar-condicionado | Extrair status e comandos simples do AC sem levar preferências de chegada, policy e automações |
 | `jarvez-mcp-github` | MCP server standalone do domínio GitHub puro | Extrair busca, listagem, metadata e clone URL sem tirar catálogo, projeto ativo e clone local do Jarvez |
+| `jarvez-mcp-projects` | MCP server standalone de metadata de projetos | Extrair listagem, abertura, criação e atualização de metadata sem tirar ProjectCatalog, projeto ativo e indexação local do Jarvez |
 | `jarvez-mcp-rpg` | MCP server standalone do domínio RPG | Qualquer feature RPG |
 
 **Consulta online** (não clonar, usar como catálogo):
