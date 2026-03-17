@@ -18,6 +18,7 @@ from mem0 import AsyncMemoryClient
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"), override=False)
 
 from actions_core import get_state_store
+from actions_core.events import publish_session_event
 from actions import (
     ActionContext,
     action_spec_to_raw_schema,
@@ -32,6 +33,12 @@ from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
 from runtime.model_gateway import resolve_runtime
 from runtime.realtime_adapters import build_realtime_model
 from session_snapshot import publish_session_snapshot
+from voice_interactivity import (
+    VOICE_INTERACTIVITY_EVENT_TYPE,
+    VOICE_INTERACTIVITY_NAMESPACE,
+    build_voice_error_message,
+    build_voice_interactivity_payload,
+)
 from voice_biometrics import capture_voice_frame
 
 logging.basicConfig(level=logging.INFO)
@@ -119,11 +126,53 @@ def _build_control_loop_params() -> dict[str, object]:
     return params
 
 
+async def _publish_voice_interactivity(
+    session: AgentSession | None,
+    *,
+    participant_identity: str,
+    room: str,
+    state: str,
+    source: str = "backend",
+    activation_mode: str | None = None,
+    raw_client_state: str | None = None,
+    display_message: str | None = None,
+    spoken_message: str | None = None,
+    error_code: str | None = None,
+    can_retry: bool | None = None,
+    extra: dict[str, object] | None = None,
+) -> None:
+    payload = build_voice_interactivity_payload(
+        state=state,
+        source=source,
+        activation_mode=activation_mode,
+        raw_client_state=raw_client_state,
+        display_message=display_message,
+        spoken_message=spoken_message,
+        error_code=error_code,
+        can_retry=can_retry,
+        extra=extra,
+    )
+    get_state_store().upsert_event_state(
+        participant_identity=participant_identity,
+        room=room,
+        namespace=VOICE_INTERACTIVITY_NAMESPACE,
+        payload=payload,
+    )
+    await publish_session_event(
+        session,
+        {
+            "type": VOICE_INTERACTIVITY_EVENT_TYPE,
+            "voice_interactivity": payload,
+        },
+    )
+
+
 def _handle_client_telemetry_packet(
     packet: rtc.DataPacket,
     *,
     participant_identity: str,
     room_name: str,
+    session: AgentSession | None,
 ) -> None:
     envelope = normalize_livekit_data_packet(packet, room=room_name)
     if envelope is None:
@@ -136,7 +185,34 @@ def _handle_client_telemetry_packet(
     if not isinstance(payload, dict):
         logger.warning("invalid client telemetry payload")
         return
-    if str(payload.get("type") or "").strip() != "autonomy_notice_delivery":
+    payload_type = str(payload.get("type") or "").strip()
+    if payload_type == "voice_interactivity_client":
+        state = str(payload.get("state") or "").strip()
+        if not state:
+            return
+        asyncio.create_task(
+            _publish_voice_interactivity(
+                session,
+                participant_identity=participant_identity,
+                room=room_name,
+                state=state,
+                source="client",
+                activation_mode=str(payload.get("activation_mode") or "").strip() or None,
+                raw_client_state=str(payload.get("raw_client_state") or "").strip() or None,
+                display_message=str(payload.get("display_message") or "").strip() or None,
+                spoken_message=str(payload.get("spoken_message") or "").strip() or None,
+                error_code=str(payload.get("error_code") or "").strip() or None,
+                can_retry=bool(payload.get("can_retry")) if payload.get("can_retry") is not None else None,
+                extra=(
+                    {"wake_word_available": bool(payload.get("wake_word_available"))}
+                    if payload.get("wake_word_available") is not None
+                    else None
+                ),
+            ),
+            name=f"voice_interactivity_client_{participant_identity}",
+        )
+        return
+    if payload_type != "autonomy_notice_delivery":
         return
     channel = str(payload.get("channel") or "").strip().lower()
     if channel not in {"browser_tts"}:
@@ -530,6 +606,15 @@ async def entrypoint(ctx: agents.JobContext):
             close_on_disconnect=False,
         ),
     )
+    await _publish_voice_interactivity(
+        session,
+        participant_identity=user_id,
+        room=room_name,
+        state="idle",
+        source="backend",
+        activation_mode="button",
+        display_message="Jarvez pronto para ouvir.",
+    )
     await publish_session_snapshot(session, participant_identity=user_id, room=room_name)
     def _publish_snapshot_on_participant_connected(participant: rtc.RemoteParticipant) -> None:
         identity = str(getattr(participant, "identity", "") or "").strip()
@@ -549,6 +634,7 @@ async def entrypoint(ctx: agents.JobContext):
             packet,
             participant_identity=user_id,
             room_name=room_name,
+            session=session,
         ),
     )
 
@@ -588,10 +674,33 @@ async def entrypoint(ctx: agents.JobContext):
     ctx.add_shutdown_callback(lambda: shutdown_hook(agent.chat_ctx, mem0))
     ctx.add_shutdown_callback(_cancel_voice_capture)
     try:
+        await _publish_voice_interactivity(
+            session,
+            participant_identity=user_id,
+            room=room_name,
+            state="thinking",
+            source="backend",
+            display_message="Preparando resposta inicial.",
+        )
         await session.generate_reply(
             instructions=SESSION_INSTRUCTION + '\nCumprimente o usuario de forma breve e confiante.'
         )
     except Exception as error:
+        await _publish_voice_interactivity(
+            session,
+            participant_identity=user_id,
+            room=room_name,
+            state="error",
+            source="backend",
+            display_message="Falha ao iniciar a conversa.",
+            spoken_message=build_voice_error_message(
+                "session_generate_reply",
+                "Falha ao iniciar a conversa.",
+                str(error),
+            ),
+            error_code=str(error),
+            can_retry=True,
+        )
         logger.error('Failed to generate initial reply: %s', error)
 
 

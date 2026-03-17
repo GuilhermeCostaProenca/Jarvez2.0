@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { useChat, useRoomContext, useTextStream } from '@livekit/components-react';
+import { useChat, useRoomContext, useTextStream, useVoiceAssistant } from '@livekit/components-react';
 import {
   readStoredCodexTaskHistory,
   readStoredCodingHistory,
@@ -74,6 +74,8 @@ import type {
   SecuritySessionState,
   SessionSnapshot,
   SubagentState,
+  VoiceInteractivityState,
+  VoiceInteractivityStateValue,
   WorkflowState,
 } from '@/lib/types/realtime';
 
@@ -104,6 +106,37 @@ interface CodexStreamEvent {
   automation_state?: AutomationState | null;
   notice?: SecuritySessionState['autonomyNotice'];
   snapshot?: SessionSnapshot | null;
+  voice_interactivity?: VoiceInteractivityState | null;
+}
+
+interface SpeechRecognitionAlternativeLike {
+  transcript?: string;
+}
+
+interface SpeechRecognitionResultLike {
+  isFinal?: boolean;
+  length?: number;
+  [index: number]: SpeechRecognitionAlternativeLike;
+}
+
+interface SpeechRecognitionEventLike extends Event {
+  resultIndex?: number;
+  results?: ArrayLike<SpeechRecognitionResultLike>;
+}
+
+interface SpeechRecognitionLike extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onend: ((event: Event) => void) | null;
+  onerror: ((event: Event & { error?: string }) => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+interface SpeechRecognitionConstructorLike {
+  new (): SpeechRecognitionLike;
 }
 
 function safeParseJson<T>(value: string): T | null {
@@ -153,14 +186,61 @@ function normalizeSessionSnapshot(snapshot: unknown): SessionSnapshot | null {
   return snapshot as SessionSnapshot;
 }
 
+function normalizeVoiceInteractivity(snapshot: unknown): VoiceInteractivityState | null {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return null;
+  }
+  const payload = snapshot as VoiceInteractivityState;
+  if (!payload.state || typeof payload.state !== 'string') {
+    return null;
+  }
+  return payload;
+}
+
+function mapVoiceAssistantState(rawState: unknown): VoiceInteractivityStateValue {
+  const value = String(rawState ?? '').trim().toLowerCase();
+  if (!value || value === 'disconnected') {
+    return 'idle';
+  }
+  if (value.includes('listen')) {
+    return 'listening';
+  }
+  if (value.includes('transcrib')) {
+    return 'transcribing';
+  }
+  if (value.includes('speak')) {
+    return 'speaking';
+  }
+  if (value.includes('confirm')) {
+    return 'confirming';
+  }
+  if (value.includes('execut')) {
+    return 'executing';
+  }
+  if (value.includes('background')) {
+    return 'background';
+  }
+  if (value.includes('error') || value.includes('fail')) {
+    return 'error';
+  }
+  if (value.includes('think') || value.includes('process') || value.includes('connect')) {
+    return 'thinking';
+  }
+  return 'idle';
+}
+
 export function useAgentActionEvents() {
   const { textStreams } = useTextStream('lk.agent.events');
   const { send } = useChat();
   const room = useRoomContext();
+  const { state: voiceAssistantState } = useVoiceAssistant();
 
   const processedStreamIds = useRef<Set<string>>(new Set());
   const spokenAutonomyNoticeAt = useRef<Map<string, number>>(new Map());
   const reportedAutonomyNoticeDelivery = useRef<Set<string>>(new Set());
+  const spokenVoiceCueAt = useRef<Map<string, number>>(new Map());
+  const lastPublishedVoiceState = useRef<string>('');
+  const lastWakeWordAt = useRef<number>(0);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingActionConfirmation | null>(
     null
   );
@@ -217,6 +297,7 @@ export function useAgentActionEvents() {
   const [browserTask, setBrowserTask] = useState<BrowserTaskState | null>(null);
   const [workflowState, setWorkflowState] = useState<WorkflowState | null>(null);
   const [automationState, setAutomationState] = useState<AutomationState | null>(null);
+  const [voiceInteractivity, setVoiceInteractivity] = useState<VoiceInteractivityState | null>(null);
   const [securitySession, setSecuritySession] = useState<SecuritySessionState>({
     authenticated: false,
     identityBound: false,
@@ -413,6 +494,292 @@ export function useAgentActionEvents() {
     [room]
   );
 
+  const publishClientVoiceState = useCallback(
+    (payload: {
+      state: VoiceInteractivityStateValue;
+      activationMode?: string;
+      rawClientState?: string;
+      displayMessage?: string;
+      spokenMessage?: string;
+      errorCode?: string;
+      canRetry?: boolean;
+      wakeWordAvailable?: boolean;
+    }) => {
+      const serialized = JSON.stringify({
+        state: payload.state,
+        activationMode: payload.activationMode ?? '',
+        rawClientState: payload.rawClientState ?? '',
+        displayMessage: payload.displayMessage ?? '',
+        spokenMessage: payload.spokenMessage ?? '',
+        errorCode: payload.errorCode ?? '',
+        canRetry: payload.canRetry ?? false,
+        wakeWordAvailable: payload.wakeWordAvailable ?? false,
+      });
+      if (lastPublishedVoiceState.current === serialized) {
+        return;
+      }
+      if (!room.localParticipant) {
+        return;
+      }
+      lastPublishedVoiceState.current = serialized;
+      const telemetry = new TextEncoder().encode(
+        JSON.stringify({
+          type: 'voice_interactivity_client',
+          state: payload.state,
+          activation_mode: payload.activationMode,
+          raw_client_state: payload.rawClientState,
+          display_message: payload.displayMessage,
+          spoken_message: payload.spokenMessage,
+          error_code: payload.errorCode,
+          can_retry: payload.canRetry,
+          wake_word_available: payload.wakeWordAvailable,
+        })
+      );
+      void room.localParticipant.publishData(telemetry, {
+        reliable: true,
+        topic: 'jarvez.client.telemetry',
+      });
+    },
+    [room]
+  );
+
+  useEffect(() => {
+    const mappedState = mapVoiceAssistantState(voiceAssistantState);
+    publishClientVoiceState({
+      state: mappedState,
+      activationMode: 'voice',
+      rawClientState: String(voiceAssistantState ?? ''),
+      displayMessage:
+        mappedState === 'idle'
+          ? 'Pronto para ouvir.'
+          : mappedState === 'listening'
+            ? 'Ouvindo.'
+            : mappedState === 'transcribing'
+              ? 'Transcrevendo.'
+              : mappedState === 'thinking'
+                ? 'Pensando.'
+                : mappedState === 'speaking'
+                  ? 'Falando.'
+                  : undefined,
+    });
+  }, [publishClientVoiceState, voiceAssistantState]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleActivation = (event: Event) => {
+      const customEvent = event as CustomEvent<{ mode?: string }>;
+      publishClientVoiceState({
+        state: 'listening',
+        activationMode: customEvent.detail?.mode === 'wake_word' ? 'wake_word' : 'button',
+        rawClientState: 'manual_activation',
+        displayMessage:
+          customEvent.detail?.mode === 'wake_word'
+            ? 'Wake word detectado.'
+            : 'Escuta ativada.',
+      });
+    };
+
+    window.addEventListener('jarvez:voice-activation', handleActivation as EventListener);
+    return () => {
+      window.removeEventListener('jarvez:voice-activation', handleActivation as EventListener);
+    };
+  }, [publishClientVoiceState]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const recognitionCtor = (
+      window as Window & {
+        SpeechRecognition?: SpeechRecognitionConstructorLike;
+        webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
+      }
+    ).SpeechRecognition ??
+      (
+        window as Window & {
+          webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
+        }
+      ).webkitSpeechRecognition;
+
+    if (!recognitionCtor) {
+      publishClientVoiceState({
+        state: mapVoiceAssistantState(voiceAssistantState),
+        activationMode: 'button',
+        rawClientState: String(voiceAssistantState ?? ''),
+        displayMessage: 'Wake word indisponivel neste navegador.',
+        wakeWordAvailable: false,
+      });
+      return;
+    }
+
+    let disposed = false;
+    let recognition: SpeechRecognitionLike | null = null;
+
+    try {
+      recognition = new recognitionCtor();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'pt-BR';
+      recognition.onresult = (event) => {
+        const results = event.results;
+        if (!results) {
+          return;
+        }
+        let transcript = '';
+        for (let i = event.resultIndex ?? 0; i < results.length; i += 1) {
+          const result = results[i];
+          const alternative = result?.[0];
+          if (alternative?.transcript) {
+            transcript += ` ${alternative.transcript}`;
+          }
+        }
+        const normalized = transcript.trim().toLowerCase();
+        if (!normalized || (!normalized.includes('jarvis') && !normalized.includes('jarvez'))) {
+          return;
+        }
+        const now = Date.now();
+        if (now - lastWakeWordAt.current < 8_000) {
+          return;
+        }
+        lastWakeWordAt.current = now;
+        window.dispatchEvent(
+          new CustomEvent('jarvez:voice-activation', {
+            detail: { mode: 'wake_word' },
+          })
+        );
+      };
+      recognition.onerror = () => {
+        publishClientVoiceState({
+          state: mapVoiceAssistantState(voiceAssistantState),
+          activationMode: 'button',
+          rawClientState: 'wake_word_error',
+          displayMessage: 'Wake word indisponivel; use o botao.',
+          wakeWordAvailable: false,
+        });
+      };
+      recognition.onend = () => {
+        if (disposed) {
+          return;
+        }
+        try {
+          recognition?.start();
+        } catch {
+          publishClientVoiceState({
+            state: mapVoiceAssistantState(voiceAssistantState),
+            activationMode: 'button',
+            rawClientState: 'wake_word_restart_failed',
+            displayMessage: 'Wake word indisponivel; use o botao.',
+            wakeWordAvailable: false,
+          });
+        }
+      };
+      recognition.start();
+      publishClientVoiceState({
+        state: mapVoiceAssistantState(voiceAssistantState),
+        activationMode: 'button',
+        rawClientState: 'wake_word_ready',
+        displayMessage: 'Wake word pronta.',
+        wakeWordAvailable: true,
+      });
+    } catch {
+      publishClientVoiceState({
+        state: mapVoiceAssistantState(voiceAssistantState),
+        activationMode: 'button',
+        rawClientState: 'wake_word_unavailable',
+        displayMessage: 'Wake word indisponivel; use o botao.',
+        wakeWordAvailable: false,
+      });
+    }
+
+    return () => {
+      disposed = true;
+      try {
+        recognition?.stop();
+      } catch {
+        // ignore cleanup failures
+      }
+    };
+  }, [publishClientVoiceState, voiceAssistantState]);
+
+  const applyVoiceInteractivity = useCallback(
+    (
+      nextState: VoiceInteractivityState | null,
+      {
+        speak,
+      }: {
+        speak: boolean;
+      } = { speak: false }
+    ) => {
+      if (!nextState) {
+        return;
+      }
+      setVoiceInteractivity(nextState);
+
+      if (
+        !speak ||
+        !nextState.spoken_message ||
+        nextState.source !== 'backend' ||
+        typeof window === 'undefined' ||
+        !('speechSynthesis' in window)
+      ) {
+        return;
+      }
+
+      const dedupeKey =
+        nextState.trace_id ??
+        `${nextState.state}:${nextState.action_name ?? 'voice'}:${nextState.spoken_message}`;
+      const now = Date.now();
+      const lastSpokenAt = spokenVoiceCueAt.current.get(dedupeKey) ?? 0;
+      if (now - lastSpokenAt < 3_000) {
+        return;
+      }
+      spokenVoiceCueAt.current.set(dedupeKey, now);
+
+      const utterance = new SpeechSynthesisUtterance(nextState.spoken_message);
+      utterance.lang = 'pt-BR';
+      utterance.rate = 1.08;
+      utterance.pitch = 1.02;
+      utterance.onstart = () => {
+        publishClientVoiceState({
+          state: 'speaking',
+          activationMode: nextState.activation_mode,
+          rawClientState: 'browser_tts',
+          displayMessage: nextState.display_message ?? nextState.spoken_message,
+        });
+      };
+      utterance.onend = () => {
+        publishClientVoiceState({
+          state: 'idle',
+          activationMode: nextState.activation_mode,
+          rawClientState: 'browser_tts_complete',
+          displayMessage: 'Pronto.',
+        });
+      };
+      utterance.onerror = () => {
+        publishClientVoiceState({
+          state: 'error',
+          activationMode: nextState.activation_mode,
+          rawClientState: 'browser_tts_error',
+          displayMessage: nextState.display_message ?? nextState.spoken_message,
+          errorCode: 'browser_tts_error',
+          canRetry: true,
+        });
+      };
+
+      try {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        // Mantem o feedback visual mesmo quando TTS do browser falha.
+      }
+    },
+    [publishClientVoiceState]
+  );
+
   const hydrateSessionSnapshot = useCallback(
     (snapshot: SessionSnapshot) => {
       const securityPayload = snapshot.security_session;
@@ -566,8 +933,11 @@ export function useAgentActionEvents() {
       if (snapshot.whatsapp_channel && typeof snapshot.whatsapp_channel === 'object') {
         writeStoredWhatsAppChannelStatus(snapshot.whatsapp_channel as Record<string, unknown>);
       }
+      if (snapshot.voice_interactivity) {
+        applyVoiceInteractivity(snapshot.voice_interactivity, { speak: false });
+      }
     },
-    [replaceCodexTaskHistory]
+    [applyVoiceInteractivity, replaceCodexTaskHistory]
   );
 
   useEffect(() => {
@@ -650,6 +1020,16 @@ export function useAgentActionEvents() {
         if (workflowPayload && typeof workflowPayload === 'object') {
           setWorkflowState(workflowPayload as WorkflowState);
           writeStoredWorkflowState(workflowPayload as WorkflowState);
+        }
+        continue;
+      }
+
+      if (genericPayload.type === 'voice_interactivity_state') {
+        const voiceInteractivityPayload = normalizeVoiceInteractivity(
+          (genericPayload as CodexStreamEvent).voice_interactivity
+        );
+        if (voiceInteractivityPayload) {
+          applyVoiceInteractivity(voiceInteractivityPayload, { speak: true });
         }
         continue;
       }
@@ -1217,6 +1597,7 @@ export function useAgentActionEvents() {
     browserTask,
     workflowState,
     automationState,
+    voiceInteractivity,
     codexTaskEvents,
     codexTaskHistory,
     securitySession,

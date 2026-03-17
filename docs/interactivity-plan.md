@@ -40,23 +40,23 @@ Decisoes base deste plano:
 
 Contexto tecnico: o runtime realtime ja existe em `backend/runtime/realtime_adapters.py` e `backend/agent.py`, com roteamento ainda concentrado em Google realtime. `backend/channels/router.py` e `livekit_adapter.py` ja transportam eventos/data packets, e a UI ja possui `audio-visualizer`, `StartAudioButton` e tratamento de erro de conexao, mas ainda falta um contrato explicito de interatividade com estados `idle/listening/transcribing/thinking/confirming/executing/background/speaking/error`. Hoje erros operacionais viram toasts e resultados de action em parte do fluxo, mas a camada de voz nao verbaliza recuperacao de forma padronizada.
 
-- [ ] V1. Criar state machine de interatividade de voz
-  Notas: definir estados minimos `idle`, `listening`, `transcribing`, `thinking`, `confirming`, `executing`, `background`, `speaking` e `error`, com emissao backend -> snapshot/eventos -> UI.
+- [x] V1. Criar state machine de interatividade de voz
+  Notas: `backend/voice_interactivity.py` passou a definir o contrato de estado; backend publica `voice_interactivity` via eventos/snapshot e o frontend hidrata/mostra o estado real.
 
-- [ ] V2. Emitir confirmacao verbal curta antes de acoes com latencia perceptivel
-  Notas: frases curtas como `abrindo`, `procurando`, `deixa comigo`; usar so quando houver acao real ou espera perceptivel.
+- [x] V2. Emitir confirmacao verbal curta antes de acoes com latencia perceptivel
+  Notas: actions com latencia perceptivel agora emitem cue curta como `Abrindo.`, `Procurando.` ou `Deixa comigo.` antes da execucao.
 
-- [ ] V3. Reduzir latencia percebida com streaming e preamble curto
-  Notas: separar ack inicial do conteudo final; evitar esperar a resposta completa para dar feedback auditivo.
+- [x] V3. Reduzir latencia percebida com streaming e preamble curto
+  Notas: frontend fala cues via browser TTS e publica `speaking`/`idle` no mesmo contrato de estado, sem esperar a resposta final do modelo.
 
-- [ ] V4. Padronizar tratamento de erro em voz
-  Notas: toda falha operacional precisa resposta falada clara, motivo resumido e opcao de retry ou alternativa.
+- [x] V4. Padronizar tratamento de erro em voz
+  Notas: falhas operacionais agora publicam estado `error` com mensagem falada curta e convite de retry; o teste novo cobre esse fluxo.
 
-- [ ] V5. Entregar ativacao dupla: botao dedicado + wake word
-  Notas: mesma infraestrutura de estado para mobile e desktop; botao permanece fallback explicito quando wake word falhar.
+- [x] V5. Entregar ativacao dupla: botao dedicado + wake word
+  Notas: `StartAudioButton` publica ativacao por botao e o frontend usa `SpeechRecognition`/`webkitSpeechRecognition` como wake word progressivo com fallback explicito para o botao.
 
-- [ ] V6. Ajustar tom de voz e prompt para naturalidade
-  Notas: reduzir respostas roboticas, confirmacoes mecanicas e frases excessivamente formais; alinhar runtime, prompts e exemplos de resposta.
+- [x] V6. Ajustar tom de voz e prompt para naturalidade
+  Notas: `backend/prompts.py` e `backend/runtime/realtime_adapters.py` foram ajustados para tom mais natural, ack curto e menos rigidez nas transicoes de voz.
 
 ## Frente M - Memoria e contexto
 

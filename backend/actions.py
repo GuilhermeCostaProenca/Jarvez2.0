@@ -246,6 +246,14 @@ from rpg_engine.contracts import InvalidCharacterBuildError, InvalidThreatDefini
 from runtime.model_gateway import resolve_runtime
 from skills import get_skill, list_skills
 from workflows.engine import WorkflowEngine
+from voice_interactivity import (
+    VOICE_INTERACTIVITY_EVENT_TYPE,
+    VOICE_INTERACTIVITY_NAMESPACE,
+    build_action_preamble,
+    build_voice_error_message,
+    build_voice_interactivity_payload,
+    is_background_candidate,
+)
 
 try:
     from pypdf import PdfReader, PdfWriter
@@ -490,6 +498,45 @@ def _load_event_namespace(participant_identity: str, room: str, namespace: str) 
     except Exception:
         logger.warning("failed to load event namespace=%s", namespace, exc_info=True)
         return None
+
+
+async def _publish_voice_interactivity_state(
+    ctx: ActionContext,
+    *,
+    state: str,
+    source: str = "backend",
+    activation_mode: str | None = None,
+    raw_client_state: str | None = None,
+    display_message: str | None = None,
+    spoken_message: str | None = None,
+    action_name: str | None = None,
+    trace_id: str | None = None,
+    error_code: str | None = None,
+    can_retry: bool | None = None,
+    extra: JsonObject | None = None,
+) -> dict[str, Any]:
+    payload = build_voice_interactivity_payload(
+        state=state,
+        source=source,
+        activation_mode=activation_mode,
+        raw_client_state=raw_client_state,
+        display_message=display_message,
+        spoken_message=spoken_message,
+        action_name=action_name,
+        trace_id=trace_id,
+        error_code=error_code,
+        can_retry=can_retry,
+        extra=extra,
+    )
+    _persist_event_namespace(ctx.participant_identity, ctx.room, VOICE_INTERACTIVITY_NAMESPACE, payload)
+    await _publish_agent_event(
+        ctx,
+        {
+            "type": VOICE_INTERACTIVITY_EVENT_TYPE,
+            "voice_interactivity": payload,
+        },
+    )
+    return payload
 
 
 def _active_project_from_payload(payload: Any) -> ActiveProjectMode | None:
@@ -5803,6 +5850,43 @@ async def dispatch_action(
         await _emit_autonomy_notice_event(ctx, autonomy_notice)
 
     async def _finalize(result: ActionResult) -> ActionResult:
+        if isinstance(result.data, dict) and result.data.get("confirmation_required") is True:
+            await _publish_voice_interactivity_state(
+                ctx,
+                state="confirming",
+                display_message=result.message,
+                action_name=name,
+                trace_id=trace_id,
+                can_retry=True,
+            )
+        elif result.success:
+            if isinstance(result.data, dict) and is_background_candidate(name, result.data):
+                await _publish_voice_interactivity_state(
+                    ctx,
+                    state="background",
+                    display_message="Tarefa em segundo plano.",
+                    action_name=name,
+                    trace_id=trace_id,
+                )
+            else:
+                await _publish_voice_interactivity_state(
+                    ctx,
+                    state="thinking",
+                    display_message="Preparando resposta.",
+                    action_name=name,
+                    trace_id=trace_id,
+                )
+        else:
+            await _publish_voice_interactivity_state(
+                ctx,
+                state="error",
+                display_message=result.message or "Nao consegui concluir a acao.",
+                spoken_message=build_voice_error_message(name, result.message, result.error),
+                action_name=name,
+                trace_id=trace_id,
+                error_code=result.error,
+                can_retry=True,
+            )
         _record_domain_trust_from_result(action_name=name, result=result)
         _persist_result_state(ctx, name, result)
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
@@ -5977,6 +6061,31 @@ async def dispatch_action(
             policy_decision="require_confirmation",
         )
         return await _finalize(result)
+
+    await _publish_voice_interactivity_state(
+        ctx,
+        state="thinking",
+        display_message="Entendendo o pedido.",
+        action_name=name,
+        trace_id=trace_id,
+    )
+    preamble = build_action_preamble(name, params if isinstance(params, dict) else None)
+    if preamble:
+        await _publish_voice_interactivity_state(
+            ctx,
+            state="confirming",
+            display_message=preamble,
+            spoken_message=preamble,
+            action_name=name,
+            trace_id=trace_id,
+        )
+    await _publish_voice_interactivity_state(
+        ctx,
+        state="executing",
+        display_message="Executando acao.",
+        action_name=name,
+        trace_id=trace_id,
+    )
 
     try:
         result = await spec.handler(params, ctx)

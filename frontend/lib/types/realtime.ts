@@ -5,6 +5,31 @@ export type ParticipantIdentity = string;
 export type ConnectionState = 'connected' | 'disconnected' | 'reconnecting';
 
 export type RoomSessionState = UseSessionReturn;
+export type VoiceInteractivityStateValue =
+  | 'idle'
+  | 'listening'
+  | 'transcribing'
+  | 'thinking'
+  | 'confirming'
+  | 'executing'
+  | 'background'
+  | 'speaking'
+  | 'error';
+
+export interface VoiceInteractivityState {
+  state: VoiceInteractivityStateValue;
+  source?: 'backend' | 'client' | string;
+  activation_mode?: 'button' | 'wake_word' | 'voice' | 'system' | 'unknown' | string;
+  raw_client_state?: string;
+  display_message?: string;
+  spoken_message?: string;
+  action_name?: string;
+  trace_id?: string;
+  error_code?: string;
+  can_retry?: boolean;
+  wake_word_available?: boolean;
+  updated_at?: string;
+}
 
 export interface ToolCallEvent {
   name: string;
@@ -777,6 +802,7 @@ export interface SessionSnapshot {
   workflow_state?: WorkflowState | null;
   automation_state?: AutomationState | null;
   whatsapp_channel?: Record<string, unknown> | null;
+  voice_interactivity?: VoiceInteractivityState | null;
 }
 
 export interface ResearchDashboardResult {

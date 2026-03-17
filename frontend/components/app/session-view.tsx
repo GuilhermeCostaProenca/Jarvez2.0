@@ -245,6 +245,7 @@ export const SessionView = ({
     activeCodexTask,
     codexTaskEvents,
     codexTaskHistory,
+    voiceInteractivity,
     securitySession,
     confirmPendingAction,
     cancelPendingAction,
@@ -703,6 +704,36 @@ export const SessionView = ({
                     {securitySession.autonomyNotice.domain
                       ? `Autonomia reduzida: ${securitySession.autonomyNotice.domain}`
                       : 'Autonomia reduzida'}
+                  </span>
+                )}
+                {voiceInteractivity?.state && (
+                  <span
+                    className={cn(
+                      'rounded-full border px-2 py-1',
+                      voiceInteractivity.state === 'error'
+                        ? 'border-rose-300/30 bg-rose-500/10 text-rose-100'
+                        : voiceInteractivity.state === 'speaking'
+                          ? 'border-cyan-300/30 bg-cyan-500/10 text-cyan-100'
+                          : voiceInteractivity.state === 'listening'
+                            ? 'border-emerald-300/30 bg-emerald-500/10 text-emerald-100'
+                            : voiceInteractivity.state === 'background'
+                              ? 'border-violet-300/30 bg-violet-500/10 text-violet-100'
+                              : 'border-white/10 bg-white/5 text-white/80'
+                    )}
+                    title={voiceInteractivity.display_message ?? undefined}
+                  >
+                    {voiceInteractivity.display_message ??
+                      ({
+                        idle: 'Pronto',
+                        listening: 'Ouvindo',
+                        transcribing: 'Transcrevendo',
+                        thinking: 'Pensando',
+                        confirming: 'Confirmando',
+                        executing: 'Executando',
+                        background: 'Em segundo plano',
+                        speaking: 'Falando',
+                        error: 'Erro',
+                      }[voiceInteractivity.state] ?? 'Estado')}
                   </span>
                 )}
                 <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-white/70">

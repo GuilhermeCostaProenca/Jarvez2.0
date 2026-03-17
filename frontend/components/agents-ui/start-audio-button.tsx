@@ -1,4 +1,4 @@
-import { type ComponentProps } from 'react';
+import { type ComponentProps, type MouseEvent } from 'react';
 import { Room } from 'livekit-client';
 import { useEnsureRoom, useStartAudio } from '@livekit/components-react';
 import { Button } from '@/components/ui/button';
@@ -48,9 +48,22 @@ export function StartAudioButton({
 }: StartAudioButtonProps) {
   const roomEnsured = useEnsureRoom(room);
   const { mergedProps } = useStartAudio({ room: roomEnsured, props });
+  const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
+    const mergedOnClick = mergedProps.onClick as
+      | ((event: MouseEvent<HTMLButtonElement>) => void)
+      | undefined;
+    mergedOnClick?.(event);
+    if (!event.defaultPrevented && typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('jarvez:voice-activation', {
+          detail: { mode: 'button' },
+        })
+      );
+    }
+  };
 
   return (
-    <Button size={size} variant={variant} {...props} {...mergedProps}>
+    <Button size={size} variant={variant} {...props} {...mergedProps} onClick={handleClick}>
       {label}
     </Button>
   );

@@ -9,5 +9,5 @@ def build_realtime_model(decision: RuntimeDecision):
     # The adapter surface is now explicit even though only Google Realtime is wired today.
     return google.beta.realtime.RealtimeModel(
         voice="Charon",
-        temperature=0.6,
+        temperature=0.72,
     )
