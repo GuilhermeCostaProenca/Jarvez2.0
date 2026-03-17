@@ -22,6 +22,7 @@ def _default_briefing_cooldown_seconds() -> int:
     return max(60, min(value, 86_400))
 
 
+# DEPRECATED: migrated to jarvez-mcp-research
 async def web_search_dashboard(
     params: JsonObject,
     ctx: ActionContext,

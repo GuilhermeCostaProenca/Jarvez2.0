@@ -427,20 +427,20 @@ Contexto tecnico: `open_desktop_resource` e `run_local_command` nascem dos helpe
 
 ##### Dominio: research
 Contexto tecnico: `backend/actions_domains/research.py` pode virar MCP, mas o dashboard, agendamento e reabertura em rota dedicada continuam como glue do Jarvez ate a UX estabilizar.
-- [ ] Criar repo `jarvez-mcp-research`
-  Notas:
-- [ ] Migrar codigo de `backend/actions_domains/research.py`
-  Notas:
-- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
-  Notas:
-- [ ] Criar CHANGELOG.md com v0.1.0
-  Notas:
-- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-research com tag v0.1.0
-  Notas:
-- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
-  Notas:
-- [ ] Registrar em AGENTS.md como repositorio de referencia
-  Notas:
+- [x] Criar repo `jarvez-mcp-research`
+  Notas: repo criado em `../jarvez-mcp-research` seguindo a estrutura standalone de `../jarvez-mcp-spotify` e `../jarvez-mcp-projects`, com `server.py`, `core/`, `tools/` e persistencia local de runs.
+- [x] Migrar codigo de `backend/actions_domains/research.py`
+  Notas: o motor puro de pesquisa web foi extraido para `../jarvez-mcp-research/core/research_client.py` e exposto como `research_run`, `research_status`, `research_list_runs` e `research_cancel`; dashboard, agendamento e reabertura continuam locais no Jarvez.
+- [x] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas: `../jarvez-mcp-research/README.md` documenta instalacao, `claude mcp add --transport stdio`, variaveis de ambiente e a fronteira entre o repo e o glue local do Jarvez.
+- [x] Criar CHANGELOG.md com v0.1.0
+  Notas: `../jarvez-mcp-research/CHANGELOG.md` criado com a entrada `v0.1.0 - 2026-03-17`.
+- [x] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-research com tag v0.1.0
+  Notas: repo publicado em `https://github.com/GuilhermeCostaProenca/jarvez-mcp-research`, branch `main` enviada, tag `v0.1.0` criada em `2026-03-17` e HEAD local em `77a799fe3a05a892a40b7f77031309969b06a2b5`.
+- [x] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas: `backend/actions.py` e `backend/actions_domains/research.py` agora marcam `web_search_dashboard` como compatibilidade temporaria durante a migracao para `jarvez-mcp-research`; `save_web_briefing_schedule` continua local.
+- [x] Registrar em AGENTS.md como repositorio de referencia
+  Notas: `AGENTS.md` ganhou a entrada `jarvez-mcp-research` na tabela de repositorios de referencia.
 
 ##### Dominio: rpg
 Contexto tecnico: `backend/actions_domains/rpg.py` depende de `backend/rpg_knowledge.py`, `references/gerador-ficha-tormenta20`, `references/artonMap`, PDFs/SQLite locais, arquivos de sessao e backlinks com OneNote; nao houve MCP publico confirmado para este stack.
@@ -529,7 +529,7 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 
 ## Aceite final
 - [ ] Todos os dominios extraiveis tem repo publico no GitHub
-  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-desktop`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex` e `jarvez-mcp-code-actions`.
+  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-desktop`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex`, `jarvez-mcp-code-actions` e `jarvez-mcp-research`.
 - [ ] Jarvez consome MCPs reais pelo client interno e nao apenas por repos publicados
   Notas: integrar e validar no backend principal pelo menos `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`.
 - [ ] `actions.py` nao tem mais handlers de dominio, so glue code
@@ -537,7 +537,7 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 - [ ] Jarvez conecta nos MCP servers externos via `claude mcp add`
   Notas: alem do fluxo manual no Claude, o backend principal precisa conseguir subir, descobrir tools e chamar MCPs reais via `backend/mcp/`.
 - [ ] AGENTS.md atualizado com todos os novos repos
-  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-desktop`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex` e `jarvez-mcp-code-actions`; seguem pendentes os proximos dominios extraidos.
+  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-desktop`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex`, `jarvez-mcp-code-actions` e `jarvez-mcp-research`; seguem pendentes os proximos dominios extraidos.
 
 ## Nota de sincronizacao
 - A ordem restante continua fazendo sentido. A Fase B fica fechada para os dominios priorizados (`whatsapp`, `onenote`, `ac`) sem mover journal, preferências, policy ou automações locais para fora do Jarvez.

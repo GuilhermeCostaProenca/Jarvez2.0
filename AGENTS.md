@@ -120,6 +120,7 @@ Estão em `./references/`. **Consulte antes de implementar qualquer feature nova
 | `jarvez-mcp-projects` | MCP server standalone de metadata de projetos | Extrair listagem, abertura, criação e atualização de metadata sem tirar ProjectCatalog, projeto ativo e indexação local do Jarvez |
 | `jarvez-mcp-codex` | MCP server standalone de tasks Codex | Extrair run/status/cancel/list de tasks sem tirar histórico de sessão, eventos realtime e controle por participante do Jarvez |
 | `jarvez-mcp-code-actions` | MCP server standalone de ações de código puras | Extrair leitura, escrita, patch e busca de código sem tirar CodeWorkerClient, CodeKnowledgeIndex e projeto ativo do Jarvez |
+| `jarvez-mcp-research` | MCP server standalone do domínio research | Extrair execução pura de pesquisas sem levar dashboard, agendamento e histórico de sessão do Jarvez |
 | `jarvez-mcp-rpg` | MCP server standalone do domínio RPG | Qualquer feature RPG |
 
 **Consulta online** (não clonar, usar como catálogo):

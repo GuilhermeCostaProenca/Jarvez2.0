@@ -2068,6 +2068,7 @@ def _build_web_dashboard_summary(query: str, results: list[JsonObject]) -> str:
     return _truncate_text(f"Resumo consolidado para '{query}': {summary}", 900)
 
 
+# DEPRECATED: migrated to jarvez-mcp-research
 async def _web_search_dashboard(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_web_search_dashboard(
         params,
