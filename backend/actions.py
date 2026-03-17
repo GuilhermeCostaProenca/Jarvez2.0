@@ -6786,17 +6786,26 @@ async def _thinq_control_device(params: JsonObject, ctx: ActionContext) -> Actio
 
 
 async def _ac_get_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_ac_get_status(
-        params,
-        ctx,
-        coerce_optional_str=_coerce_optional_str,
-        thinq_find_device=_thinq_find_device,
-        thinq_api_request=_thinq_api_request,
-        thinq_extract_device_id=_thinq_extract_device_id,
-        thinq_extract_device_alias=_thinq_extract_device_alias,
-        thinq_simplify_device=_thinq_simplify_device,
-        quote_path_segment=lambda value: quote(value, safe=""),
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_ac_get_status(
+            params,
+            ctx,
+            coerce_optional_str=_coerce_optional_str,
+            thinq_find_device=_thinq_find_device,
+            thinq_api_request=_thinq_api_request,
+            thinq_extract_device_id=_thinq_extract_device_id,
+            thinq_extract_device_alias=_thinq_extract_device_alias,
+            thinq_simplify_device=_thinq_simplify_device,
+            quote_path_segment=lambda value: quote(value, safe=""),
+        )
+
+    mcp_params = {
+        key: params.get(key)
+        for key in ("device_name", "device_id")
+        if params.get(key) is not None
+    }
+    result = await _thinq_route_via_mcp("thinq_get_device_state", mcp_params, _legacy_handler)
+    return _ac_result_with_mcp_message(result, action_name="ac_get_status")
 
 
 async def _ac_send_command(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -6860,19 +6869,39 @@ def _normalize_ac_fan_speed(value: str) -> str:
 
 
 async def _ac_turn_on(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    return await domain_ac_turn_on(
-        params,
-        ctx,
-        ac_send_command=_ac_send_command,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_ac_turn_on(
+            params,
+            ctx,
+            ac_send_command=_ac_send_command,
+        )
+
+    mcp_params: JsonObject = {
+        "command": _thinq_build_air_command(section="operation", payload={"airConOperationMode": "POWER_ON"}),
+    }
+    for key in ("device_name", "device_id", "conditional"):
+        if params.get(key) is not None:
+            mcp_params[key] = params.get(key)
+    result = await _thinq_route_via_mcp("thinq_control_device", mcp_params, _legacy_handler)
+    return _ac_result_with_mcp_message(result, action_name="ac_turn_on")
 
 
 async def _ac_turn_off(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    return await domain_ac_turn_off(
-        params,
-        ctx,
-        ac_send_command=_ac_send_command,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_ac_turn_off(
+            params,
+            ctx,
+            ac_send_command=_ac_send_command,
+        )
+
+    mcp_params: JsonObject = {
+        "command": _thinq_build_air_command(section="operation", payload={"airConOperationMode": "POWER_OFF"}),
+    }
+    for key in ("device_name", "device_id", "conditional"):
+        if params.get(key) is not None:
+            mcp_params[key] = params.get(key)
+    result = await _thinq_route_via_mcp("thinq_control_device", mcp_params, _legacy_handler)
+    return _ac_result_with_mcp_message(result, action_name="ac_turn_off")
 
 
 async def _ac_set_mode(params: JsonObject, ctx: ActionContext) -> ActionResult:
@@ -7645,6 +7674,21 @@ async def _thinq_route_via_mcp(
         tool_name=tool_name,
         fallback_used=False,
     )
+
+
+def _ac_result_with_mcp_message(result: ActionResult, *, action_name: str) -> ActionResult:
+    if not result.success:
+        return result
+    data = result.data if isinstance(result.data, dict) else {}
+    device = data.get("device") if isinstance(data.get("device"), dict) else {}
+    alias = str(device.get("alias") or "").strip()
+    if not alias:
+        return result
+    if action_name == "ac_get_status":
+        result.message = f"Estado do ar carregado para {alias}."
+    elif action_name in {"ac_turn_on", "ac_turn_off"}:
+        result.message = f"Comando enviado para o ar {alias}."
+    return result
 
 
 async def _rpg_route_via_mcp(
