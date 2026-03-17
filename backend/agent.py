@@ -31,6 +31,8 @@ from actions import (
 from channels.livekit_adapter import normalize_livekit_data_packet
 from memory import MemoryManager
 from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
+from proactivity import PROACTIVITY_EVENT_TYPE, PROACTIVITY_NAMESPACE, SuggestionEngine
+from proactivity.suggestion_engine import LOW_RISK_PARALLEL_ACTIONS
 from runtime.model_gateway import resolve_runtime
 from runtime.realtime_adapters import build_realtime_runtime
 from session_snapshot import publish_session_snapshot
@@ -157,6 +159,28 @@ async def _publish_voice_interactivity(
         {
             "type": VOICE_INTERACTIVITY_EVENT_TYPE,
             "voice_interactivity": payload,
+        },
+    )
+
+
+async def _publish_proactivity_state(
+    session: AgentSession | None,
+    *,
+    participant_identity: str,
+    room: str,
+    payload: dict[str, Any],
+) -> None:
+    get_state_store().upsert_event_state(
+        participant_identity=participant_identity,
+        room=room,
+        namespace=PROACTIVITY_NAMESPACE,
+        payload=payload,
+    )
+    await publish_session_event(
+        session,
+        {
+            "type": PROACTIVITY_EVENT_TYPE,
+            "proactivity_state": payload,
         },
     )
 
@@ -412,6 +436,85 @@ def build_action_tools(
     return tools
 
 
+async def _run_startup_proactivity(
+    *,
+    session: AgentSession,
+    job_id: str,
+    room_name: str,
+    participant_identity: str,
+    mem0: AsyncMemoryClient,
+    memory_manager: MemoryManager,
+    user_id: str,
+) -> None:
+    engine = SuggestionEngine(state_store=get_state_store(), memory_manager=memory_manager)
+    payload = engine.evaluate(
+        participant_identity=participant_identity,
+        room=room_name,
+        persist=True,
+    )
+    if payload.get("status") not in {"suggested", "background"}:
+        return
+    await _publish_proactivity_state(
+        session,
+        participant_identity=participant_identity,
+        room=room_name,
+        payload=payload,
+    )
+
+    suggestions = payload.get("suggestions")
+    if not isinstance(suggestions, list):
+        return
+    for suggestion in suggestions:
+        if not isinstance(suggestion, dict):
+            continue
+        if not bool(suggestion.get("auto_execute")):
+            continue
+        action_name = str(suggestion.get("action_name") or "").strip()
+        action_params = suggestion.get("action_params")
+        if action_name not in LOW_RISK_PARALLEL_ACTIONS or not isinstance(action_params, dict):
+            continue
+
+        async def _execute_parallel_suggestion() -> None:
+            try:
+                background_payload = engine.mark_parallel_execution(
+                    participant_identity=participant_identity,
+                    room=room_name,
+                    suggestion_kind=str(suggestion.get("kind") or "proactivity"),
+                    message=str(
+                        suggestion.get("message")
+                        or "Sugestao proativa iniciada em segundo plano."
+                    ),
+                )
+                await _publish_proactivity_state(
+                    session,
+                    participant_identity=participant_identity,
+                    room=room_name,
+                    payload=background_payload,
+                )
+                await dispatch_action(
+                    action_name,
+                    action_params,
+                    ActionContext(
+                        job_id=job_id,
+                        room=room_name,
+                        participant_identity=participant_identity,
+                        session=session,
+                        memory_client=mem0,
+                        user_id=user_id,
+                    ),
+                    skip_confirmation=True,
+                    bypass_auth=True,
+                )
+            except Exception as error:
+                logger.warning("startup proactivity execution failed: %s", error, exc_info=True)
+
+        asyncio.create_task(
+            _execute_parallel_suggestion(),
+            name=f"startup_proactivity_{participant_identity}",
+        )
+        break
+
+
 async def entrypoint(ctx: agents.JobContext):
     await ctx.connect()
     user_id, user_name = resolve_user_identity(ctx)
@@ -491,6 +594,18 @@ async def entrypoint(ctx: agents.JobContext):
         display_message="Jarvez pronto para ouvir.",
     )
     await publish_session_snapshot(session, participant_identity=user_id, room=room_name)
+    try:
+        await _run_startup_proactivity(
+            session=session,
+            job_id=job_id,
+            room_name=room_name,
+            participant_identity=user_id,
+            mem0=mem0,
+            memory_manager=memory_manager,
+            user_id=user_id,
+        )
+    except Exception as error:
+        logger.warning("failed to evaluate startup proactivity: %s", error, exc_info=True)
     def _publish_snapshot_on_participant_connected(participant: rtc.RemoteParticipant) -> None:
         identity = str(getattr(participant, "identity", "") or "").strip()
         if not identity:

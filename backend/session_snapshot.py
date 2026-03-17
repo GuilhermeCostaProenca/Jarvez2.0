@@ -76,6 +76,7 @@ def build_session_snapshot(participant_identity: str, room: str) -> dict[str, An
             "browser_tasks": actions_module._load_event_namespace(participant_identity, room, "browser_tasks"),
             "workflow_state": actions_module._load_event_namespace(participant_identity, room, "workflow_state"),
             "automation_state": actions_module._load_event_namespace(participant_identity, room, "automation_state"),
+            "proactivity_state": actions_module._load_event_namespace(participant_identity, room, "proactivity_state"),
             "whatsapp_channel": actions_module._load_event_namespace(participant_identity, room, "whatsapp_channel"),
             "voice_interactivity": actions_module._load_event_namespace(
                 participant_identity,

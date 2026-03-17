@@ -25,8 +25,8 @@ Decisoes base deste plano:
 - [x] M. Memoria e contexto
   Notas: camada hibrida `SQLite + Mem0` implementada em `backend/memory/memory_manager.py`, com turnos, preferencias e resumo de sessao persistidos.
 
-- [ ] P. Proatividade
-  Notas: motor de sugestao ligado a heuristicas locais, memoria e ao substrato de automacoes de `F2.3`.
+- [x] P. Proatividade
+  Notas: `backend/proactivity/suggestion_engine.py` agora unifica heuristicas de sessao, memoria e automacoes, com cooldown, intensidade e clarificacao antes de acoes ambiguas.
 
 - [ ] UI. Visual e feedback
   Notas: estado do assistente visivel e sincronizado com o backend, sem poluir a sessao principal.
@@ -81,20 +81,20 @@ Contexto tecnico: `backend/agent.py` ja carrega e persiste memoria publica/priva
 
 Contexto tecnico: ja existe substrato de automacao em `backend/automation/` com scheduler, triggers e executor, e ja existe proatividade leve no frontend em `frontend/hooks/useAwarenessProactive.ts`. O item `F2.3` de `docs/next-cycle-plan.md` ja assume que automacoes proativas serao fechadas no backend. Falta unificar isso com contexto conversacional, memoria persistida e controles de experiencia para que a proatividade deixe de ser so heuristica local ou rotina agendada.
 
-- [ ] P1. Unificar heuristicas locais e automacoes backend em um motor de sugestao
-  Notas: combinar hora do dia, contexto da sessao, memoria, estado do frontend e `F2.3`.
+- [x] P1. Unificar heuristicas locais e automacoes backend em um motor de sugestao
+  Notas: `backend/proactivity/suggestion_engine.py` combina hora do dia, preferencias da Frente M, contexto recente, schedules de briefing e estado de automacao, persistindo `proactivity_state`.
 
-- [ ] P2. Fazer clarificacao antes de acoes ambiguas
-  Notas: perguntar quando houver multiplos alvos plausiveis; nao inventar destino nem assumir device/app errado.
+- [x] P2. Fazer clarificacao antes de acoes ambiguas
+  Notas: `backend/actions.py` agora consulta a engine antes de validar/executar e publica `confirming` + `proactivity_state` quando encontra multiplos alvos plausiveis para luz, AC, Spotify ou WhatsApp.
 
-- [ ] P3. Sugerir e executar em paralelo quando risco for baixo
-  Notas: padrao `posso fazer X; ja estou abrindo Y` para reduzir friccao sem bloquear a conversa.
+- [x] P3. Sugerir e executar em paralelo quando risco for baixo
+  Notas: a avaliacao inicial em `backend/agent.py` agora pode iniciar `automation_run_now` em `dry_run` como tarefa em segundo plano quando a sugestao for segura e a intensidade estiver em `active`.
 
-- [ ] P4. Usar preferencias e rotina aprendida para antecipar sugestoes
-  Notas: briefing, apps usuais, dispositivos favoritos, habitos horarios e contexto do momento.
+- [x] P4. Usar preferencias e rotina aprendida para antecipar sugestoes
+  Notas: a engine usa `favorite_apps`, `preferred_devices`, `routine_recurring` e turnos recentes para motivar briefing, Spotify, AC e foco de codigo com motivo explicito.
 
-- [ ] P5. Expor controles de proatividade
-  Notas: intensidade, silencio temporario, motivo da sugestao e cooldown visivel na UI.
+- [x] P5. Expor controles de proatividade
+  Notas: a engine passou a suportar `silent/moderate/active`, `proactivity_silent_until` e cooldown por tipo; o payload publicado inclui `controls`, `reason` e timestamps para a UI consumir depois.
 
 ## Frente UI - Visual e feedback
 

@@ -245,6 +245,7 @@ from rpg_engine import generate_character_sheet, generate_threat_sheet
 from rpg_engine.contracts import InvalidCharacterBuildError, InvalidThreatDefinitionError
 from runtime.model_gateway import resolve_runtime
 from skills import get_skill, list_skills
+from proactivity import PROACTIVITY_EVENT_TYPE, PROACTIVITY_NAMESPACE, SuggestionEngine
 from workflows.engine import WorkflowEngine
 from voice_interactivity import (
     VOICE_INTERACTIVITY_EVENT_TYPE,
@@ -534,6 +535,25 @@ async def _publish_voice_interactivity_state(
         {
             "type": VOICE_INTERACTIVITY_EVENT_TYPE,
             "voice_interactivity": payload,
+        },
+    )
+    return payload
+
+
+def _build_proactivity_engine() -> SuggestionEngine:
+    return SuggestionEngine(state_store=STATE_STORE)
+
+
+async def _publish_proactivity_state(
+    ctx: ActionContext,
+    payload: JsonObject,
+) -> dict[str, Any]:
+    _persist_event_namespace(ctx.participant_identity, ctx.room, PROACTIVITY_NAMESPACE, payload)
+    await _publish_agent_event(
+        ctx,
+        {
+            "type": PROACTIVITY_EVENT_TYPE,
+            "proactivity_state": payload,
         },
     )
     return payload
@@ -5812,6 +5832,7 @@ async def dispatch_action(
     started_at = time.perf_counter()
     started_at_iso = _now_iso()
     trace_id = f"trace_{uuid.uuid4().hex[:12]}"
+    proactivity_engine = _build_proactivity_engine()
     spec = get_action(name)
     risk = classify_action_risk(name)
     action_domain = infer_action_domain(name)
@@ -5850,7 +5871,18 @@ async def dispatch_action(
         await _emit_autonomy_notice_event(ctx, autonomy_notice)
 
     async def _finalize(result: ActionResult) -> ActionResult:
-        if isinstance(result.data, dict) and result.data.get("confirmation_required") is True:
+        if isinstance(result.data, dict) and result.data.get("clarification_required") is True:
+            await _publish_voice_interactivity_state(
+                ctx,
+                state="confirming",
+                display_message=result.message,
+                spoken_message=result.message,
+                action_name=name,
+                trace_id=trace_id,
+                can_retry=True,
+                extra={"clarification_required": True},
+            )
+        elif isinstance(result.data, dict) and result.data.get("confirmation_required") is True:
             await _publish_voice_interactivity_state(
                 ctx,
                 state="confirming",
@@ -5910,6 +5942,41 @@ async def dispatch_action(
             started_at=started_at_iso,
             risk=risk,
             policy_decision="deny",
+        )
+        return await _finalize(result)
+
+    clarification = proactivity_engine.build_clarification(
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        action_name=name,
+        params=params if isinstance(params, dict) else {},
+    )
+    if clarification is not None:
+        result = ActionResult(
+            success=True,
+            message=str(clarification.get("question") or "Preciso de uma confirmacao antes de continuar."),
+            data={
+                "clarification_required": True,
+                "clarification": clarification,
+            },
+        )
+        result = _ensure_result_envelope(
+            result=result,
+            trace_id=trace_id,
+            action_name=name,
+            started_at=started_at_iso,
+            risk=risk,
+            policy_decision="clarify",
+        )
+        await _publish_proactivity_state(
+            ctx,
+            {
+                "status": "clarifying",
+                "updated_at": clarification.get("updated_at") or _now_iso(),
+                "controls": proactivity_engine.load_controls(participant_identity=ctx.participant_identity),
+                "suggestions": [],
+                "clarification": clarification,
+            },
         )
         return await _finalize(result)
 
@@ -6604,12 +6671,14 @@ async def _build_whatsapp_channel_status_result() -> ActionResult:
 async def _automation_status(params: JsonObject, ctx: ActionContext) -> ActionResult:
     _ = params
     automation_state = _load_event_namespace(ctx.participant_identity, ctx.room, "automation_state")
+    proactivity_state = _load_event_namespace(ctx.participant_identity, ctx.room, PROACTIVITY_NAMESPACE)
     research_schedules = _load_event_namespace(ctx.participant_identity, ctx.room, "research_schedules")
     return ActionResult(
         success=True,
         message="Estado das automacoes carregado.",
         data={
             "automation_state": automation_state if isinstance(automation_state, dict) else None,
+            "proactivity_state": proactivity_state if isinstance(proactivity_state, dict) else None,
             "research_schedules": research_schedules if isinstance(research_schedules, list) else [],
         },
     )

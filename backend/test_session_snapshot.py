@@ -69,6 +69,7 @@ class SessionSnapshotTests(unittest.IsolatedAsyncioTestCase):
             "browser_tasks",
             "workflow_state",
             "automation_state",
+            "proactivity_state",
             "whatsapp_channel",
         ):
             self.assertIn(key, snapshot)
