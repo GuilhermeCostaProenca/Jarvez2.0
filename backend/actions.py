@@ -8250,6 +8250,7 @@ async def _code_reindex_repo(params: JsonObject, ctx: ActionContext) -> ActionRe
 
 
 async def _code_search_repo(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    # DEPRECATED: migrated to jarvez-mcp-code-actions for pure knowledge search; keep wrapper while Jarvez still owns active project and index singletons.
     return await domain_code_search_repo(
         params,
         ctx,
@@ -9399,6 +9400,7 @@ async def _code_worker_status_action(params: JsonObject, ctx: ActionContext) -> 
 
 
 async def _code_read_file_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-code-actions for pure file read; keep wrapper while Jarvez still owns project resolution and worker singleton.
     return await domain_code_read_file_action(
         params,
         ctx,
@@ -9473,6 +9475,7 @@ async def _code_propose_change_action(params: JsonObject, ctx: ActionContext) ->
 
 
 async def _code_apply_patch_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-code-actions for pure patch apply; keep wrapper while Jarvez still owns project resolution and worker singleton.
     return await domain_code_apply_patch_action(
         params,
         ctx,

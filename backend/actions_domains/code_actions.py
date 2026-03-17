@@ -74,6 +74,7 @@ async def code_search_repo(
     code_repo_root: Callable[[], Path],
     active_project_payload: Callable[[str, str], JsonObject],
 ) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-code-actions for pure knowledge search; keep legacy compatibility while active project and index singletons stay local.
     query = str(params.get("query", "")).strip()
     limit = int(params.get("limit", 5))
     if not query:
@@ -146,6 +147,7 @@ async def code_read_file_action(
     project_record_to_payload: Callable[[Any], JsonObject],
     active_project_payload: Callable[[str, str], JsonObject],
 ) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-code-actions for pure file read; keep legacy compatibility while project resolution and worker singleton stay local.
     path = str(params.get("path", "")).strip()
     if not path:
         return ActionResult(success=False, message="Informe o arquivo que devo ler.", error="missing path")
@@ -406,6 +408,7 @@ async def code_apply_patch_action(
     project_record_to_payload: Callable[[Any], JsonObject],
     active_project_payload: Callable[[str, str], JsonObject],
 ) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-code-actions for pure patch apply; keep legacy compatibility while project resolution and worker singleton stay local.
     changes = params.get("changes", [])
     if not isinstance(changes, list) or not changes:
         return ActionResult(success=False, message="Envie ao menos uma mudanca para aplicar.", error="missing changes")

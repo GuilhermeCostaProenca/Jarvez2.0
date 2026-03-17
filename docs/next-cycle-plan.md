@@ -374,20 +374,20 @@ Contexto tecnico: `backend/actions_domains/projects.py` depende de `ProjectCatal
 
 ##### Dominio: code-actions
 Contexto tecnico: `backend/actions_domains/code_actions.py` depende de `backend/code_worker.py`, `backend/code_knowledge.py` e do estado de projeto ativo mantido pela facade e pelo catalogo local.
-- [ ] Criar repo `jarvez-mcp-code-actions`
-  Notas:
-- [ ] Migrar codigo de `backend/actions_domains/code_actions.py`
-  Notas:
-- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
-  Notas:
-- [ ] Criar CHANGELOG.md com v0.1.0
-  Notas:
-- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-code-actions com tag v0.1.0
-  Notas:
-- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
-  Notas:
-- [ ] Registrar em AGENTS.md como repositorio de referencia
-  Notas:
+- [x] Criar repo `jarvez-mcp-code-actions`
+  Notas: repo criado em `../jarvez-mcp-code-actions` seguindo a estrutura standalone de `../jarvez-mcp-projects` e `../jarvez-mcp-spotify`, com `server.py`, `core/` e `tools/`.
+- [x] Migrar codigo de `backend/actions_domains/code_actions.py`
+  Notas: o recorte extraido cobre `code_read_file`, `code_apply_patch`, `code_search_repo` e a tool standalone complementar `code_write_file` em `../jarvez-mcp-code-actions/tools/code_actions.py`; `CodeWorkerClient`, `CodeKnowledgeIndex`, `code_search_in_active_project`, `code_git_*`, `code_run_command` e projeto ativo continuam no Jarvez.
+- [x] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas: `../jarvez-mcp-code-actions/README.md` documenta instalacao, `claude mcp add --transport stdio`, variaveis de ambiente, a relacao com `jarvez-mcp-projects` e a fronteira exata com os singletons locais do Jarvez.
+- [x] Criar CHANGELOG.md com v0.1.0
+  Notas: `../jarvez-mcp-code-actions/CHANGELOG.md` criado com a entrada `v0.1.0 - 2026-03-17`.
+- [x] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-code-actions com tag v0.1.0
+  Notas: repo publicado em `https://github.com/GuilhermeCostaProenca/jarvez-mcp-code-actions`, branch `main` enviada, tag `v0.1.0` criada e HEAD local em `3db397112aaeb85e2021f329df46a2552c4e82bb`.
+- [x] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas: `backend/actions.py` e `backend/actions_domains/code_actions.py` agora marcam `code_search_repo`, `code_read_file` e `code_apply_patch` como compatibilidade temporaria; o restante do dominio continua local por depender de worker/index/projeto ativo.
+- [x] Registrar em AGENTS.md como repositorio de referencia
+  Notas: `AGENTS.md` ganhou a entrada `jarvez-mcp-code-actions` na tabela de repositorios de referencia.
 
 ##### Dominio: codex
 Contexto tecnico: `backend/actions_domains/codex.py` depende do estado de task/historico/progresso que ainda mora em `actions.py`, alem de emissao de eventos e controle de processos em memoria.
@@ -529,7 +529,7 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 
 ## Aceite final
 - [ ] Todos os dominios extraiveis tem repo publico no GitHub
-  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects` e `jarvez-mcp-codex`.
+  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex` e `jarvez-mcp-code-actions`.
 - [ ] Jarvez consome MCPs reais pelo client interno e nao apenas por repos publicados
   Notas: integrar e validar no backend principal pelo menos `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`.
 - [ ] `actions.py` nao tem mais handlers de dominio, so glue code
@@ -537,11 +537,12 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 - [ ] Jarvez conecta nos MCP servers externos via `claude mcp add`
   Notas: alem do fluxo manual no Claude, o backend principal precisa conseguir subir, descobrir tools e chamar MCPs reais via `backend/mcp/`.
 - [ ] AGENTS.md atualizado com todos os novos repos
-  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects` e `jarvez-mcp-codex`; seguem pendentes os proximos dominios extraidos.
+  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex` e `jarvez-mcp-code-actions`; seguem pendentes os proximos dominios extraidos.
 
 ## Nota de sincronizacao
 - A ordem restante continua fazendo sentido. A Fase B fica fechada para os dominios priorizados (`whatsapp`, `onenote`, `ac`) sem mover journal, preferências, policy ou automações locais para fora do Jarvez.
 - A Fase C comeca por `github` no recorte puro de busca/metadata/clone URL; catalogo local, projeto ativo, selecao e clone fisico continuam no Jarvez.
 - Ainda na Fase C, `projects` sai apenas no recorte de metadata (`project_list`, `project_open`, `project_create`, `project_update`); `ProjectCatalog`, indexacao e projeto ativo em sessao continuam como glue local.
 - Ainda na Fase C, `codex` sai apenas no recorte de tasks (`codex_exec_task`, `codex_exec_review`, `codex_exec_status`, `codex_cancel_task`, `codex_list_tasks`); historico de sessao, eventos realtime e controle por participante continuam no Jarvez.
+- Ainda na Fase C, `code-actions` sai apenas no recorte puro de leitura/escrita/patch/busca; `CodeWorkerClient`, `CodeKnowledgeIndex` e resolucao do projeto ativo continuam como glue local do Jarvez.
 - Na Fase E, o piloto recomendado de integracao real e `jarvez-mcp-spotify`, porque oferece o melhor equilibrio entre baixo acoplamento no Jarvez principal e cobertura real de manifesto, env, discovery, `call_tool` e fallback legacy.
