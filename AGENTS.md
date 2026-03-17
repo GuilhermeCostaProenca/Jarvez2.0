@@ -109,6 +109,8 @@ Estão em `./references/`. **Consulte antes de implementar qualquer feature nova
 | `references/playwright-mcp` | Browser agent MCP oficial Microsoft | Browser automation, scraping, "entre no LinkedIn" |
 | `references/whatsapp-mcp` | WhatsApp MCP bidirecional (Python + Go) | Melhorar integração WhatsApp, acesso de qualquer lugar |
 | `references/spotify-mcp-server` | Spotify MCP leve | Referência para migrar integração Spotify atual |
+| `jarvez-mcp-spotify` | MCP server standalone do domínio Spotify | Extrair playback, devices e playlist surpresa sem manter helpers na facade |
+| `jarvez-mcp-rpg` | MCP server standalone do domínio RPG | Qualquer feature RPG |
 
 **Consulta online** (não clonar, usar como catálogo):
 - `https://github.com/punkpeye/awesome-mcp-servers` — lista de centenas de MCP servers prontos. Sempre consulte aqui antes de programar uma integração do zero.

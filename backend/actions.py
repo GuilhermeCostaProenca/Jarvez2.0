@@ -6634,6 +6634,8 @@ async def _set_persona_mode_action(params: JsonObject, ctx: ActionContext) -> Ac
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg
+# This handler will be removed in a future cleanup cycle
 async def _rpg_get_character_mode(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_rpg_get_character_mode(
         params,
@@ -6643,6 +6645,8 @@ async def _rpg_get_character_mode(params: JsonObject, ctx: ActionContext) -> Act
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg
+# This handler will be removed in a future cleanup cycle
 async def _rpg_assume_character(params: JsonObject, ctx: ActionContext) -> ActionResult:
     return await domain_rpg_assume_character(
         params,
@@ -6665,6 +6669,8 @@ async def _rpg_assume_character(params: JsonObject, ctx: ActionContext) -> Actio
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg
+# This handler will be removed in a future cleanup cycle
 async def _rpg_clear_character_mode(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_rpg_clear_character_mode(
         params,
@@ -7120,6 +7126,7 @@ async def _verify_voice_identity(params: JsonObject, ctx: ActionContext) -> Acti
     )
 
 
+# DEPRECATED: wrappers Spotify permanecem aqui apenas como compatibilidade enquanto o dominio e migrado para ../jarvez-mcp-spotify.
 async def _spotify_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_spotify_status(
         params,
@@ -7276,6 +7283,7 @@ async def _onenote_append_to_page(params: JsonObject, ctx: ActionContext) -> Act
     )
 
 
+# DEPRECATED: wrappers Spotify permanecem aqui apenas como compatibilidade enquanto o dominio e migrado para ../jarvez-mcp-spotify.
 async def _spotify_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_spotify_status(
         params,
@@ -7515,6 +7523,8 @@ async def _whatsapp_send_audio_tts(params: JsonObject, ctx: ActionContext) -> Ac
     return result
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg
+# This handler will be removed in a future cleanup cycle
 async def _rpg_reindex_sources(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_rpg_reindex_sources(
         params,
@@ -7524,6 +7534,8 @@ async def _rpg_reindex_sources(params: JsonObject, ctx: ActionContext) -> Action
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg
+# This handler will be removed in a future cleanup cycle
 async def _rpg_search_knowledge(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_rpg_search_knowledge(
         params,
@@ -8782,6 +8794,8 @@ async def _code_run_command_action(params: JsonObject, ctx: ActionContext) -> Ac
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg
+# This handler will be removed in a future cleanup cycle
 async def _rpg_get_knowledge_stats(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_rpg_get_knowledge_stats(
         params,
@@ -8790,6 +8804,8 @@ async def _rpg_get_knowledge_stats(params: JsonObject, ctx: ActionContext) -> Ac
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg
+# This handler will be removed in a future cleanup cycle
 async def _rpg_save_lore_note(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_rpg_save_lore_note(
         params,
@@ -8799,6 +8815,8 @@ async def _rpg_save_lore_note(params: JsonObject, ctx: ActionContext) -> ActionR
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg
+# This handler will be removed in a future cleanup cycle
 async def _rpg_create_character_sheet(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_rpg_create_character_sheet(
         params,
@@ -8819,6 +8837,8 @@ async def _rpg_create_character_sheet(params: JsonObject, ctx: ActionContext) ->
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg
+# This handler will be removed in a future cleanup cycle
 async def _rpg_create_threat_sheet(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_rpg_create_threat_sheet(
         params,
@@ -8832,6 +8852,8 @@ async def _rpg_create_threat_sheet(params: JsonObject, ctx: ActionContext) -> Ac
         log_info=logger.info,
     )
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg
+# This handler will be removed in a future cleanup cycle
 async def _rpg_session_recording(params: JsonObject, ctx: ActionContext) -> ActionResult:
     return await domain_rpg_session_recording(
         params,
@@ -8850,6 +8872,8 @@ async def _rpg_session_recording(params: JsonObject, ctx: ActionContext) -> Acti
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg
+# This handler will be removed in a future cleanup cycle
 async def _rpg_write_session_summary(params: JsonObject, ctx: ActionContext) -> ActionResult:
     return await domain_rpg_write_session_summary(
         params,
@@ -8860,6 +8884,8 @@ async def _rpg_write_session_summary(params: JsonObject, ctx: ActionContext) -> 
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg
+# This handler will be removed in a future cleanup cycle
 async def _rpg_ideate_next_session(params: JsonObject, ctx: ActionContext) -> ActionResult:
     return await domain_rpg_ideate_next_session(
         params,
@@ -11163,6 +11189,7 @@ def register_default_actions() -> None:
         )
     )
 
+    # DEPRECATED: a superficie spotify_* segue registrada localmente ate o Jarvez apontar para ../jarvez-mcp-spotify.
     register_action(
         ActionSpec(
             name="spotify_status",

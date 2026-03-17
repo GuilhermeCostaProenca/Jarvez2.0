@@ -234,20 +234,20 @@ A facade ainda faz de verdade a gestao de singletons (`ProjectCatalog`, `CodeWor
 
 ##### Dominio: spotify
 Contexto tecnico: `backend/actions_domains/spotify.py` ja esta isolado, mas ainda depende de helpers de token/cache e aliases de device que hoje vivem na facade de `backend/actions.py`.
-- [ ] Criar repo `jarvez-mcp-spotify`
-  Notas:
-- [ ] Migrar codigo de `backend/actions_domains/spotify.py`
-  Notas:
-- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
-  Notas:
-- [ ] Criar CHANGELOG.md com v0.1.0
-  Notas:
-- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-spotify com tag v0.1.0
-  Notas:
-- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
-  Notas:
-- [ ] Registrar em AGENTS.md como repositorio de referencia
-  Notas:
+- [x] Criar repo `jarvez-mcp-spotify`
+  Notas: repo criado em `../jarvez-mcp-spotify` seguindo a estrutura standalone de `../jarvez-mcp-rpg`, com `server.py`, `core/` e `tools/`.
+- [x] Migrar codigo de `backend/actions_domains/spotify.py`
+  Notas: handlers `spotify_status/get_devices/transfer_playback/play/pause/next_track/previous_track/set_volume/create_surprise_playlist` foram portados para `../jarvez-mcp-spotify/tools/spotify.py`, e os helpers de token/cache/device alias sairam para `../jarvez-mcp-spotify/core/spotify_client.py`.
+- [x] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas: `../jarvez-mcp-spotify/README.md` documenta instalacao, `claude mcp add --transport stdio`, variaveis de ambiente e o papel do repo na extracao do Jarvez.
+- [x] Criar CHANGELOG.md com v0.1.0
+  Notas: `../jarvez-mcp-spotify/CHANGELOG.md` criado com a entrada `v0.1.0 - 2026-03-17`.
+- [x] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-spotify com tag v0.1.0
+  Notas: repo publicado em `https://github.com/GuilhermeCostaProenca/jarvez-mcp-spotify`, branch `main` enviada e tag `v0.1.0` criada em `2026-03-17`.
+- [x] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas: `backend/actions.py` agora sinaliza os wrappers e o registro `spotify_*` como compatibilidade temporaria durante a migracao para `../jarvez-mcp-spotify`.
+- [x] Registrar em AGENTS.md como repositorio de referencia
+  Notas: `AGENTS.md` ganhou a entrada `jarvez-mcp-spotify` na tabela de repositorios de referencia.
 
 ##### Dominio: home-assistant
 Contexto tecnico: `backend/actions_domains/home_assistant.py` esta misturado com `open_desktop_resource`, `run_local_command` e `git_clone_repository`; nesta fase migram so `call_service`, `turn_light_on`, `turn_light_off` e `set_light_brightness`.
