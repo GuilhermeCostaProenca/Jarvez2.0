@@ -6139,36 +6139,52 @@ def _log_action_result(
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant
 # This handler will be removed after the desktop split keeps only open_desktop_resource/run_local_command/git_clone_repository locally.
 async def _turn_light_on(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_turn_light_on(
-        params,
-        ctx,
-        call_service=_call_service,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_turn_light_on(
+            params,
+            ctx,
+            call_service=_call_service_legacy,
+        )
+
+    return await _home_assistant_route_via_mcp("turn_light_on", params, _legacy_handler)
 
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant
 # This handler will be removed after the desktop split keeps only open_desktop_resource/run_local_command/git_clone_repository locally.
 async def _turn_light_off(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_turn_light_off(
-        params,
-        ctx,
-        call_service=_call_service,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_turn_light_off(
+            params,
+            ctx,
+            call_service=_call_service_legacy,
+        )
+
+    return await _home_assistant_route_via_mcp("turn_light_off", params, _legacy_handler)
 
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant
 # This handler will be removed after the desktop split keeps only open_desktop_resource/run_local_command/git_clone_repository locally.
 async def _set_light_brightness(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_set_light_brightness(
-        params,
-        ctx,
-        call_service=_call_service,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_set_light_brightness(
+            params,
+            ctx,
+            call_service=_call_service_legacy,
+        )
+
+    return await _home_assistant_route_via_mcp("set_light_brightness", params, _legacy_handler)
 
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant
 # This handler will be removed after the desktop split keeps only open_desktop_resource/run_local_command/git_clone_repository locally.
 async def _call_service(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    async def _legacy_handler() -> ActionResult:
+        return await _call_service_legacy(params, ctx)
+
+    return await _home_assistant_route_via_mcp("call_service", params, _legacy_handler)
+
+
+async def _call_service_legacy(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_call_service(
         params,
         ctx,
@@ -7490,6 +7506,71 @@ async def _onenote_route_via_mcp(
     return _action_result_from_mcp_result(
         mcp_result,
         server_name="onenote",
+        tool_name=tool_name,
+        fallback_used=False,
+    )
+
+
+async def _home_assistant_route_via_mcp(
+    tool_name: str,
+    params: JsonObject,
+    legacy_handler: Callable[[], Awaitable[ActionResult]],
+) -> ActionResult:
+    try:
+        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
+            "home_assistant",
+            tool_name,
+            params,
+            legacy_handler=legacy_handler,
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.warning(
+            "home assistant MCP route failed unexpectedly; using legacy handler",
+            extra={"tool": tool_name, "error": str(error)},
+            exc_info=True,
+        )
+        legacy_result = await legacy_handler()
+        evidence = dict(legacy_result.evidence or {})
+        evidence.update(
+            {
+                "provider": "legacy",
+                "mcp_server": "home_assistant",
+                "mcp_tool": tool_name,
+                "fallback_reason": "transport_exception",
+            }
+        )
+        legacy_result.evidence = evidence
+        legacy_result.fallback_used = True
+        return legacy_result
+
+    if legacy_value is not None:
+        if isinstance(legacy_value, ActionResult):
+            legacy_result = legacy_value
+        else:
+            legacy_result = ActionResult(
+                success=True,
+                message=f"Fallback legacy executado para '{tool_name}'.",
+                data={"value": legacy_value} if isinstance(legacy_value, dict) else None,
+            )
+        evidence = dict(legacy_result.evidence or {})
+        evidence.update(
+            {
+                "provider": "legacy",
+                "mcp_server": "home_assistant",
+                "mcp_tool": tool_name,
+                "fallback_reason": fallback_reason or "legacy_fallback",
+            }
+        )
+        legacy_result.evidence = evidence
+        legacy_result.fallback_used = True
+        return legacy_result
+
+    if mcp_result is None:
+        return await legacy_handler()
+
+    return _action_result_from_mcp_result(
+        mcp_result,
+        server_name="home_assistant",
         tool_name=tool_name,
         fallback_used=False,
     )

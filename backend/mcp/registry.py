@@ -93,8 +93,43 @@ def _pilot_onenote_config() -> McpServerConfig:
     )
 
 
+def _pilot_home_assistant_config() -> McpServerConfig:
+    home_assistant_root = _jarvez_root().parent / "jarvez-mcp-home-assistant"
+    return McpServerConfig(
+        name="home_assistant",
+        command=sys.executable,
+        args=["server.py"],
+        cwd=str(home_assistant_root),
+        enabled=True,
+        timeout_seconds=20,
+        legacy_fallback_enabled=True,
+        env_allowlist=[
+            "PATH",
+            "PATHEXT",
+            "SYSTEMROOT",
+            "WINDIR",
+            "COMSPEC",
+            "TEMP",
+            "TMP",
+            "LOCALAPPDATA",
+            "APPDATA",
+            "PROGRAMDATA",
+            "USERPROFILE",
+            "HOME_ASSISTANT_URL",
+            "HOME_ASSISTANT_TOKEN",
+            "HOME_ASSISTANT_ALLOWED_SERVICES",
+            "HOME_ASSISTANT_RETRY_COUNT",
+            "HOME_ASSISTANT_TIMEOUT_SECONDS",
+        ],
+    )
+
+
 def create_default_mcp_registry() -> "McpRegistry":
-    return McpRegistry([_pilot_spotify_config(), _pilot_onenote_config()])
+    return McpRegistry([
+        _pilot_spotify_config(),
+        _pilot_onenote_config(),
+        _pilot_home_assistant_config(),
+    ])
 
 
 class McpRegistry:

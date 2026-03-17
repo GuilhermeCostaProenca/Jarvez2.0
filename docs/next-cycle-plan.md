@@ -499,8 +499,8 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
   Notas: concluido para a superficie `spotify_*` e para o recorte inicial read-only de `onenote_*`; `backend/actions.py` agora tenta o MCP `spotify` primeiro em toda a superficie `spotify_*` e tenta o MCP `onenote` primeiro em `onenote_status`, `onenote_list_notebooks` e `onenote_list_sections`, preservando fallback legacy controlado sem remocao de handlers.
 - [x] E11. Validar um dominio piloto em integracao real
   Notas: concluido com o piloto `jarvez-mcp-spotify` e com a primeira extensao segura para `jarvez-mcp-onenote`; alem de `dispatch_action("spotify_status")` e do restante do recorte Spotify, o backend principal validou `dispatch_action("onenote_status")` via MCP real, com `evidence.provider="mcp"`, `mcp_server="onenote"` e `fallback_used=false` no cenario manual atual, enquanto o fallback legacy de `onenote_list_notebooks` ficou coberto em teste dedicado.
-- [ ] E12. Expandir a validacao real para `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq` e `jarvez-mcp-rpg`
-  Notas: so depois do piloto estabilizar; `home-assistant` valida comandos simples, `thinq` valida env/discovery mais sensiveis e `rpg` valida payloads ricos e assets locais.
+- [-] E12. Expandir a validacao real para `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq` e `jarvez-mcp-rpg`
+  Notas: iniciado por `jarvez-mcp-home-assistant`; `backend/actions.py` agora tenta o MCP `home_assistant` primeiro em `call_service`, `turn_light_on`, `turn_light_off` e `set_light_brightness`, com fallback legacy preservado. Validacao real feita com `dispatch_action("turn_light_on")`, retornando `provider="mcp"` e `fallback_used=false` no cenario atual sem `HOME_ASSISTANT_URL`/`HOME_ASSISTANT_TOKEN`. `thinq` e `rpg` seguem pendentes.
 
 #### Fase F — Limpeza final
 - [ ] Remover handlers marcados DEPRECATED do `actions.py`

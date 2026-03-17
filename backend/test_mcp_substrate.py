@@ -21,10 +21,10 @@ load_dotenv(Path(__file__).with_name(".env"), override=False)
 
 
 class McpSubstrateTests(unittest.TestCase):
-    def test_default_manifest_registers_spotify_and_onenote(self) -> None:
+    def test_default_manifest_registers_spotify_onenote_and_home_assistant(self) -> None:
         registry = create_default_mcp_registry()
         snapshot = registry.manifest_snapshot()
-        self.assertEqual(len(snapshot), 2)
+        self.assertEqual(len(snapshot), 3)
         snapshot_by_name = {row["name"]: row for row in snapshot}
 
         self.assertIn("spotify", snapshot_by_name)
@@ -36,6 +36,11 @@ class McpSubstrateTests(unittest.TestCase):
         self.assertTrue(snapshot_by_name["onenote"]["enabled"])
         self.assertTrue(str(snapshot_by_name["onenote"]["cwd"]).endswith("jarvez-mcp-onenote"))
         self.assertIn("ONENOTE_CLIENT_ID", snapshot_by_name["onenote"]["env_allowlist"])
+
+        self.assertIn("home_assistant", snapshot_by_name)
+        self.assertTrue(snapshot_by_name["home_assistant"]["enabled"])
+        self.assertTrue(str(snapshot_by_name["home_assistant"]["cwd"]).endswith("jarvez-mcp-home-assistant"))
+        self.assertIn("HOME_ASSISTANT_URL", snapshot_by_name["home_assistant"]["env_allowlist"])
 
     def test_spotify_pilot_can_list_tools_and_call_real_tool(self) -> None:
         audit_rows: list[dict[str, object]] = []
