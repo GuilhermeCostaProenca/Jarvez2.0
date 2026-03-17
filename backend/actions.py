@@ -7164,71 +7164,92 @@ async def _spotify_get_devices(params: JsonObject, ctx: ActionContext) -> Action
 
 
 async def _spotify_transfer_playback(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_transfer_playback(
-        params,
-        ctx,
-        coerce_optional_str=_coerce_optional_str,
-        spotify_find_device=_spotify_find_device,
-        spotify_api_request=_spotify_api_request,
-        spotify_remember_device_alias=_spotify_remember_device_alias,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_transfer_playback(
+            params,
+            ctx,
+            coerce_optional_str=_coerce_optional_str,
+            spotify_find_device=_spotify_find_device,
+            spotify_api_request=_spotify_api_request,
+            spotify_remember_device_alias=_spotify_remember_device_alias,
+        )
+
+    return await _spotify_route_via_mcp("spotify_transfer_playback", params, _legacy_handler)
 
 
 async def _spotify_play(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_play(
-        params,
-        ctx,
-        coerce_optional_str=_coerce_optional_str,
-        normalize_spotify_uri=_normalize_spotify_uri,
-        spotify_find_device=_spotify_find_device,
-        spotify_api_request=_spotify_api_request,
-        is_spotify_restriction_error=_is_spotify_restriction_error,
-        spotify_remember_device_alias=_spotify_remember_device_alias,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_play(
+            params,
+            ctx,
+            coerce_optional_str=_coerce_optional_str,
+            normalize_spotify_uri=_normalize_spotify_uri,
+            spotify_find_device=_spotify_find_device,
+            spotify_api_request=_spotify_api_request,
+            is_spotify_restriction_error=_is_spotify_restriction_error,
+            spotify_remember_device_alias=_spotify_remember_device_alias,
+        )
+
+    return await _spotify_route_via_mcp("spotify_play", params, _legacy_handler)
 
 
 async def _spotify_pause(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_pause(
-        params,
-        ctx,
-        spotify_api_request=_spotify_api_request,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_pause(
+            params,
+            ctx,
+            spotify_api_request=_spotify_api_request,
+        )
+
+    return await _spotify_route_via_mcp("spotify_pause", params, _legacy_handler)
 
 
 async def _spotify_next_track(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_next_track(
-        params,
-        ctx,
-        spotify_api_request=_spotify_api_request,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_next_track(
+            params,
+            ctx,
+            spotify_api_request=_spotify_api_request,
+        )
+
+    return await _spotify_route_via_mcp("spotify_next_track", params, _legacy_handler)
 
 
 async def _spotify_previous_track(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_previous_track(
-        params,
-        ctx,
-        spotify_api_request=_spotify_api_request,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_previous_track(
+            params,
+            ctx,
+            spotify_api_request=_spotify_api_request,
+        )
+
+    return await _spotify_route_via_mcp("spotify_previous_track", params, _legacy_handler)
 
 
 async def _spotify_set_volume(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_set_volume(
-        params,
-        ctx,
-        coerce_optional_str=_coerce_optional_str,
-        spotify_find_device=_spotify_find_device,
-        spotify_api_request=_spotify_api_request,
-        spotify_remember_device_alias=_spotify_remember_device_alias,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_set_volume(
+            params,
+            ctx,
+            coerce_optional_str=_coerce_optional_str,
+            spotify_find_device=_spotify_find_device,
+            spotify_api_request=_spotify_api_request,
+            spotify_remember_device_alias=_spotify_remember_device_alias,
+        )
+
+    return await _spotify_route_via_mcp("spotify_set_volume", params, _legacy_handler)
 
 
 async def _spotify_create_surprise_playlist(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_create_surprise_playlist(
-        params,
-        ctx,
-        spotify_api_request=_spotify_api_request,
-        spotify_pick_surprise_tracks=_spotify_pick_surprise_tracks,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_create_surprise_playlist(
+            params,
+            ctx,
+            spotify_api_request=_spotify_api_request,
+            spotify_pick_surprise_tracks=_spotify_pick_surprise_tracks,
+        )
+
+    return await _spotify_route_via_mcp("spotify_create_surprise_playlist", params, _legacy_handler)
 
 
 async def _onenote_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -7432,71 +7453,92 @@ async def _spotify_get_devices(params: JsonObject, ctx: ActionContext) -> Action
 
 
 async def _spotify_transfer_playback(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_transfer_playback(
-        params,
-        ctx,
-        coerce_optional_str=_coerce_optional_str,
-        spotify_find_device=_spotify_find_device,
-        spotify_api_request=_spotify_api_request,
-        spotify_remember_device_alias=_spotify_remember_device_alias,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_transfer_playback(
+            params,
+            ctx,
+            coerce_optional_str=_coerce_optional_str,
+            spotify_find_device=_spotify_find_device,
+            spotify_api_request=_spotify_api_request,
+            spotify_remember_device_alias=_spotify_remember_device_alias,
+        )
+
+    return await _spotify_route_via_mcp("spotify_transfer_playback", params, _legacy_handler)
 
 
 async def _spotify_play(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_play(
-        params,
-        ctx,
-        coerce_optional_str=_coerce_optional_str,
-        normalize_spotify_uri=_normalize_spotify_uri,
-        spotify_find_device=_spotify_find_device,
-        spotify_api_request=_spotify_api_request,
-        is_spotify_restriction_error=_is_spotify_restriction_error,
-        spotify_remember_device_alias=_spotify_remember_device_alias,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_play(
+            params,
+            ctx,
+            coerce_optional_str=_coerce_optional_str,
+            normalize_spotify_uri=_normalize_spotify_uri,
+            spotify_find_device=_spotify_find_device,
+            spotify_api_request=_spotify_api_request,
+            is_spotify_restriction_error=_is_spotify_restriction_error,
+            spotify_remember_device_alias=_spotify_remember_device_alias,
+        )
+
+    return await _spotify_route_via_mcp("spotify_play", params, _legacy_handler)
 
 
 async def _spotify_pause(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_pause(
-        params,
-        ctx,
-        spotify_api_request=_spotify_api_request,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_pause(
+            params,
+            ctx,
+            spotify_api_request=_spotify_api_request,
+        )
+
+    return await _spotify_route_via_mcp("spotify_pause", params, _legacy_handler)
 
 
 async def _spotify_next_track(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_next_track(
-        params,
-        ctx,
-        spotify_api_request=_spotify_api_request,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_next_track(
+            params,
+            ctx,
+            spotify_api_request=_spotify_api_request,
+        )
+
+    return await _spotify_route_via_mcp("spotify_next_track", params, _legacy_handler)
 
 
 async def _spotify_previous_track(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_previous_track(
-        params,
-        ctx,
-        spotify_api_request=_spotify_api_request,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_previous_track(
+            params,
+            ctx,
+            spotify_api_request=_spotify_api_request,
+        )
+
+    return await _spotify_route_via_mcp("spotify_previous_track", params, _legacy_handler)
 
 
 async def _spotify_set_volume(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_set_volume(
-        params,
-        ctx,
-        coerce_optional_str=_coerce_optional_str,
-        spotify_find_device=_spotify_find_device,
-        spotify_api_request=_spotify_api_request,
-        spotify_remember_device_alias=_spotify_remember_device_alias,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_set_volume(
+            params,
+            ctx,
+            coerce_optional_str=_coerce_optional_str,
+            spotify_find_device=_spotify_find_device,
+            spotify_api_request=_spotify_api_request,
+            spotify_remember_device_alias=_spotify_remember_device_alias,
+        )
+
+    return await _spotify_route_via_mcp("spotify_set_volume", params, _legacy_handler)
 
 
 async def _spotify_create_surprise_playlist(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_create_surprise_playlist(
-        params,
-        ctx,
-        spotify_api_request=_spotify_api_request,
-        spotify_pick_surprise_tracks=_spotify_pick_surprise_tracks,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_create_surprise_playlist(
+            params,
+            ctx,
+            spotify_api_request=_spotify_api_request,
+            spotify_pick_surprise_tracks=_spotify_pick_surprise_tracks,
+        )
+
+    return await _spotify_route_via_mcp("spotify_create_surprise_playlist", params, _legacy_handler)
 
 
 async def _onenote_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001

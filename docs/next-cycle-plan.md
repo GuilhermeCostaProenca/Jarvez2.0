@@ -496,9 +496,9 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 - [x] E9. Implementar fallback explicito para handlers legacy
   Notas: concluido com `call_tool_with_fallback()` em `backend/mcp/manager.py` + wrapper em `backend/backend_mcp.py`; o fallback respeita `legacy_fallback_enabled`, registra o motivo (`tool_error` no teste/manual) e nao altera os handlers legacy existentes.
 - [x] E10. Migrar `actions.py` gradualmente para roteamento via MCP
-  Notas: concluido no primeiro recorte seguro com `spotify_status` e `spotify_get_devices`; `backend/actions.py` agora tenta o MCP `spotify` primeiro via `call_mcp_tool_with_legacy_fallback()` e preserva os handlers legacy locais sem remocao.
+  Notas: concluido para a superficie `spotify_*`; `backend/actions.py` agora tenta o MCP `spotify` primeiro em `spotify_status`, `spotify_get_devices`, `spotify_transfer_playback`, `spotify_play`, `spotify_pause`, `spotify_next_track`, `spotify_previous_track`, `spotify_set_volume` e `spotify_create_surprise_playlist`, preservando fallback legacy controlado sem remocao de handlers.
 - [x] E11. Validar um dominio piloto em integracao real
-  Notas: concluido com o piloto `jarvez-mcp-spotify`; `dispatch_action("spotify_status")` e `dispatch_action("spotify_get_devices")` ja executam via MCP no backend principal, com `evidence.provider="mcp"`, `fallback_used=false` no teste manual atual e fallback legacy coberto em teste dedicado.
+  Notas: concluido com o piloto `jarvez-mcp-spotify`; alem de `dispatch_action("spotify_status")` e `dispatch_action("spotify_get_devices")`, o backend principal validou `dispatch_action("spotify_pause")` e `dispatch_action("spotify_previous_track")` via MCP real, com `evidence.provider="mcp"`, `fallback_used=false` no cenario manual atual e fallback legacy coberto em teste dedicado.
 - [ ] E12. Expandir a validacao real para `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq` e `jarvez-mcp-rpg`
   Notas: so depois do piloto estabilizar; `home-assistant` valida comandos simples, `thinq` valida env/discovery mais sensiveis e `rpg` valida payloads ricos e assets locais.
 
