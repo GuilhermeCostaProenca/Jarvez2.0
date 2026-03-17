@@ -1,187 +1,512 @@
-﻿# Next Cycle Plan: Hardening do Core + Autonomia Real
+# Jarvez2.0 — Plano Unificado
 
-## Resumo
+## Como usar
+- Marque `[x]` quando concluido
+- Use `[-]` para em andamento
+- Use `[ ]` para pendente
+- Atualize a linha `Notas:` com contexto curto, branch, PR ou decisao
 
-Objetivo do ciclo: reduzir o risco estrutural do core sem reescrever o runtime, colocar o backend como fonte de verdade do estado de sessÃ£o, unificar a decisÃ£o de modelo entre voz e orquestraÃ§Ã£o, e entÃ£o abrir duas superfÃ­cies de autonomia real que hoje faltam: browser agent e canal remoto bidirecional via WhatsApp.
+---
 
-Baseline confirmada no cÃ³digo real: [backend/actions.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\actions.py) tem 12.347 linhas e concentra registry, dispatch, helpers de integraÃ§Ã£o, estado de sessÃ£o e parte de ops; [backend/agent.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\agent.py) instancia Google Realtime diretamente; [frontend/hooks/useAgentActionEvents.ts](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\frontend\hooks\useAgentActionEvents.ts) e [frontend/lib/orchestration-storage.ts](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\frontend\lib\orchestration-storage.ts) hidratam quase todo o estado operacional via `localStorage`; [frontend/app/api/whatsapp/webhook/route.ts](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\frontend\app\api\whatsapp\webhook\route.ts) sÃ³ normaliza webhook para JSON local e o backend envia via Cloud API. O backend compila, testes unitÃ¡rios menores passam, e `test_actions.py` jÃ¡ cobre bastante coisa, mas estÃ¡ monolÃ­tico e lento para servir de rede de seguranÃ§a de refactor.
+## Parte 1 — Ciclo anterior (hardening do core)
 
-## MudanÃ§as de Interface e Tipos
+## Checklist Mestre
 
-- Novo pacote `backend/actions_core/`: `types.py`, `registry.py`, `state.py`, `store.py`, `events.py`, `dispatch.py`.
-- Novo pacote `backend/actions_domains/`: `session.py`, `research.py`, `whatsapp.py`, `spotify.py`, `onenote.py`, `home_assistant.py`, `thinq.py`, `ac.py`, `projects.py`, `code_actions.py`, `codex.py`, `orchestration.py`, `policy.py`, `ops.py`, `rpg.py`.
-- Novo SQLite backend Ãºnico: `backend/data/jarvez_state.db`.
-- Novo evento em `lk.agent.events`: `session_snapshot`.
-- Novos eventos planejados: `browser_task_started`, `browser_task_progress`, `browser_task_completed`, `browser_task_failed`, `workflow_started`, `workflow_progress`, `workflow_completed`, `workflow_failed`.
-- Novas actions pÃºblicas planejadas: `browser_agent_run`, `browser_agent_status`, `browser_agent_cancel`, `workflow_run`, `workflow_status`, `workflow_cancel`, `automation_status`, `automation_run_now`.
-- `codex_cli.build_exec_command(...)` passa a aceitar `sandbox_mode` e `ephemeral` como parÃ¢metros; default continua `read-only`.
-- `frontend/lib/types/realtime.ts` ganha `SessionSnapshot`, `BrowserTaskState`, `WorkflowState`, `AutomationState`.
-- `frontend/hooks/useAgentActionEvents.ts` passa a hidratar do backend por `session_snapshot`; `localStorage` vira cache/fallback, nÃ£o fonte de verdade.
+- [x] F1.1. Caracterizacao e rede de seguranca antes de mover codigo
+  Notas: `test_actions.py` foi particionado em suites menores e entraram testes dedicados para eventos, snapshot, router e store. A base de seguranca melhorou, mas o ambiente atual ainda nao tem `pytest` instalado para rodar tudo daqui.
 
-## Frente 1: Hardening do Core
+- [x] F1.2. Extrair o nucleo estavel do sistema de actions
+  Notas: `backend/actions_core/` ja existe com `types.py`, `registry.py`, `state.py`, `store.py`, `events.py` e `dispatch.py`. `backend/actions.py` segue como facade compativel.
 
-### F1.1. CaracterizaÃ§Ã£o e rede de seguranÃ§a antes de mover cÃ³digo
-- Arquivos: `backend/test_actions.py`, `backend/test_memory_scope.py`, `backend/test_codex_cli.py`, `backend/test_project_catalog.py`, `frontend/package.json`, `frontend/hooks/useAgentActionEvents.ts`.
-- ExecuÃ§Ã£o: primeiro dividir `test_actions.py` em suÃ­tes menores por domÃ­nio sem mudar assertions; depois adicionar Vitest no frontend sÃ³ para `useAgentActionEvents` e storages crÃ­ticos.
-- Ordem: `test_action_core.py` â†’ `test_session_state.py` â†’ `test_policy_ops.py` â†’ `test_projects_code.py` â†’ `test_integrations_whatsapp.py` â†’ `test_integrations_notes_media.py` â†’ `test_rpg.py` â†’ `useAgentActionEvents.test.ts` â†’ `orchestration-storage.test.ts`.
-- Pode quebrar: falsa sensaÃ§Ã£o de cobertura, refactor sem caracterizaÃ§Ã£o dos payloads, regressÃ£o silenciosa no parser do frontend.
-- Validar: backend `py_compile`; rodar suÃ­tes particionadas; no frontend validar parse de `function_tools_executed`, `autonomy_notice`, `codex_task_*` e futuro `session_snapshot`.
-- Complexidade: MÃ©dia.
+- [x] F1.3. Quebra por dominio em ordem segura
+  Notas: handlers ja migrados para `backend/actions_domains/` em `session.py`, `research.py`, `whatsapp.py`, `spotify.py`, `onenote.py`, `home_assistant.py`, `thinq.py`, `ac.py`, `projects.py`, `code_actions.py`, `codex.py`, `orchestration.py`, `policy.py`, `ops.py`, `rpg.py` e `workflows.py`.
 
-### F1.2. Extrair o nÃºcleo estÃ¡vel do sistema de actions
-- Arquivos: criar `backend/actions_core/{types,registry,events,dispatch,state}.py`; editar [backend/actions.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\actions.py), [backend/agent.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\agent.py).
-- Escopo: mover `ActionResult`, `ActionContext`, `ActionSpec`, `PendingConfirmation`, `AuthenticatedSession`, helpers de publicaÃ§Ã£o de eventos, `register_action`, `get_action`, `get_exposed_actions`, `_ensure_result_envelope`, `dispatch_action`, getters/setters de estado de sessÃ£o.
-- Ordem: extrair tipos/registry primeiro; depois events/state; por Ãºltimo dispatch; `backend/actions.py` vira faÃ§ade compatÃ­vel.
-- Pode quebrar: import circular, perda de `ACTION_REGISTRY`, envelope de evidence/policy, publicaÃ§Ã£o em `lk.agent.events`.
-- Validar: `dispatch_action` continua devolvendo o mesmo JSON; smoke manual de confirmaÃ§Ã£o, auth e subagent ainda aparece na UI.
-- Complexidade: Alta.
+- [x] F1.4. Persistencia simples em SQLite com dual-write e leitura gradual
+  Notas: `store.py` e dual-write/read-prefer-SQLite estao ativos. `session_snapshot` ja e publicado no start, pos-action e reconnect, e o frontend ja hidrata via backend.
 
-### F1.3. Quebra por domÃ­nio em ordem segura
-Status atual de extração: `session.py`, `research.py`, `whatsapp.py`, `spotify.py`, `onenote.py`, `home_assistant.py`, `thinq.py`, `ac.py`, `projects.py`, `code_actions.py`, `codex.py`, `orchestration.py`, `policy.py`, `ops.py` e `rpg.py` já estão com handlers migrados e `actions.py` atuando como façade compatível.
+- [x] F1.5. Unificar voice runtime e multi-model router sob uma camada de decisao
+  Notas: `backend/runtime/model_gateway.py` e `backend/runtime/realtime_adapters.py` ja entraram. Voz e orchestration/subagents passam pela camada de decisao; Google segue como adapter realtime atual.
 
-1. `session.py`: auth, confirmaÃ§Ã£o, memory scope, persona, voice profile e payloads de sessÃ£o; depende sÃ³ de `actions_core`; validar `authenticate_identity`, `confirm_action`, `verify_voice_identity`, `set_memory_scope`, `set_persona_mode`.
-2. `research.py`: `_web_search_dashboard` e `_save_web_briefing_schedule`; baixo acoplamento; validar dashboard e schedule.
-3. `whatsapp.py`: normalize/send/read/TTS atuais; validar sem tocar ainda no webhook legacy.
-4. `spotify.py`: tokens, aliases, status/playback/playlist; validar apenas com mocks HTTP.
-5. `onenote.py`: auth cache, list/search/page append/create; validar sÃ³ com mocks HTTP.
-6. `home_assistant.py`: `call_service`, lights, desktop open, local command, git clone/push; este passo sÃ³ entra depois de `test_projects_code.py` pronto.
-7. `thinq.py` e `ac.py`: ThinQ genÃ©rico e AC arrival prefs; manter separados porque AC jÃ¡ Ã© produto prÃ³prio.
-8. `projects.py`: catÃ¡logo, seleÃ§Ã£o, refresh, GitHub catalog/clone-register.
-9. `code_actions.py`: worker status/read/search/git diff/status/explain/propose/apply/run command.
-10. `codex.py`: task state, streaming events, history e cancelamento.
-11. `orchestration.py`: providers health, skills, route preview, orchestrate, subagents.
-12. `policy.py` e `ops.py`: risk matrix, trust drift, killswitch, canary, incident, playbooks, control loop.
-13. `rpg.py`: por Ãºltimo, porque mistura PDF, OneNote, arquivos locais e active character.
-- Pode quebrar: helpers compartilhados â€œvazandoâ€ entre mÃ³dulos; payloads de `active_project`, `security_status`, `policy`, `codex_history`; imports cÃ­clicos entre `rpg.py` e `onenote.py`, `ops.py` e `policy.py`, `code_actions.py` e `projects.py`.
-- Validar: cada mÃ³dulo sÃ³ entra depois de sua suÃ­te dedicada passar e de um smoke manual curto do domÃ­nio.
-- Complexidade: Alta.
+- [x] F2.0. Substrato minimo de gateway/canais antes das integracoes novas
+  Notas: `backend/channels/types.py`, `router.py`, `audit.py` e `livekit_adapter.py` ja estao integrados. LiveKit usa o adapter sem mudar a UX principal.
 
-### F1.4. PersistÃªncia simples em SQLite com dual-write e leitura gradual
-Status atual: `store.py` + dual-write/read-prefer-SQLite já ativos em `actions.py`; `session_snapshot` já hidrata o frontend e agora é publicado no start, pós-action e reconnect (`participant_connected`) no `agent.py`.
-- Arquivos: criar `backend/actions_core/store.py` e `backend/session_snapshot.py`; editar [backend/actions.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\actions.py), [backend/agent.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\agent.py), [frontend/hooks/useAgentActionEvents.ts](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\frontend\hooks\useAgentActionEvents.ts), [frontend/lib/types/realtime.ts](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\frontend\lib\types\realtime.ts), `frontend/lib/{research-dashboard-storage,coding-history-storage,orchestration-storage}.ts`.
-- Tabelas: `session_state(participant_identity, room, namespace, payload_json, updated_at)`, `pending_confirmations(token, participant_identity, room, action_name, params_json, expires_at)`, `authenticated_sessions(participant_identity, room, auth_method, expires_at, last_activity_at)`, `event_state(participant_identity, room, namespace, payload_json, updated_at)`.
-- Namespaces persistidos neste ciclo: `memory_scope`, `persona_mode`, `capability_mode`, `active_project`, `active_character`, `active_codex_task`, `codex_history`, `research_schedules`, `model_route`, `subagent_states`, `policy_events`, `execution_traces`, `eval_baseline_summary`, `eval_metrics`, `eval_metrics_summary`, `slo_report`, `providers_health`, `feature_flags`, `canary_state`, `incident_snapshot`, `playbook_report`, `auto_remediation`, `canary_promotion`, `control_tick`.
-- EstratÃ©gia: primeiro dual-write; depois read-prefer-SQLite com fallback para memÃ³ria/localStorage; por fim `agent.py` publica `session_snapshot` ao iniciar a sessÃ£o e ao reconectar.
-- Pode quebrar: mismatch entre snapshot e cache local, TTL de auth/confirmation, lock de SQLite em Windows/OneDrive, restauraÃ§Ã£o parcial do estado.
-- Validar: reiniciar backend e confirmar restauraÃ§Ã£o de persona/projeto/coding mode/codex history/research schedules; confirmar que `localStorage` vazio nÃ£o quebra UI; usar WAL e `busy_timeout` igual aos Ã­ndices jÃ¡ existentes.
-- Complexidade: Alta.
+- [x] F2.1. Browser agent com Playwright MCP
+  Notas: `browser_agent_run/status/cancel` ja emitem `started/progress/completed/failed`, ha allowlist obrigatoria, evidencia estruturada, parse no frontend e gate explicito para write-mode.
 
-### F1.5. Unificar voice runtime e multi-model router sob uma camada de decisÃ£o
-Status atual: voice e orquestracao/subagent ja passam pelo model_gateway; route_orchestration aplica provider_order derivado do RuntimeDecision e persiste model_route normalmente.
-- Arquivos: criar `backend/runtime/model_gateway.py` e `backend/runtime/realtime_adapters.py`; editar [backend/agent.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\agent.py), [backend/providers/provider_router.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\providers\provider_router.py), [backend/orchestration/router.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\orchestration\router.py), providers.
-- DecisÃ£o fechada: neste ciclo o gateway escolhe entre adapters por capability; `voice_realtime` continua selecionando Google por ser o Ãºnico adapter LiveKit-realtime existente, mas a escolha passa pela mesma camada que jÃ¡ decide `chat/code/review/research/automation`.
-- SaÃ­da do gateway: `RuntimeDecision` com `intent`, `task_type`, `risk`, `required_capabilities`, `primary_provider`, `fallback_provider`, `reason`.
-- Pode quebrar: startup da sessÃ£o LiveKit, seleÃ§Ã£o de tools, telemetria de provider usado, fallback de orchestration.
-- Validar: teste unitÃ¡rio de roteamento; smoke â€œconectar e receber primeira respostaâ€; `model_route` persistido e renderizado na UI.
-- Complexidade: Alta.
+- [x] F2.2. WhatsApp bidirecional completo usando `whatsapp-mcp`, com rollback legado
+  Notas: a referencia foi vendorizada em `references/whatsapp-mcp`, existe cliente/backend de integracao, journal persistido e fallback para Cloud API legado. Validar pareamento QR e fluxo completo ainda continua importante em ambiente real.
 
-## Frente 2: Autonomia Real
+- [ ] F2.3. Loop de contexto proativo de verdade
+  Notas: o substrato de automacao existe e ha partes de scheduler/trigger no backend, mas este item ainda precisa fechamento operacional, regras finais, status visivel e validacao ponta a ponta.
 
-### F2.0. Substrato mÃ­nimo de gateway/canais antes das integraÃ§Ãµes novas
-Status atual: channels/types+router+livekit_adapter+audit ativos e integrados; publish de lk.agent.events e telemetry inbound do LiveKit passam pelo adapter sem mudanca de UX.
-- Arquivos: criar `backend/channels/{types,router,audit,livekit_adapter}.py`; editar [backend/agent.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\agent.py), `backend/actions_core/events.py`, `backend/session_snapshot.py`.
-- Envelope padrÃ£o: `InboundEnvelope`, `OutboundEnvelope`, `ChannelIdentity`, `ExecutionAuditRecord`.
-- Regra: LiveKit passa primeiro por esse adapter sem alterar UX; browser agent e WhatsApp entram depois usando o mesmo envelope.
-- Pode quebrar: duplicaÃ§Ã£o de mensagens/eventos e perda de contexto por room/participant.
-- Validar: LiveKit continua funcional sem WhatsApp/browser ligados.
-- Complexidade: MÃ©dia.
+- [x] F2.4. Fluxo "tenho uma ideia" -> planejamento -> implementacao automatica
+  Notas: `backend/workflows/` e `backend/actions_domains/workflows.py` ja existem, com `workflow_run/status/cancel/approve/resume`, persistencia e approval gates.
 
-### F2.1. Browser agent com Playwright MCP, sem expor dezenas de tools brutas ao modelo
-Status atual: browser_agent_run/status/cancel já emite started/progress/completed|failed; runner executa browser_navigate + browser_snapshot via MCP HTTP (`/mcp`) com allowlist obrigatório, valida domínio final após navegação, captura evidência estruturada e frontend já parseia browser_task_* e workflow_* direto de lk.agent.events; write-mode foi liberado com gate explícito via confirm_action (`write_confirmed`).
-- Arquivos: criar `backend/browser_agent/{mcp_client,runner,state,policies}.py`, `backend/actions_domains/browser.py`, `frontend/app/browser-agent/page.tsx`, `frontend/components/app/browser-agent-view.tsx`; editar `frontend/lib/types/realtime.ts`, `frontend/hooks/useAgentActionEvents.ts`, [backend/prompts.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\prompts.py).
-- IntegraÃ§Ã£o escolhida: sidecar MCP persistente via `npx @playwright/mcp@latest --port ...`; o backend fala com um client prÃ³prio e expÃµe ao modelo apenas `browser_agent_run/status/cancel`.
-- Defaults: `read_only` e `allowed_domains` obrigatÃ³rios por execuÃ§Ã£o; aÃ§Ãµes de clique/tipo/upload fora de leitura exigem `require_confirmation`; tarefas ficam persistidas em SQLite e emitem progresso estruturado.
-- Pode quebrar: loops longos, navegaÃ§Ã£o fora do domÃ­nio, vazamento de sessÃ£o/logins, upload indevido.
-- Validar: 3 smoke tests isolados: leitura de pÃ¡gina com resumo, captura de snapshot/screenshot, preenchimento confirmado em site de teste allowlisted.
-- Complexidade: Alta.
+## Subitens por frente
 
-### F2.2. WhatsApp bidirecional completo usando `whatsapp-mcp`, mantendo rollback para o legado
-Status atual: SQLite ganhou tabela channel_messages; inbox legacy sincroniza para store no backend; leitura via bridge MCP (SQLite de mensagens) já entra no mesmo journal quando configurada; envio de texto agora tenta MCP primeiro e cai para Cloud API legado automaticamente; outbound whatsapp_send_text/audio_tts continua gerando journal persistido; whatsapp_channel_status expõe totais/últimos timestamps + saúde MCP (conectividade e disponibilidade de histórico), mantendo fallback legacy_v1.
-- Arquivos: criar `backend/integrations/whatsapp_mcp_client.py`, `backend/channels/whatsapp_adapter.py`, `backend/actions_domains/whatsapp_channel.py`, `frontend/app/integrations/whatsapp/page.tsx`, `frontend/components/app/whatsapp-channel-view.tsx`; editar [frontend/app/api/whatsapp/webhook/route.ts](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\frontend\app\api\whatsapp\webhook\route.ts), [backend/actions.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\actions.py), prompts e tipos.
-- MigraÃ§Ã£o: primeiro vendorizar a referÃªncia faltante em `references/whatsapp-mcp`; depois rodar o bridge pessoal via QR; depois espelhar mensagens no backend em tabela `channel_messages`; depois ativar resposta bidirecional pelo adapter; sÃ³ no fim trocar o default inbound do webhook JSON para o adapter MCP.
-- Compatibilidade: manter `whatsapp_get_recent_messages`, `whatsapp_send_text` e `whatsapp_send_audio_tts` funcionando durante todo o ciclo; o webhook Cloud vira fallback `whatsapp_legacy_v1`.
-- Pode quebrar: mensagens duplicadas, reply loop com o prÃ³prio Jarvez, mÃ­dias nÃ£o indexadas, estado perdido apÃ³s restart.
-- Validar: QR pair, receber texto, responder texto, responder Ã¡udio, restart com histÃ³rico intacto, bloqueio para contato nÃ£o pareado.
-- Complexidade: Alta.
+### F1.1
 
-### F2.3. Loop de contexto proativo de verdade
-- Arquivos: criar `backend/automation/{rules,scheduler,triggers,executor}.py`; editar `backend/actions_domains/research.py`, `backend/actions_domains/ac.py`, `backend/actions_domains/ops.py`, [backend/agent.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\agent.py), `backend/session_snapshot.py`.
-- Inputs do primeiro ciclo: `save_web_briefing_schedule` jÃ¡ existente; `ac_configure_arrival_prefs` jÃ¡ existente; presenÃ§a via Home Assistant como padrÃ£o quando `JARVEZ_PRESENCE_ENTITY_ID` estiver configurado; se nÃ£o estiver, arrival automation fica desativada.
-- Comportamento: scheduler backend dispara briefing diÃ¡rio; trigger de presenÃ§a aciona `ac_prepare_arrival` primeiro em `dry_run`, depois em live somente se polÃ­tica permitir; todas as execuÃ§Ãµes geram evidence e trace.
-- Observabilidade: adicionar `automation_status` e `automation_run_now`; renderizar estado no Trust Center, sem inflar a tela principal.
-- Pode quebrar: automaÃ§Ã£o invasiva, horÃ¡rios duplicados, arrival falso-positivo.
-- Validar: simulaÃ§Ã£o de agenda diÃ¡ria, simulaÃ§Ã£o de chegada via evento HA, verificaÃ§Ã£o de cooldown e evidence.
-- Complexidade: Alta.
+- [x] Dividir `backend/test_actions.py` em suites menores sem mudar assertions
+  Notas: entraram suites como `backend/test_actions_domains_split.py`, `backend/test_actions_core_events.py`, `backend/test_orchestration_router.py` e correlatas.
 
-### F2.4. Fluxo â€œtenho uma ideiaâ€ â†’ planejamento â†’ implementaÃ§Ã£o automÃ¡tica no projeto certo
-- Status atual: `backend/workflows/{types,engine,state}.py` + `backend/workflows/definitions/idea_to_code.py` + `backend/actions_domains/workflows.py` ativos; `actions.py` ja registra `workflow_run/status/cancel/approve/resume` e roteia para engine persistida com gates.
-- Arquivos: criar `backend/workflows/{types,engine,state}.py`, `backend/workflows/definitions/idea_to_code.py`, `backend/actions_domains/workflows.py`; editar [backend/codex_cli.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\codex_cli.py), `backend/actions_domains/{projects,codex,code_actions,orchestration}.py`, [backend/prompts.py](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\backend\prompts.py), `frontend/lib/types/realtime.ts`, `frontend/hooks/useAgentActionEvents.ts`.
-- Workflow fechado: `project_catalog.resolve` â†’ `build_task_plan` â†’ `codex_exec_review` em `read-only` â†’ proposta estruturada de mudanÃ§a â†’ checkpoint de confirmaÃ§Ã£o â†’ `codex exec --sandbox workspace-write` para aplicar ou, se o diff vier estruturado, `code_apply_patch` como fallback controlado â†’ `code_run_command` para validaÃ§Ã£o â†’ opcional `git_commit_and_push_project` em checkpoint separado.
-- InspiraÃ§Ã£o adotada de `references/lobster`: steps tipados, estado persistido, approval gates duros e retomada; nÃ£o adotar YAML runner ainda, sÃ³ engine Python mÃ­nima para um workflow.
-- Pode quebrar: escolha errada de projeto, escrita sem validaÃ§Ã£o, commit prematuro, fluxo sem retomada.
-- Validar: 3 cenÃ¡rios manuais: ideia com um Ãºnico projeto claro, ideia com ambiguidade de projeto, ideia que gera falha de validaÃ§Ã£o e entra em rollback sem commit.
-- Complexidade: Alta.
+- [ ] Adicionar Vitest no frontend para `useAgentActionEvents` e storages criticos
+  Notas: ainda nao fechado. O parser de eventos foi endurecido no codigo, mas a camada de teste frontend dedicada ainda precisa ser formalizada.
 
-## DependÃªncias Entre as Frentes
+### F1.2
 
-- F1.1 Ã© prÃ©-requisito de todo o resto.
-- F1.2 precisa entrar antes da quebra por domÃ­nio e antes de qualquer integraÃ§Ã£o nova.
-- F1.4 Ã© prÃ©-requisito de F2.2, F2.3 e F2.4, porque WhatsApp, automaÃ§Ãµes e workflows precisam sobreviver a restart.
-- F1.5 e F2.0 andam juntos: o model gateway unifica decisÃ£o de modelo; o channel/gateway substrate unifica entrada/saÃ­da.
-- F2.1 pode comeÃ§ar depois de F2.0, mesmo antes do WhatsApp.
-- F2.2 depende de F2.0 e do vendor da referÃªncia `whatsapp-mcp`.
-- F2.3 depende de F1.4 e usa `save_web_briefing_schedule` e `ac_configure_arrival_prefs` jÃ¡ persistidos.
-- F2.4 depende de F1.4, F1.5 e do split de `projects/codex/code_actions`.
+- [x] Extrair tipos e registry
+  Notas: concluido em `backend/actions_core/types.py` e `backend/actions_core/registry.py`.
 
-## Ordem Recomendada de ExecuÃ§Ã£o
+- [x] Extrair events e state
+  Notas: concluido em `backend/actions_core/events.py` e `backend/actions_core/state.py`.
 
-1. F1.1 testes e caracterizaÃ§Ã£o.
-2. F1.2 nÃºcleo estÃ¡vel de actions.
-3. F1.3 quebra por domÃ­nio atÃ© `projects/code_actions/codex/orchestration`.
-4. F1.4 SQLite + `session_snapshot`.
-5. F1.5 model gateway da voz.
-6. F2.0 substrate de canais.
-7. F2.1 browser agent.
-8. F2.2 WhatsApp bidirecional.
-9. F2.3 loop proativo.
-10. F2.4 workflow â€œideia â†’ cÃ³digoâ€.
+- [x] Extrair dispatch e manter `actions.py` como facade
+  Notas: concluido com compatibilidade preservada para os fluxos atuais.
 
-## Riscos e MitigaÃ§Ãµes
+### F1.3
 
-- `backend/actions.py` parar no meio do refactor: mitigar com faÃ§ade compatÃ­vel e migraÃ§Ã£o por blocos completos, nunca por helpers soltos.
-- SQLite em Windows/OneDrive: mitigar com um Ãºnico writer Python, WAL, `busy_timeout`, sem gravador Node concorrente neste ciclo.
-- DivergÃªncia backend/UI ao remover `localStorage` como fonte de verdade: mitigar com `session_snapshot` e fallback de leitura local atÃ© o fim do rollout.
-- Browser agent se tornar tool-spam: mitigar expondo sÃ³ aÃ§Ãµes de alto nÃ­vel ao modelo e deixando o loop MCP interno ao backend.
-- WhatsApp quebrar o que jÃ¡ funciona: mitigar com `whatsapp_legacy_v1` atÃ© haver paridade real.
-- â€œIdeia â†’ cÃ³digoâ€ escrever demais cedo demais: mitigar com dois checkpoints distintos, um para aplicar e outro para commit/push.
+- [x] Migrar dominios de sessao, pesquisa e integracoes
+  Notas: concluido.
 
-## Testes e CenÃ¡rios de Aceite
+- [x] Migrar dominios de projetos, code actions, codex e orchestration
+  Notas: concluido.
 
-- Core: auth, confirmation, envelope, policy deny/require_confirmation, workspace boundary, codex task lifecycle, subagent lifecycle, control loop tick.
-- PersistÃªncia: restart do backend preserva persona, projeto ativo, coding mode, codex history, schedules e traces; token expirado nÃ£o revive aÃ§Ã£o indevida.
-- Frontend: `useAgentActionEvents` hidrata corretamente `session_snapshot`, continua aceitando eventos antigos e nÃ£o depende de `localStorage` para render inicial.
-- Browser: leitura allowlisted, navegaÃ§Ã£o com prova, tentativa fora do allowlist bloqueada, interaÃ§Ã£o write-mode exige confirmaÃ§Ã£o.
-- WhatsApp: QR pair, inbound texto, outbound texto, outbound Ã¡udio, restart com histÃ³rico, contato nÃ£o pareado bloqueado.
-- Proativo: briefing diÃ¡rio dispara uma vez por janela; arrival dry-run produz evidence; live-run sÃ³ passa quando policy/trust permitem.
-- Workflow: resolve projeto correto, pausa para aprovaÃ§Ã£o, valida antes de finalizar, nÃ£o faz commit sem checkpoint separado.
+- [x] Migrar policy, ops, rpg e workflows
+  Notas: concluido.
 
-## Assumptions e Defaults Escolhidos
+### F1.4
 
-- Este plano substitui o conteÃºdo de `docs/next-cycle-plan.md`; ao sair do Plan Mode, a implementaÃ§Ã£o deve materializar exatamente este spec nesse arquivo.
-- `references/whatsapp-mcp` estÃ¡ ausente no checkout atual; usar o upstream atÃ© vendorizar a pasta antes da implementaÃ§Ã£o: <https://github.com/lharries/whatsapp-mcp>.
-- ReferÃªncias consultadas para o spec: [Playwright MCP local](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\references\playwright-mcp\README.md), <https://github.com/microsoft/playwright-mcp>, [Lobster local](c:\Users\guilh\OneDrive\Ãrea de Trabalho\Jarvez2.0\references\lobster\README.md>.
-- O backend Python serÃ¡ o Ãºnico escritor do SQLite neste ciclo; `localStorage` fica sÃ³ como cache/fallback para nÃ£o introduzir lock cross-runtime em Windows.
-- Google continua como Ãºnico adapter realtime de voz no ciclo; a unificaÃ§Ã£o pedida Ã© de camada de decisÃ£o, nÃ£o de paridade imediata entre providers de Ã¡udio.
-- Browser agent nasce em modo `read_only` por padrÃ£o; qualquer interaÃ§Ã£o que altere estado externo sobe para confirmaÃ§Ã£o explÃ­cita.
-- Workflow â€œideia â†’ cÃ³digoâ€ usa `codex exec` em `read-only` para planejar e `workspace-write` somente apÃ³s checkpoint explÃ­cito; commit/push Ã© sempre um segundo checkpoint.
+- [x] Introduzir tabelas e store SQLite
+  Notas: concluido no backend; snapshot e estados operacionais persistem.
 
+- [x] Publicar `session_snapshot`
+  Notas: concluido com envio no inicio, pos-action e reconnect.
 
+- [x] Trocar frontend para hidratar do backend e usar `localStorage` como fallback
+  Notas: concluido para snapshot e estados principais.
 
+### F1.5
 
+- [x] Criar `RuntimeDecision`/gateway
+  Notas: concluido.
 
+- [x] Fazer orchestration respeitar `provider_order` derivado do gateway
+  Notas: concluido em `backend/orchestration/router.py` e `backend/providers/provider_router.py`.
 
+- [x] Levar voz para a mesma camada de decisao
+  Notas: concluido no escopo do ciclo, mantendo Google como adapter realtime.
 
+### F2.0
 
+- [x] Padronizar envelopes de canal e auditoria
+  Notas: concluido.
 
+- [x] Colocar LiveKit em cima do adapter novo
+  Notas: concluido.
 
+### F2.1
 
+- [x] Criar client MCP, runner, state e policies do browser agent
+  Notas: concluido.
+
+- [x] Expor apenas `browser_agent_run/status/cancel` ao modelo
+  Notas: concluido.
+
+- [x] Persistir tarefa e emitir progresso estruturado
+  Notas: concluido.
+
+### F2.2
+
+- [x] Vendorizar `references/whatsapp-mcp`
+  Notas: concluido, removendo binarios e bancos locais do versionamento.
+
+- [x] Criar cliente/backend de integracao e journal persistido
+  Notas: concluido.
+
+- [x] Manter compatibilidade com `whatsapp_legacy_v1`
+  Notas: concluido com fallback.
+
+- [ ] Validar fluxo real completo com QR, texto, audio e restart
+  Notas: ainda depende de rodada manual em ambiente com conta conectada.
+
+### F2.3
+
+- [ ] Fechar regras de scheduler e triggers
+  Notas: falta definicao final e validacao operacional.
+
+- [ ] Expor `automation_status` e `automation_run_now`
+  Notas: revisar o que ja existe no backend e fechar o contrato realtime/UI.
+
+- [ ] Renderizar automacoes no Trust Center sem poluir a sessao principal
+  Notas: pendente.
+
+- [ ] Validar cooldown, evidence e protecoes de policy
+  Notas: pendente.
+
+### F2.4
+
+- [x] Criar engine de workflow com estado persistido e gates
+  Notas: concluido.
+
+- [x] Expor `workflow_run/status/cancel/approve/resume`
+  Notas: concluido.
+
+- [x] Integrar com `projects`, `codex`, `code_actions` e `orchestration`
+  Notas: concluido no nivel de backend/eventos.
+
+- [ ] Fechar bateria manual dos 3 cenarios de aceite
+  Notas: ainda falta validacao operacional completa com projeto ambiguo e rollback de falha.
+
+## Dependencias
+
+- [x] F1.1 antes do restante
+  Notas: concluido.
+
+- [x] F1.2 antes do split por dominio
+  Notas: concluido.
+
+- [x] F1.4 como base para WhatsApp, automacoes e workflows
+  Notas: concluido.
+
+- [x] F1.5 e F2.0 rodando juntos
+  Notas: concluido.
+
+- [x] F2.1 depois de F2.0
+  Notas: concluido.
+
+- [x] F2.2 dependente do vendor da referencia
+  Notas: concluido.
+
+- [ ] F2.3 dependente de F1.4 e ajustes finais de scheduler
+  Notas: base pronta, fechamento pendente.
+
+- [x] F2.4 dependente de F1.4, F1.5 e split de dominios
+  Notas: concluido.
+
+## Riscos Abertos
+
+- [ ] Automacoes proativas dispararem cedo demais ou em duplicidade
+  Notas: precisa fechamento de cooldown, janela e observabilidade.
+
+- [ ] Fluxos operacionais reais ainda sem rodada manual completa
+  Notas: principalmente WhatsApp QR/audio/restart e workflow com rollback.
+
+- [ ] `references/skills` segue modificado localmente
+  Notas: estado local pre-existente; nao faz parte deste plano, mas convem limpar separadamente.
+
+## Aceite Final do Ciclo
+
+- [ ] Backend com testes executaveis no ambiente atual
+  Notas: `compileall` passou, mas `pytest` nao esta instalado neste Python.
+
+- [ ] Frontend com testes direcionados do parser de eventos
+  Notas: cobertura dedicada ainda pendente.
+
+- [ ] Automacoes proativas fechadas e visiveis na UI correta
+  Notas: pendente.
+
+- [ ] Validacao manual completa de WhatsApp e workflow
+  Notas: pendente.
+
+---
+
+## Parte 2 — Migracao MCP
+
+### Visao geral
+`backend/actions_domains/` ja separa 17 modulos de dominio, mas `backend/actions.py` ainda concentra o registry das `ActionSpec`, o dispatch com policy/evidence, auth/confirmation, session snapshot, publicacao de eventos e boa parte dos helpers de token/cache/OAuth.
+Fora dos dominios modularizados ainda vivem `backend/browser_agent/` com `browser_agent_run/status/cancel`, `backend/automation/` com `automation_status` e `automation_run_now`, a suite de `evals`, CRUD de perfis de voz, `forget_memory`, `coding_mode_*`, `git_commit_and_push_project` e a cola geral da facade.
+A migracao MCP desta rodada cobre tudo que pode sair para repos proprios sem tirar do Jarvez o papel de control plane e fonte de verdade do estado: auth, policy, audit, realtime routing, snapshots e hidratacao da UI continuam locais.
+A facade ainda faz de verdade a gestao de singletons (`ProjectCatalog`, `CodeWorkerClient`, `GitHubCatalogClient`, `RPGKnowledgeIndex`, `CodeKnowledgeIndex`), persistencia SQLite, validacao/redaction de payload, event/session state e o registro final das actions expostas ao runtime.
+
+### MCPs publicos disponiveis (nao implementar do zero)
+- `spotify` -> `marcelmarais/spotify-mcp-server` -> ja esta vendorizado em `references/spotify-mcp-server` e cobre playback, devices e playlists na mesma superficie do dominio atual.
+- `whatsapp` -> `lharries/whatsapp-mcp` -> ja esta vendorizado em `references/whatsapp-mcp` e combina com o fallback legado e com o journal local do Jarvez.
+- `home_assistant` -> `oleander/home-assistant-mcp-server` -> substitui chamadas REST diretas do Home Assistant por um MCP pronto.
+- `onenote` -> `Softeria/ms-365-mcp-server` -> alinha a extracao com Microsoft Graph e as operacoes de notebook/secao/pagina hoje feitas no dominio OneNote.
+- `github` -> `github/github-mcp-server` -> cobre descoberta e metadata de repositorios, deixando catalogo e selecao de projeto como glue local.
+- `code/filesystem/git` -> `modelcontextprotocol/servers` (`server-filesystem`, `server-git`) -> base publica para a fase de `projects` e `code_actions` sem reimplementar acesso a arquivos e Git.
+- `browser` -> `microsoft/playwright-mcp` / `@playwright/mcp` -> ja e a base operacional do browser agent atual; nesta rodada o que resta no Jarvez e glue, policy e persistencia.
+- `thinq`, `ac` e `rpg` -> nao houve confirmacao de MCP publico pronto na varredura; esses dominios devem prever repos `jarvez-mcp-*`.
+
+### Fases de extracao
+
+#### Fase A — Separar arquivos mistos e integracoes API puras
+
+##### Dominio: spotify
+Contexto tecnico: `backend/actions_domains/spotify.py` ja esta isolado, mas ainda depende de helpers de token/cache e aliases de device que hoje vivem na facade de `backend/actions.py`.
+- [ ] Criar repo `jarvez-mcp-spotify`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/spotify.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-spotify com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+##### Dominio: home-assistant
+Contexto tecnico: `backend/actions_domains/home_assistant.py` esta misturado com `open_desktop_resource`, `run_local_command` e `git_clone_repository`; nesta fase migram so `call_service`, `turn_light_on`, `turn_light_off` e `set_light_brightness`.
+- [ ] Criar repo `jarvez-mcp-home-assistant`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/home_assistant.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+##### Dominio: thinq
+Contexto tecnico: `backend/actions_domains/thinq.py` esta isolado, mas continua dependente de credenciais e helpers ThinQ na facade; nao houve MCP publico confirmado para este dominio.
+- [ ] Criar repo `jarvez-mcp-thinq`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/thinq.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-thinq com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+#### Fase B — Integracoes com estado local e callbacks
+
+##### Dominio: whatsapp
+Contexto tecnico: a extracao precisa considerar `backend/actions_domains/whatsapp.py`, `backend/actions_domains/whatsapp_channel.py` e `backend/integrations/whatsapp_mcp_client.py`, preservando fallback `whatsapp_legacy_v1` e o journal persistido em `channel_messages` como glue do Jarvez.
+- [ ] Criar repo `jarvez-mcp-whatsapp`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/whatsapp.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-whatsapp com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+##### Dominio: onenote
+Contexto tecnico: `backend/actions_domains/onenote.py` ja esta isolado, mas os helpers de OAuth, token persistence e chamadas Graph ainda estao na facade de `backend/actions.py`.
+- [ ] Criar repo `jarvez-mcp-onenote`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/onenote.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-onenote com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+##### Dominio: ac
+Contexto tecnico: `backend/actions_domains/ac.py` depende do dominio ThinQ e das preferencias/automacoes locais de chegada; so entra depois de `jarvez-mcp-thinq` estar definido.
+- [ ] Criar repo `jarvez-mcp-ac`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/ac.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-ac com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+#### Fase C — Superficie de engenharia local
+
+##### Dominio: github
+Contexto tecnico: `github_*` hoje esta misturado em `backend/actions_domains/projects.py`; antes de publicar `jarvez-mcp-github`, e preciso separar busca/metadata GitHub do catalogo e da selecao de projeto local.
+- [ ] Criar repo `jarvez-mcp-github`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/projects.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-github com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+##### Dominio: projects
+Contexto tecnico: `backend/actions_domains/projects.py` depende de `ProjectCatalog`, de projeto ativo em sessao, de indexacao local e do glue de `git_clone_repository`; a extracao precisa manter o Jarvez como fonte de verdade do catalogo e do projeto selecionado.
+- [ ] Criar repo `jarvez-mcp-projects`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/projects.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-projects com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+##### Dominio: code-actions
+Contexto tecnico: `backend/actions_domains/code_actions.py` depende de `backend/code_worker.py`, `backend/code_knowledge.py` e do estado de projeto ativo mantido pela facade e pelo catalogo local.
+- [ ] Criar repo `jarvez-mcp-code-actions`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/code_actions.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-code-actions com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+##### Dominio: codex
+Contexto tecnico: `backend/actions_domains/codex.py` depende do estado de task/historico/progresso que ainda mora em `actions.py`, alem de emissao de eventos e controle de processos em memoria.
+- [ ] Criar repo `jarvez-mcp-codex`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/codex.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-codex com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+##### Dominio: desktop
+Contexto tecnico: `open_desktop_resource` e `run_local_command` nascem dos helpers nao-HA hoje misturados em `backend/actions_domains/home_assistant.py`; esta extracao deve separar desktop/local shell do dominio de casa.
+- [ ] Criar repo `jarvez-mcp-desktop`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/home_assistant.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-desktop com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+#### Fase D — Conhecimento e workflows de app
+
+##### Dominio: research
+Contexto tecnico: `backend/actions_domains/research.py` pode virar MCP, mas o dashboard, agendamento e reabertura em rota dedicada continuam como glue do Jarvez ate a UX estabilizar.
+- [ ] Criar repo `jarvez-mcp-research`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/research.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-research com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+##### Dominio: rpg
+Contexto tecnico: `backend/actions_domains/rpg.py` depende de `backend/rpg_knowledge.py`, `references/gerador-ficha-tormenta20`, `references/artonMap`, PDFs/SQLite locais, arquivos de sessao e backlinks com OneNote; nao houve MCP publico confirmado para este stack.
+- [ ] Criar repo `jarvez-mcp-rpg`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/rpg.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-rpg com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+##### Dominio: workflows
+Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `backend/workflows/`, mas approval gates, session snapshot e integracao com projeto/codex continuam no backend do Jarvez.
+- [ ] Criar repo `jarvez-mcp-workflows`
+  Notas:
+- [ ] Migrar codigo de `backend/actions_domains/workflows.py`
+  Notas:
+- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas:
+- [ ] Criar CHANGELOG.md com v0.1.0
+  Notas:
+- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-workflows com tag v0.1.0
+  Notas:
+- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas:
+- [ ] Registrar em AGENTS.md como repositorio de referencia
+  Notas:
+
+#### Fase E — Limpeza final
+- [ ] Remover handlers marcados DEPRECATED do `actions.py`
+  Notas:
+- [ ] Validar que `actions.py` facade esta vazio ou so com glue code
+  Notas:
+- [ ] Atualizar `docs/jarvez-baseline.md` com nova contagem de actions locais
+  Notas:
+- [ ] Smoke test completo do Jarvez apos remocao
+  Notas:
+
+### Dominios que ficam locais nesta rodada
+- `session`, `policy`, `orchestration`, `ops`, `automation`, `browser_agent`, `runtime`, `channels`, `actions_core`
+  Notas: control plane do Jarvez; concentram auth, dispatch, policy, audit, realtime routing, snapshots e source-of-truth do frontend.
+
+---
+
+## Riscos abertos
+- Extrair `projects`, `code_actions` e `codex` cedo demais pode quebrar o Jarvez como fonte de verdade do projeto ativo, do historico de tasks e do code worker -> mitigar separando primeiro a API externa do estado local e mantendo catalogo/snapshot no backend principal.
+- `backend/actions_domains/home_assistant.py` e `backend/actions_domains/projects.py` ainda misturam dominios diferentes no mesmo arquivo -> mitigar com split interno antes de marcar handlers como `DEPRECATED`.
+- `whatsapp` e `onenote` ainda dependem de fallback legado, journal local e helpers de token/OAuth na facade -> mitigar extraindo o MCP sem remover o glue de persistencia e reconexao do Jarvez.
+- `rpg` cruza SQLite local, arquivos, PDFs, references vendorizadas e sincronizacao opcional com OneNote -> mitigar tratando `jarvez-mcp-rpg` como repo proprio com assets documentados, sem prometer compatibilidade com MCP publico inexistente.
+- `ops` ainda chama runners via modulo `actions`, e automacao/arrival usa glue local de policy e snapshot -> mitigar mantendo `ops` e `automation` locais nesta rodada.
+
+---
+
+## Aceite final
+- [ ] Todos os dominios extraiveis tem repo publico no GitHub
+  Notas:
+- [ ] `actions.py` nao tem mais handlers de dominio, so glue code
+  Notas:
+- [ ] Jarvez conecta nos MCP servers externos via `claude mcp add`
+  Notas:
+- [ ] AGENTS.md atualizado com todos os novos repos
+  Notas:
