@@ -477,28 +477,30 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
   Notas:
 
 #### Fase E — Integracao MCP no Jarvez
-- [ ] Criar `backend/mcp/` com `manager.py`, `registry.py` e `client.py`
-  Notas:
-- [ ] Definir manifesto/config dos MCPs habilitados pelo Jarvez
-  Notas:
-- [ ] Implementar boot dos MCP servers via subprocess/stdin
-  Notas:
-- [ ] Implementar listagem e descoberta de tools por servidor MCP
-  Notas:
-- [ ] Implementar `call_tool` com timeout, tratamento de erros e retries
-  Notas:
-- [ ] Implementar heranca e injecao controlada de env para cada MCP
-  Notas:
-- [ ] Expor `healthcheck` e `status` dos MCPs ativos no backend principal
-  Notas:
-- [ ] Persistir logs, auditoria e `evidence` das chamadas MCP
-  Notas:
-- [ ] Manter fallback explicito para handlers legacy durante a migracao
-  Notas:
-- [ ] Migrar `actions.py` gradualmente para roteamento via MCP
-  Notas:
-- [ ] Validar integracao real com `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant` e `jarvez-mcp-thinq`
-  Notas:
+- [ ] E1. Criar o substrato `backend/mcp/` com `registry.py`, `manager.py` e `client.py`
+  Notas: comecar pelo contrato interno e tipos minimos antes de plugar em `actions.py`; hoje `backend/mcp/` ainda nao existe.
+- [ ] E2. Definir manifesto/config dos MCPs habilitados pelo Jarvez
+  Notas: o manifesto deve declarar nome, comando, args, cwd, env permitido, timeout default, retries e flag de fallback legacy por dominio.
+- [ ] E3. Implementar boot lifecycle dos MCP servers via subprocess/stdin
+  Notas: `manager.py` deve subir, reaproveitar, encerrar e reiniciar processos MCP sem depender ainda de roteamento de dominio.
+- [ ] E4. Implementar handshake inicial com descoberta de tools
+  Notas: `client.py` deve conectar, executar `list_tools`, normalizar a superficie e registrar o catalogo no `registry.py`.
+- [ ] E5. Implementar `call_tool` com timeout, retries e tratamento uniforme de erro
+  Notas: padronizar erro de transporte, erro de protocolo, timeout e falha de tool para o backend principal conseguir decidir fallback e auditoria.
+- [ ] E6. Implementar heranca e injecao controlada de env por servidor MCP
+  Notas: permitir apenas as variaveis necessarias por dominio, com redaction no log e fronteira clara entre env global do Jarvez e env especifico do MCP.
+- [ ] E7. Expor `healthcheck` e `status` dos MCPs ativos
+  Notas: o backend principal precisa enxergar processo ativo, ultima descoberta de tools, ultima falha, ultimo sucesso e tempo de resposta por servidor.
+- [ ] E8. Persistir logs, auditoria e `evidence` das chamadas MCP
+  Notas: toda chamada MCP precisa gerar trilha equivalente ao padrao atual de `actions.py`, incluindo servidor, tool, args redigidos, duracao e retorno resumido.
+- [ ] E9. Implementar fallback explicito para handlers legacy
+  Notas: antes de migrar qualquer dominio, a facade deve conseguir tentar MCP primeiro e cair no handler local com motivo registrado quando houver indisponibilidade ou erro configurado para fallback.
+- [ ] E10. Migrar `actions.py` gradualmente para roteamento via MCP
+  Notas: ativar por dominio e por action, sem big bang; primeiro registrar wrappers MCP mantendo compatibilidade dos nomes atuais de tool.
+- [ ] E11. Validar um dominio piloto em integracao real
+  Notas: piloto recomendado `jarvez-mcp-spotify`, porque ja esta isolado, tem superficie clara, exercita auth/env e discovery sem o acoplamento operacional de `whatsapp`, `ac` ou os assets pesados de `rpg`.
+- [ ] E12. Expandir a validacao real para `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq` e `jarvez-mcp-rpg`
+  Notas: so depois do piloto estabilizar; `home-assistant` valida comandos simples, `thinq` valida env/discovery mais sensiveis e `rpg` valida payloads ricos e assets locais.
 
 #### Fase F — Limpeza final
 - [ ] Remover handlers marcados DEPRECATED do `actions.py`
@@ -539,3 +541,4 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 
 ## Nota de sincronizacao
 - A ordem restante continua fazendo sentido. Proximo dominio recomendado da Fase B: `onenote`, porque ja esta isolado em `backend/actions_domains/onenote.py`, tem melhor relacao risco/beneficio que `whatsapp` e nao depende do acoplamento ThinQ + automacao que segura `ac`.
+- Na Fase E, o piloto recomendado de integracao real e `jarvez-mcp-spotify`, porque oferece o melhor equilibrio entre baixo acoplamento no Jarvez principal e cobertura real de manifesto, env, discovery, `call_tool` e fallback legacy.
