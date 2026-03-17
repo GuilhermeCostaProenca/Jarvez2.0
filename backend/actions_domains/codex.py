@@ -188,6 +188,7 @@ async def codex_exec_task_action(
     *,
     run_codex_task_fn: Callable[..., Awaitable[ActionResult]],
 ) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-codex for pure task submission; keep legacy compatibility while session history, events and participant glue stay local.
     return await run_codex_task_fn(
         params=params,
         ctx=ctx,
@@ -202,6 +203,7 @@ async def codex_exec_review_action(
     *,
     run_codex_task_fn: Callable[..., Awaitable[ActionResult]],
 ) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-codex for pure review submission; keep legacy compatibility while session history, events and participant glue stay local.
     return await run_codex_task_fn(
         params=params,
         ctx=ctx,
@@ -220,6 +222,7 @@ async def codex_exec_status_action(
     active_project_payload: Callable[[str, str], JsonObject],
     capability_payload: Callable[[str, str], JsonObject],
 ) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-codex for pure task status; keep legacy compatibility while session history, events and participant glue stay local.
     _ = params
     task = get_active_codex_task(ctx.participant_identity, ctx.room)
     if task is None:
@@ -256,6 +259,7 @@ async def codex_cancel_task_action(
     active_project_payload: Callable[[str, str], JsonObject],
     capability_payload: Callable[[str, str], JsonObject],
 ) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-codex for pure task cancel; keep legacy compatibility while session history, events and participant glue stay local.
     _ = params
     key = codex_key(ctx.participant_identity, ctx.room)
     process = codex_running_processes.get(key)

@@ -391,20 +391,20 @@ Contexto tecnico: `backend/actions_domains/code_actions.py` depende de `backend/
 
 ##### Dominio: codex
 Contexto tecnico: `backend/actions_domains/codex.py` depende do estado de task/historico/progresso que ainda mora em `actions.py`, alem de emissao de eventos e controle de processos em memoria.
-- [ ] Criar repo `jarvez-mcp-codex`
-  Notas:
-- [ ] Migrar codigo de `backend/actions_domains/codex.py`
-  Notas:
-- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
-  Notas:
-- [ ] Criar CHANGELOG.md com v0.1.0
-  Notas:
-- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-codex com tag v0.1.0
-  Notas:
-- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
-  Notas:
-- [ ] Registrar em AGENTS.md como repositorio de referencia
-  Notas:
+- [x] Criar repo `jarvez-mcp-codex`
+  Notas: repo criado em `../jarvez-mcp-codex` seguindo a estrutura standalone de `../jarvez-mcp-spotify` e `../jarvez-mcp-thinq`, com `server.py`, `core/` e `tools/`.
+- [x] Migrar codigo de `backend/actions_domains/codex.py`
+  Notas: o recorte extraido cobre `codex_exec_task`, `codex_exec_review`, `codex_exec_status`, `codex_cancel_task` e `codex_list_tasks` em `../jarvez-mcp-codex/tools/codex.py`; historico em sessao, eventos realtime e controle de processo por participante continuam no Jarvez.
+- [x] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas: `../jarvez-mcp-codex/README.md` documenta instalacao, `claude mcp add --transport stdio`, variaveis de ambiente e a fronteira exata entre task surface e glue local do Jarvez.
+- [x] Criar CHANGELOG.md com v0.1.0
+  Notas: `../jarvez-mcp-codex/CHANGELOG.md` criado com a entrada `v0.1.0 - 2026-03-17`.
+- [x] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-codex com tag v0.1.0
+  Notas: repo publicado em `https://github.com/GuilhermeCostaProenca/jarvez-mcp-codex`, branch `main` enviada, tag `v0.1.0` criada e HEAD local em `74e5030bf772869a2cfdd0ed204ce55fff7bd2fc`.
+- [x] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas: `backend/actions.py` e `backend/actions_domains/codex.py` agora marcam `codex_exec_task`, `codex_exec_review`, `codex_exec_status` e `codex_cancel_task` como compatibilidade temporaria; historico, eventos e controle por participante seguem locais.
+- [x] Registrar em AGENTS.md como repositorio de referencia
+  Notas: `AGENTS.md` ganhou a entrada `jarvez-mcp-codex` na tabela de repositorios de referencia.
 
 ##### Dominio: desktop
 Contexto tecnico: `open_desktop_resource` e `run_local_command` nascem dos helpers nao-HA hoje misturados em `backend/actions_domains/home_assistant.py`; esta extracao deve separar desktop/local shell do dominio de casa.
@@ -529,7 +529,7 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 
 ## Aceite final
 - [ ] Todos os dominios extraiveis tem repo publico no GitHub
-  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github` e `jarvez-mcp-projects`.
+  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects` e `jarvez-mcp-codex`.
 - [ ] Jarvez consome MCPs reais pelo client interno e nao apenas por repos publicados
   Notas: integrar e validar no backend principal pelo menos `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`.
 - [ ] `actions.py` nao tem mais handlers de dominio, so glue code
@@ -537,10 +537,11 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 - [ ] Jarvez conecta nos MCP servers externos via `claude mcp add`
   Notas: alem do fluxo manual no Claude, o backend principal precisa conseguir subir, descobrir tools e chamar MCPs reais via `backend/mcp/`.
 - [ ] AGENTS.md atualizado com todos os novos repos
-  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github` e `jarvez-mcp-projects`; seguem pendentes os proximos dominios extraidos.
+  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects` e `jarvez-mcp-codex`; seguem pendentes os proximos dominios extraidos.
 
 ## Nota de sincronizacao
 - A ordem restante continua fazendo sentido. A Fase B fica fechada para os dominios priorizados (`whatsapp`, `onenote`, `ac`) sem mover journal, preferências, policy ou automações locais para fora do Jarvez.
 - A Fase C comeca por `github` no recorte puro de busca/metadata/clone URL; catalogo local, projeto ativo, selecao e clone fisico continuam no Jarvez.
 - Ainda na Fase C, `projects` sai apenas no recorte de metadata (`project_list`, `project_open`, `project_create`, `project_update`); `ProjectCatalog`, indexacao e projeto ativo em sessao continuam como glue local.
+- Ainda na Fase C, `codex` sai apenas no recorte de tasks (`codex_exec_task`, `codex_exec_review`, `codex_exec_status`, `codex_cancel_task`, `codex_list_tasks`); historico de sessao, eventos realtime e controle por participante continuam no Jarvez.
 - Na Fase E, o piloto recomendado de integracao real e `jarvez-mcp-spotify`, porque oferece o melhor equilibrio entre baixo acoplamento no Jarvez principal e cobertura real de manifesto, env, discovery, `call_tool` e fallback legacy.

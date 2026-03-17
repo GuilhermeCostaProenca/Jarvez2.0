@@ -8411,6 +8411,7 @@ async def _run_codex_task(
 
 
 async def _codex_exec_task_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-codex for pure task submission; keep wrapper while Jarvez still owns session history and realtime events.
     return await domain_codex_exec_task_action(
         params,
         ctx,
@@ -8419,6 +8420,7 @@ async def _codex_exec_task_action(params: JsonObject, ctx: ActionContext) -> Act
 
 
 async def _codex_exec_review_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    # DEPRECATED: migrated to jarvez-mcp-codex for pure review submission; keep wrapper while Jarvez still owns session history and realtime events.
     return await domain_codex_exec_review_action(
         params,
         ctx,
@@ -8427,6 +8429,7 @@ async def _codex_exec_review_action(params: JsonObject, ctx: ActionContext) -> A
 
 
 async def _codex_exec_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    # DEPRECATED: migrated to jarvez-mcp-codex for pure task status; keep wrapper while Jarvez still owns session history and realtime events.
     return await domain_codex_exec_status_action(
         params,
         ctx,
@@ -8439,6 +8442,7 @@ async def _codex_exec_status_action(params: JsonObject, ctx: ActionContext) -> A
 
 
 async def _codex_cancel_task_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+    # DEPRECATED: migrated to jarvez-mcp-codex for pure task cancel; keep wrapper while Jarvez still owns session history and realtime events.
     return await domain_codex_cancel_task_action(
         params,
         ctx,
