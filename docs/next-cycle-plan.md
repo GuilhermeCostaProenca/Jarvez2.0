@@ -476,7 +476,31 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 - [ ] Registrar em AGENTS.md como repositorio de referencia
   Notas:
 
-#### Fase E — Limpeza final
+#### Fase E — Integracao MCP no Jarvez
+- [ ] Criar `backend/mcp/` com `manager.py`, `registry.py` e `client.py`
+  Notas:
+- [ ] Definir manifesto/config dos MCPs habilitados pelo Jarvez
+  Notas:
+- [ ] Implementar boot dos MCP servers via subprocess/stdin
+  Notas:
+- [ ] Implementar listagem e descoberta de tools por servidor MCP
+  Notas:
+- [ ] Implementar `call_tool` com timeout, tratamento de erros e retries
+  Notas:
+- [ ] Implementar heranca e injecao controlada de env para cada MCP
+  Notas:
+- [ ] Expor `healthcheck` e `status` dos MCPs ativos no backend principal
+  Notas:
+- [ ] Persistir logs, auditoria e `evidence` das chamadas MCP
+  Notas:
+- [ ] Manter fallback explicito para handlers legacy durante a migracao
+  Notas:
+- [ ] Migrar `actions.py` gradualmente para roteamento via MCP
+  Notas:
+- [ ] Validar integracao real com `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant` e `jarvez-mcp-thinq`
+  Notas:
+
+#### Fase F — Limpeza final
 - [ ] Remover handlers marcados DEPRECATED do `actions.py`
   Notas:
 - [ ] Validar que `actions.py` facade esta vazio ou so com glue code
@@ -504,10 +528,12 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 ## Aceite final
 - [ ] Todos os dominios extraiveis tem repo publico no GitHub
   Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant` e `jarvez-mcp-thinq`.
+- [ ] Jarvez consome MCPs reais pelo client interno e nao apenas por repos publicados
+  Notas: integrar e validar no backend principal pelo menos `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant` e `jarvez-mcp-thinq`.
 - [ ] `actions.py` nao tem mais handlers de dominio, so glue code
   Notas:
 - [ ] Jarvez conecta nos MCP servers externos via `claude mcp add`
-  Notas:
+  Notas: alem do fluxo manual no Claude, o backend principal precisa conseguir subir, descobrir tools e chamar MCPs reais via `backend/mcp/`.
 - [ ] AGENTS.md atualizado com todos os novos repos
   Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant` e `jarvez-mcp-thinq`; seguem pendentes os proximos dominios extraidos.
 
