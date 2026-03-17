@@ -503,14 +503,14 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
   Notas: iniciado por `jarvez-mcp-home-assistant`, expandido para `jarvez-mcp-thinq`, `jarvez-mcp-rpg`, o recorte inicial de `ac_*` em cima do server MCP `thinq` e agora para um recorte inicial de `whatsapp_*`; `backend/actions.py` tenta o MCP `home_assistant` primeiro em `call_service`, `turn_light_on`, `turn_light_off` e `set_light_brightness`, tenta o MCP `thinq` primeiro em `thinq_status` e `thinq_list_devices`, tenta o MCP `rpg` primeiro em `rpg_get_knowledge_stats` e `rpg_search_knowledge`, tenta o MCP `thinq` tambem em `ac_get_status`, `ac_turn_on` e `ac_turn_off`, e agora usa o MCP `whatsapp` como probe em `whatsapp_channel_status` via `list_chats` e para envio simples em `whatsapp_send_text` via `send_message`, sempre com fallback legacy preservado. Validacoes reais feitas com `dispatch_action("turn_light_on")`, `dispatch_action("thinq_status")`, `dispatch_action("rpg_get_knowledge_stats")`, `dispatch_action("rpg_search_knowledge")`, `dispatch_action("ac_get_status")` e `dispatch_action("whatsapp_channel_status")`; no recorte WhatsApp o backend retornou `provider="mcp"`, `fallback_used=false`, `mcp_server="whatsapp"` e manteve journal, channel state e contadores locais no Jarvez.
 
 #### Fase F — Limpeza final
-- [ ] Remover handlers marcados DEPRECATED do `actions.py`
-  Notas:
-- [ ] Validar que `actions.py` facade esta vazio ou so com glue code
-  Notas:
-- [ ] Atualizar `docs/jarvez-baseline.md` com nova contagem de actions locais
-  Notas:
-- [ ] Smoke test completo do Jarvez apos remocao
-  Notas:
+- [x] Remover handlers marcados DEPRECATED do `actions.py`
+  Notas: removidos `20` handlers/registrations migrados para `jarvez-mcp-research`, `jarvez-mcp-desktop`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-code-actions`, `jarvez-mcp-codex` e `jarvez-mcp-workflows`; `_route_via_mcp`, `call_mcp_tool_with_legacy_fallback` e glue local permaneceram.
+- [x] Validar que `actions.py` facade esta vazio ou so com glue code
+  Notas: a facade remanescente ficou concentrada em control plane local e roteamento MCP/fallback; wrappers duplicados marcados como migrados foram eliminados.
+- [x] Atualizar `docs/jarvez-baseline.md` com nova contagem de actions locais
+  Notas: `docs/jarvez-baseline.md` regravado com baseline pos-limpeza; contagem real atual de `register_action(...)` em `backend/actions.py`: `125`.
+- [x] Smoke test completo do Jarvez apos remocao
+  Notas: passaram `python -m compileall backend\\actions.py`, `python backend\\test_actions_thinq_mcp.py`, `python backend\\test_actions_rpg_mcp.py`, `python backend\\test_actions_whatsapp_mcp.py`, `python backend\\test_actions_ac_mcp.py` e `python backend\\test_mcp_substrate.py`.
 
 ### Dominios que ficam locais nesta rodada
 - `session`, `policy`, `orchestration`, `ops`, `automation`, `browser_agent`, `runtime`, `channels`, `actions_core`
@@ -528,16 +528,16 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 ---
 
 ## Aceite final
-- [ ] Todos os dominios extraiveis tem repo publico no GitHub
+- [x] Todos os dominios extraiveis tem repo publico no GitHub
   Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-desktop`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex`, `jarvez-mcp-code-actions`, `jarvez-mcp-research` e `jarvez-mcp-workflows`.
-- [ ] Jarvez consome MCPs reais pelo client interno e nao apenas por repos publicados
-  Notas: integrar e validar no backend principal pelo menos `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`.
-- [ ] `actions.py` nao tem mais handlers de dominio, so glue code
-  Notas:
-- [ ] Jarvez conecta nos MCP servers externos via `claude mcp add`
-  Notas: alem do fluxo manual no Claude, o backend principal precisa conseguir subir, descobrir tools e chamar MCPs reais via `backend/mcp/`.
-- [ ] AGENTS.md atualizado com todos os novos repos
-  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-desktop`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex`, `jarvez-mcp-code-actions`, `jarvez-mcp-research` e `jarvez-mcp-workflows`; seguem pendentes os proximos dominios extraidos.
+- [x] Jarvez consome MCPs reais pelo client interno e nao apenas por repos publicados
+  Notas: backend principal ja sobe, descobre tools e valida chamadas reais para `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`.
+- [x] `actions.py` nao tem mais handlers de dominio, so glue code
+  Notas: handlers explicitamente migrados para repos MCP foram removidos; o que restou no arquivo e control plane local, roteamento MCP e glue/fallback ainda pertencente ao Jarvez.
+- [x] Jarvez conecta nos MCP servers externos via `claude mcp add`
+  Notas: alem da documentacao de `claude mcp add` nos repos externos, o backend principal ja consegue subir, descobrir tools e chamar MCPs reais via `backend/mcp/`.
+- [x] AGENTS.md atualizado com todos os novos repos
+  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-desktop`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote`, `jarvez-mcp-whatsapp`, `jarvez-mcp-ac`, `jarvez-mcp-github`, `jarvez-mcp-projects`, `jarvez-mcp-codex`, `jarvez-mcp-code-actions`, `jarvez-mcp-research` e `jarvez-mcp-workflows`.
 
 ## Nota de sincronizacao
 - A ordem restante continua fazendo sentido. A Fase B fica fechada para os dominios priorizados (`whatsapp`, `onenote`, `ac`) sem mover journal, preferências, policy ou automações locais para fora do Jarvez.

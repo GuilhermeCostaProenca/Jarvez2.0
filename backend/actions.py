@@ -2068,18 +2068,6 @@ def _build_web_dashboard_summary(query: str, results: list[JsonObject]) -> str:
     return _truncate_text(f"Resumo consolidado para '{query}': {summary}", 900)
 
 
-# DEPRECATED: migrated to jarvez-mcp-research
-async def _web_search_dashboard(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_web_search_dashboard(
-        params,
-        ctx,
-        collapse_spaces=_collapse_spaces,
-        run_web_search=_run_web_search,
-        build_summary=_build_web_dashboard_summary,
-        frontend_dashboard_url=_frontend_dashboard_url,
-    )
-
-
 async def _save_web_briefing_schedule(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     from actions_domains.research import save_web_briefing_schedule
 
@@ -2089,36 +2077,7 @@ async def _save_web_briefing_schedule(params: JsonObject, ctx: ActionContext) ->
         collapse_spaces=_collapse_spaces,
     )
 
-# DEPRECATED: migrated to jarvez-mcp-desktop
-async def _open_desktop_resource(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_open_desktop_resource(
-        params,
-        ctx,
-        resolve_open_resource_target=_resolve_open_resource_target,
-        open_browser=lambda url: webbrowser.open(url, new=2),
-        has_startfile=hasattr(os, "startfile"),
-        startfile=lambda path: os.startfile(path),
-        launch_detached=_launch_detached,
-        workspace_root=_workspace_root,
-    )
-
-
-# DEPRECATED: migrated to jarvez-mcp-desktop
-async def _run_local_command(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_run_local_command(
-        params,
-        ctx,
-        resolve_local_command=_resolve_local_command,
-        resolve_local_path=_resolve_local_path,
-        workspace_root=_workspace_root,
-        launch_detached=_launch_detached,
-        trim_process_output=_trim_process_output,
-        run_process=subprocess.run,
-    )
-
-
-# DEPRECATED: migrated to jarvez-mcp-desktop
-async def _git_clone_repository(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+async def _git_clone_repository_helper(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_git_clone_repository(
         params,
         ctx,
@@ -2355,26 +2314,6 @@ def _resolve_github_repo(params: JsonObject) -> tuple[GitHubRepo | None, ActionR
     return repo, None
 
 
-async def _github_list_repos_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    # DEPRECATED: migrated to jarvez-mcp-github; keep wrapper while Jarvez still resolves GitHub metadata locally.
-    return await domain_github_list_repos_action(
-        params,
-        ctx,
-        get_github_catalog_client=_get_github_catalog_client,
-        github_repo_to_payload=_github_repo_to_payload,
-    )
-
-
-async def _github_find_repo_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    # DEPRECATED: migrated to jarvez-mcp-github; keep wrapper while Jarvez still resolves GitHub metadata locally.
-    return await domain_github_find_repo_action(
-        params,
-        ctx,
-        resolve_github_repo=_resolve_github_repo,
-        github_repo_to_payload=_github_repo_to_payload,
-    )
-
-
 async def _github_clone_and_register_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
     return await domain_github_clone_and_register_action(
         params,
@@ -2382,7 +2321,7 @@ async def _github_clone_and_register_action(params: JsonObject, ctx: ActionConte
         resolve_github_repo=_resolve_github_repo,
         resolve_local_path=_resolve_local_path,
         github_default_clone_root=_github_default_clone_root,
-        git_clone_repository=_git_clone_repository,
+        git_clone_repository=_git_clone_repository_helper,
         get_project_catalog=_get_project_catalog,
         ensure_project_index=_ensure_project_index,
         set_active_project_from_record=_set_active_project_from_record,
@@ -6443,102 +6382,6 @@ def _workflow_default_validation_plan(project_name: str | None) -> list[JsonObje
     ]
 
 
-# DEPRECATED: migrated to jarvez-mcp-workflows
-async def _workflow_run(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    result = await domain_workflow_run_action(
-        params,
-        ctx,
-        workflow_engine=WORKFLOW_ENGINE,
-        get_active_project=get_active_project,
-        resolve_project_target=_workflow_resolve_project_target,
-        build_task_plan_payload=_workflow_build_task_plan_payload,
-        build_codex_review_preview=_workflow_build_codex_review_preview,
-        build_validation_plan=_workflow_default_validation_plan,
-        active_project_payload=_active_project_payload,
-        capability_payload=_capability_payload,
-    )
-    workflow_state = result.data.get("workflow_state") if isinstance(result.data, dict) else None
-    if isinstance(workflow_state, dict):
-        await _publish_agent_event(
-            ctx,
-            {
-                "type": "workflow_started" if result.success else "workflow_failed",
-                "workflow_state": workflow_state,
-            },
-        )
-    return result
-
-
-# DEPRECATED: migrated to jarvez-mcp-workflows
-async def _workflow_status(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    return await domain_workflow_status_action(
-        params,
-        ctx,
-        workflow_engine=WORKFLOW_ENGINE,
-        active_project_payload=_active_project_payload,
-        capability_payload=_capability_payload,
-    )
-
-
-# DEPRECATED: migrated to jarvez-mcp-workflows
-async def _workflow_cancel(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    result = await domain_workflow_cancel_action(
-        params,
-        ctx,
-        workflow_engine=WORKFLOW_ENGINE,
-        active_project_payload=_active_project_payload,
-        capability_payload=_capability_payload,
-    )
-    workflow_state = result.data.get("workflow_state") if isinstance(result.data, dict) else None
-    if isinstance(workflow_state, dict):
-        await _publish_agent_event(ctx, {"type": "workflow_failed", "workflow_state": workflow_state})
-    return result
-
-
-# DEPRECATED: migrated to jarvez-mcp-workflows
-async def _workflow_approve(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    result = await domain_workflow_approve_action(
-        params,
-        ctx,
-        workflow_engine=WORKFLOW_ENGINE,
-        active_project_payload=_active_project_payload,
-        capability_payload=_capability_payload,
-    )
-    workflow_state = result.data.get("workflow_state") if isinstance(result.data, dict) else None
-    if isinstance(workflow_state, dict):
-        status = str(workflow_state.get("status") or "").strip().lower()
-        if status == "completed":
-            event_type = "workflow_completed"
-        elif status in {"failed", "cancelled"}:
-            event_type = "workflow_failed"
-        else:
-            event_type = "workflow_progress"
-        await _publish_agent_event(ctx, {"type": event_type, "workflow_state": workflow_state})
-    return result
-
-
-# DEPRECATED: migrated to jarvez-mcp-workflows
-async def _workflow_resume(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    result = await domain_workflow_resume_action(
-        params,
-        ctx,
-        workflow_engine=WORKFLOW_ENGINE,
-        active_project_payload=_active_project_payload,
-        capability_payload=_capability_payload,
-    )
-    workflow_state = result.data.get("workflow_state") if isinstance(result.data, dict) else None
-    if isinstance(workflow_state, dict):
-        status = str(workflow_state.get("status") or "").strip().lower()
-        if status == "completed":
-            event_type = "workflow_completed"
-        elif status in {"failed", "cancelled"}:
-            event_type = "workflow_failed"
-        else:
-            event_type = "workflow_progress"
-        await _publish_agent_event(ctx, {"type": event_type, "workflow_state": workflow_state})
-    return result
-
-
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-whatsapp
 # This handler keeps local journal/channel-state enrichment while the standalone MCP covers connectivity probes.
 async def _whatsapp_channel_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8258,49 +8101,11 @@ async def _code_reindex_repo(params: JsonObject, ctx: ActionContext) -> ActionRe
     )
 
 
-async def _code_search_repo(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    # DEPRECATED: migrated to jarvez-mcp-code-actions for pure knowledge search; keep wrapper while Jarvez still owns active project and index singletons.
-    return await domain_code_search_repo(
-        params,
-        ctx,
-        get_active_project=get_active_project,
-        get_code_index=_get_code_index,
-        code_repo_root=_code_repo_root,
-        active_project_payload=_active_project_payload,
-    )
-
-
-async def _project_list_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    # DEPRECATED: migrated to jarvez-mcp-projects for pure metadata listing; keep wrapper while Jarvez still owns ProjectCatalog and active session.
-    return await domain_project_list_action(
-        params,
-        ctx,
-        get_project_catalog=_get_project_catalog,
-        project_record_to_payload=_project_record_to_payload,
-        active_project_payload=_active_project_payload,
-        capability_payload=_capability_payload,
-    )
-
-
 async def _project_scan_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     return await domain_project_scan_action(
         params,
         ctx,
         get_project_catalog=_get_project_catalog,
-        project_record_to_payload=_project_record_to_payload,
-        active_project_payload=_active_project_payload,
-    )
-
-
-async def _project_update_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    # DEPRECATED: migrated to jarvez-mcp-projects for pure metadata updates; keep wrapper while Jarvez still owns ProjectCatalog and active session.
-    return await domain_project_update_action(
-        params,
-        ctx,
-        get_project_catalog=_get_project_catalog,
-        get_active_project=get_active_project,
-        clear_active_project=clear_active_project,
-        set_active_project_from_record=_set_active_project_from_record,
         project_record_to_payload=_project_record_to_payload,
         active_project_payload=_active_project_payload,
     )
@@ -8413,55 +8218,6 @@ async def _run_codex_task(
         run_exec_streaming=run_exec_streaming,
         codex_running_processes=CODEX_RUNNING_PROCESSES,
         push_codex_history=_push_codex_history,
-        codex_task_to_payload=_codex_task_to_payload,
-        codex_history_payload=_codex_history_payload,
-        active_project_payload=_active_project_payload,
-        capability_payload=_capability_payload,
-    )
-
-
-async def _codex_exec_task_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    # DEPRECATED: migrated to jarvez-mcp-codex for pure task submission; keep wrapper while Jarvez still owns session history and realtime events.
-    return await domain_codex_exec_task_action(
-        params,
-        ctx,
-        run_codex_task_fn=_run_codex_task,
-    )
-
-
-async def _codex_exec_review_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    # DEPRECATED: migrated to jarvez-mcp-codex for pure review submission; keep wrapper while Jarvez still owns session history and realtime events.
-    return await domain_codex_exec_review_action(
-        params,
-        ctx,
-        run_codex_task_fn=_run_codex_task,
-    )
-
-
-async def _codex_exec_status_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    # DEPRECATED: migrated to jarvez-mcp-codex for pure task status; keep wrapper while Jarvez still owns session history and realtime events.
-    return await domain_codex_exec_status_action(
-        params,
-        ctx,
-        get_active_codex_task=get_active_codex_task,
-        codex_history_payload=_codex_history_payload,
-        codex_task_to_payload=_codex_task_to_payload,
-        active_project_payload=_active_project_payload,
-        capability_payload=_capability_payload,
-    )
-
-
-async def _codex_cancel_task_action(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    # DEPRECATED: migrated to jarvez-mcp-codex for pure task cancel; keep wrapper while Jarvez still owns session history and realtime events.
-    return await domain_codex_cancel_task_action(
-        params,
-        ctx,
-        codex_key=_codex_key,
-        codex_running_processes=CODEX_RUNNING_PROCESSES,
-        get_active_codex_task=get_active_codex_task,
-        now_iso=_now_iso,
-        push_codex_history=_push_codex_history,
-        emit_codex_task_event=_emit_codex_task_event,
         codex_task_to_payload=_codex_task_to_payload,
         codex_history_payload=_codex_history_payload,
         active_project_payload=_active_project_payload,
@@ -9408,18 +9164,6 @@ async def _code_worker_status_action(params: JsonObject, ctx: ActionContext) -> 
     )
 
 
-async def _code_read_file_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    # DEPRECATED: migrated to jarvez-mcp-code-actions for pure file read; keep wrapper while Jarvez still owns project resolution and worker singleton.
-    return await domain_code_read_file_action(
-        params,
-        ctx,
-        resolve_project_record=_resolve_project_record,
-        code_worker_request=_code_worker_request,
-        project_record_to_payload=_project_record_to_payload,
-        active_project_payload=_active_project_payload,
-    )
-
-
 async def _code_search_in_active_project_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
     return await domain_code_search_in_active_project_action(
         params,
@@ -9480,18 +9224,6 @@ async def _code_propose_change_action(params: JsonObject, ctx: ActionContext) ->
         propose_patch_plan=propose_patch_plan,
         active_project_payload=_active_project_payload,
         capability_payload=_capability_payload,
-    )
-
-
-async def _code_apply_patch_action(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    # DEPRECATED: migrated to jarvez-mcp-code-actions for pure patch apply; keep wrapper while Jarvez still owns project resolution and worker singleton.
-    return await domain_code_apply_patch_action(
-        params,
-        ctx,
-        resolve_project_record=_resolve_project_record,
-        code_worker_request=_code_worker_request,
-        project_record_to_payload=_project_record_to_payload,
-        active_project_payload=_active_project_payload,
     )
 
 
@@ -9874,42 +9606,6 @@ def register_default_actions() -> None:
 
     register_action(
         ActionSpec(
-            name="code_search_repo",
-            description="Busca trechos no codigo local do repositorio por termos, arquivos, funcoes e implementacoes.",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "minLength": 2, "maxLength": 300},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
-                },
-                "required": ["query"],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_code_search_repo,
-            expose_to_model=False,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="project_list",
-            description="Lista os projetos conhecidos no catalogo multi-repo do Jarvez.",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "include_inactive": {"type": "boolean"},
-                },
-                "required": [],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_project_list_action,
-        )
-    )
-
-    register_action(
-        ActionSpec(
             name="project_scan",
             description="Faz um scan nas pastas configuradas e atualiza o catalogo de projetos.",
             params_schema={
@@ -9920,47 +9616,6 @@ def register_default_actions() -> None:
             },
             requires_confirmation=False,
             handler=_project_scan_action,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="github_list_repos",
-            description="Lista repositorios acessiveis no GitHub conectado. Pode filtrar por busca.",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "minLength": 1, "maxLength": 200},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
-                    "visibility": {"type": "string", "enum": ["all", "public", "private"]},
-                },
-                "required": [],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_github_list_repos_action,
-            requires_auth=True,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="github_find_repo",
-            description="Encontra um repositorio do GitHub por nome curto ou nome completo.",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "repository": {"type": "string", "minLength": 1, "maxLength": 200},
-                    "full_name": {"type": "string", "minLength": 1, "maxLength": 200},
-                    "name": {"type": "string", "minLength": 1, "maxLength": 200},
-                    "query": {"type": "string", "minLength": 1, "maxLength": 200},
-                },
-                "required": [],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_github_find_repo_action,
-            requires_auth=True,
         )
     )
 
@@ -9986,27 +9641,6 @@ def register_default_actions() -> None:
             requires_confirmation=True,
             handler=_github_clone_and_register_action,
             requires_auth=True,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="project_update",
-            description="Atualiza metadados de um projeto do catalogo (nome, aliases, prioridade e estado ativo).",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
-                    "name": {"type": "string", "minLength": 1, "maxLength": 200},
-                    "aliases": {"type": "array"},
-                    "priority_score": {"type": "integer", "minimum": -100, "maximum": 100},
-                    "is_active": {"type": "boolean"},
-                },
-                "required": ["project_id"],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_project_update_action,
         )
     )
 
@@ -10168,81 +9802,6 @@ def register_default_actions() -> None:
             requires_confirmation=False,
             handler=_code_worker_status_action,
             expose_to_model=False,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="codex_exec_task",
-            description="Executa uma tarefa de analise, explicacao ou planejamento via Codex CLI no projeto ativo (ou informado).",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "request": {"type": "string", "minLength": 2, "maxLength": 4000},
-                    "query": {"type": "string", "minLength": 2, "maxLength": 4000},
-                    "prompt": {"type": "string", "minLength": 2, "maxLength": 4000},
-                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
-                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
-                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
-                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
-                },
-                "required": [],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_codex_exec_task_action,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="codex_exec_review",
-            description="Executa um review tecnico read-only via Codex CLI no projeto ativo (ou informado).",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "request": {"type": "string", "minLength": 2, "maxLength": 4000},
-                    "query": {"type": "string", "minLength": 2, "maxLength": 4000},
-                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
-                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
-                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
-                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
-                },
-                "required": [],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_codex_exec_review_action,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="codex_exec_status",
-            description="Retorna o estado da tarefa atual ou da ultima tarefa executada via Codex CLI.",
-            params_schema={
-                "type": "object",
-                "properties": {},
-                "required": [],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_codex_exec_status_action,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="codex_cancel_task",
-            description="Cancela a tarefa atual do Codex CLI nesta sessao.",
-            params_schema={
-                "type": "object",
-                "properties": {},
-                "required": [],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_codex_cancel_task_action,
         )
     )
 
@@ -10843,31 +10402,6 @@ def register_default_actions() -> None:
 
     register_action(
         ActionSpec(
-            name="code_read_file",
-            description="Le um arquivo do projeto ativo ou de um projeto informado usando o code worker.",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
-                    "query": {"type": "string", "minLength": 1, "maxLength": 300},
-                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
-                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
-                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
-                    "path": {"type": "string", "minLength": 1, "maxLength": 500},
-                    "start_line": {"type": "integer", "minimum": 1, "maximum": 50000},
-                    "end_line": {"type": "integer", "minimum": 1, "maximum": 50000},
-                },
-                "required": ["path"],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_code_read_file_action,
-            expose_to_model=False,
-        )
-    )
-
-    register_action(
-        ActionSpec(
             name="code_search_in_active_project",
             description="Busca no indice e nos arquivos do projeto ativo (ou informado).",
             params_schema={
@@ -10986,31 +10520,6 @@ def register_default_actions() -> None:
 
     register_action(
         ActionSpec(
-            name="code_apply_patch",
-            description="Aplica um patch controlado em um ou mais arquivos do projeto ativo (ou informado).",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "project_id": {"type": "string", "minLength": 4, "maxLength": 80},
-                    "query": {"type": "string", "minLength": 1, "maxLength": 300},
-                    "project": {"type": "string", "minLength": 1, "maxLength": 300},
-                    "project_name": {"type": "string", "minLength": 1, "maxLength": 300},
-                    "name": {"type": "string", "minLength": 1, "maxLength": 300},
-                    "changes": {"type": "array"},
-                    "confirmation_summary": {"type": "string", "minLength": 8, "maxLength": 500},
-                },
-                "required": ["changes"],
-                "additionalProperties": False,
-            },
-            requires_confirmation=True,
-            handler=_code_apply_patch_action,
-            requires_auth=True,
-            expose_to_model=False,
-        )
-    )
-
-    register_action(
-        ActionSpec(
             name="code_run_command",
             description="Executa um comando allowlisted no projeto ativo (ou informado) via code worker.",
             params_schema={
@@ -11037,27 +10546,6 @@ def register_default_actions() -> None:
 
     register_action(
         ActionSpec(
-            name="web_search_dashboard",
-            description=(
-                "Pesquisa na web, coleta os principais links publicos e devolve um dashboard estruturado "
-                "com resumo, sites e imagens de referencia."
-            ),
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "minLength": 2, "maxLength": 300},
-                    "max_results": {"type": "integer", "minimum": 3, "maximum": 8},
-                },
-                "required": ["query"],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_web_search_dashboard,
-        )
-    )
-
-    register_action(
-        ActionSpec(
             name="save_web_briefing_schedule",
             description=(
                 "Salva uma rotina de briefing diario para o frontend disparar uma pesquisa web automatica "
@@ -11074,75 +10562,6 @@ def register_default_actions() -> None:
             },
             requires_confirmation=False,
             handler=_save_web_briefing_schedule,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="open_desktop_resource",
-            description=(
-                "Abre um site, pasta, arquivo ou aplicativo local no computador. "
-                "Aceita URL, caminho, alias de pasta (desktop, downloads, documents, repo) "
-                "ou alias de app (chrome, edge, firefox, explorer, vscode, terminal, cmd)."
-            ),
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "target": {"type": "string", "minLength": 1, "maxLength": 512},
-                    "target_kind": {"type": "string", "enum": ["auto", "url", "path", "app"]},
-                },
-                "required": ["target"],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_open_desktop_resource,
-            requires_auth=True,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="run_local_command",
-            description=(
-                "Executa um comando local permitido por allowlist (ex.: git, python, node, pnpm, code). "
-                "Use para tarefas tecnicas no PC quando houver confirmacao explicita."
-            ),
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string", "minLength": 1, "maxLength": 260},
-                    "arguments": {"type": "array"},
-                    "working_directory": {"type": "string", "minLength": 1, "maxLength": 512},
-                    "wait_for_exit": {"type": "boolean"},
-                    "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
-                },
-                "required": ["command"],
-                "additionalProperties": False,
-            },
-            requires_confirmation=True,
-            handler=_run_local_command,
-            requires_auth=True,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="git_clone_repository",
-            description="Executa `git clone` para clonar um repositorio em uma pasta local opcional.",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "repository_url": {"type": "string", "minLength": 8, "maxLength": 500},
-                    "destination": {"type": "string", "minLength": 1, "maxLength": 512},
-                    "branch": {"type": "string", "minLength": 1, "maxLength": 120},
-                    "depth": {"type": "integer", "minimum": 1, "maximum": 1000},
-                },
-                "required": ["repository_url"],
-                "additionalProperties": False,
-            },
-            requires_confirmation=True,
-            handler=_git_clone_repository,
-            requires_auth=True,
         )
     )
 
@@ -12267,84 +11686,6 @@ def register_default_actions() -> None:
             params_schema={"type": "object", "properties": {}, "additionalProperties": False},
             requires_confirmation=True,
             handler=_browser_agent_cancel,
-            requires_auth=True,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="workflow_run",
-            description="Cria um workflow ideia para codigo com checkpoint antes de aplicar mudancas.",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "request": {"type": "string", "minLength": 3, "maxLength": 4000},
-                },
-                "required": ["request"],
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_workflow_run,
-            requires_auth=True,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="workflow_status",
-            description="Retorna o status do workflow atual.",
-            params_schema={"type": "object", "properties": {}, "additionalProperties": False},
-            requires_confirmation=False,
-            handler=_workflow_status,
-            requires_auth=True,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="workflow_cancel",
-            description="Cancela o workflow atual.",
-            params_schema={"type": "object", "properties": {}, "additionalProperties": False},
-            requires_confirmation=True,
-            handler=_workflow_cancel,
-            requires_auth=True,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="workflow_approve",
-            description="Decide o gate de aprovacao pendente do workflow.",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "workflow_id": {"type": "string", "minLength": 3, "maxLength": 128},
-                    "gate_id": {"type": "string", "minLength": 3, "maxLength": 128},
-                    "approved": {"type": "boolean"},
-                    "note": {"type": "string", "minLength": 1, "maxLength": 1000},
-                },
-                "required": ["approved"],
-                "additionalProperties": False,
-            },
-            requires_confirmation=True,
-            handler=_workflow_approve,
-            requires_auth=True,
-        )
-    )
-
-    register_action(
-        ActionSpec(
-            name="workflow_resume",
-            description="Retoma workflow pausado quando nao houver gate pendente.",
-            params_schema={
-                "type": "object",
-                "properties": {
-                    "workflow_id": {"type": "string", "minLength": 3, "maxLength": 128},
-                },
-                "additionalProperties": False,
-            },
-            requires_confirmation=False,
-            handler=_workflow_resume,
             requires_auth=True,
         )
     )
