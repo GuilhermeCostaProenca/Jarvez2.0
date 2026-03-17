@@ -477,16 +477,16 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
   Notas:
 
 #### Fase E — Integracao MCP no Jarvez
-- [ ] E1. Criar o substrato `backend/mcp/` com `registry.py`, `manager.py` e `client.py`
-  Notas: comecar pelo contrato interno e tipos minimos antes de plugar em `actions.py`; hoje `backend/mcp/` ainda nao existe.
-- [ ] E2. Definir manifesto/config dos MCPs habilitados pelo Jarvez
-  Notas: o manifesto deve declarar nome, comando, args, cwd, env permitido, timeout default, retries e flag de fallback legacy por dominio.
-- [ ] E3. Implementar boot lifecycle dos MCP servers via subprocess/stdin
-  Notas: `manager.py` deve subir, reaproveitar, encerrar e reiniciar processos MCP sem depender ainda de roteamento de dominio.
-- [ ] E4. Implementar handshake inicial com descoberta de tools
-  Notas: `client.py` deve conectar, executar `list_tools`, normalizar a superficie e registrar o catalogo no `registry.py`.
-- [ ] E5. Implementar `call_tool` com timeout, retries e tratamento uniforme de erro
-  Notas: padronizar erro de transporte, erro de protocolo, timeout e falha de tool para o backend principal conseguir decidir fallback e auditoria.
+- [x] E1. Criar o substrato `backend/mcp/` com `registry.py`, `manager.py` e `client.py`
+  Notas: concluido com `backend/mcp/{types,registry,client,manager}.py`, bootstrap interno em `backend/backend_mcp.py` e teste dedicado em `backend/test_mcp_substrate.py`.
+- [x] E2. Definir manifesto/config dos MCPs habilitados pelo Jarvez
+  Notas: concluido com manifesto minimo em `backend/mcp/registry.py`; por enquanto so o piloto `spotify`, com `name`, `command`, `args`, `cwd`, `enabled`, `timeout_seconds` e `legacy_fallback_enabled`.
+- [x] E3. Implementar boot lifecycle dos MCP servers via subprocess/stdin
+  Notas: concluido em `backend/mcp/manager.py` + `backend/mcp/client.py`, subindo `../jarvez-mcp-spotify/server.py` via `sys.executable`, reutilizando cliente ativo e expondo `stop_server`/`shutdown_all`.
+- [x] E4. Implementar handshake inicial com descoberta de tools
+  Notas: concluido com `ClientSession.initialize()` + `list_tools`; o piloto `spotify` descobriu `spotify_status`, `spotify_get_devices`, `spotify_transfer_playback`, `spotify_play`, `spotify_pause`, `spotify_next_track`, `spotify_previous_track`, `spotify_set_volume` e `spotify_create_surprise_playlist`.
+- [x] E5. Implementar `call_tool` com timeout, retries e tratamento uniforme de erro
+  Notas: concluido com `call_tool()` em `backend/mcp/client.py`; validado no piloto com `spotify_status`, retornando MCP `status=ok` e payload real `spotify_auth_required` quando nao autenticado.
 - [ ] E6. Implementar heranca e injecao controlada de env por servidor MCP
   Notas: permitir apenas as variaveis necessarias por dominio, com redaction no log e fronteira clara entre env global do Jarvez e env especifico do MCP.
 - [ ] E7. Expor `healthcheck` e `status` dos MCPs ativos
