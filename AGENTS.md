@@ -113,6 +113,7 @@ Estão em `./references/`. **Consulte antes de implementar qualquer feature nova
 | `jarvez-mcp-spotify` | MCP server standalone do domínio Spotify | Extrair playback, devices e playlist surpresa sem manter helpers na facade |
 | `jarvez-mcp-onenote` | MCP server standalone do domínio OneNote | Extrair notebooks, seções, páginas e escrita sem manter OAuth/Graph na facade |
 | `jarvez-mcp-thinq` | MCP server standalone do domínio ThinQ | Extrair status, discovery e controle bruto dos dispositivos LG ThinQ |
+| `jarvez-mcp-whatsapp` | MCP server standalone do domínio WhatsApp | Extrair status/conectividade e envio simples sem mover journal, fallback e channel state do Jarvez |
 | `jarvez-mcp-rpg` | MCP server standalone do domínio RPG | Qualquer feature RPG |
 
 **Consulta online** (não clonar, usar como catálogo):

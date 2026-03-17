@@ -6528,6 +6528,8 @@ async def _workflow_resume(params: JsonObject, ctx: ActionContext) -> ActionResu
     return result
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-whatsapp
+# This handler keeps local journal/channel-state enrichment while the standalone MCP covers connectivity probes.
 async def _whatsapp_channel_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     async def _legacy_handler() -> ActionResult:
         return await _build_whatsapp_channel_status_result()
@@ -8105,6 +8107,8 @@ async def _whatsapp_get_recent_messages(params: JsonObject, ctx: ActionContext) 
     )
 
 
+# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-whatsapp
+# This handler stays as compatibility glue while Jarvez preserves journal, fallback and channel state locally.
 async def _whatsapp_send_text(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
     # Normaliza alias: o modelo pode enviar 'contact' ou 'to', 'message' ou 'text'
     normalized_params = dict(params)

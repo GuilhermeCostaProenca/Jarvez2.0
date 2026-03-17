@@ -287,20 +287,20 @@ Contexto tecnico: `backend/actions_domains/thinq.py` esta isolado, mas continua 
 
 ##### Dominio: whatsapp
 Contexto tecnico: a extracao precisa considerar `backend/actions_domains/whatsapp.py`, `backend/actions_domains/whatsapp_channel.py` e `backend/integrations/whatsapp_mcp_client.py`, preservando fallback `whatsapp_legacy_v1` e o journal persistido em `channel_messages` como glue do Jarvez.
-- [ ] Criar repo `jarvez-mcp-whatsapp`
-  Notas:
-- [ ] Migrar codigo de `backend/actions_domains/whatsapp.py`
-  Notas:
-- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
-  Notas:
-- [ ] Criar CHANGELOG.md com v0.1.0
-  Notas:
-- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-whatsapp com tag v0.1.0
-  Notas:
-- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
-  Notas:
-- [ ] Registrar em AGENTS.md como repositorio de referencia
-  Notas:
+- [x] Criar repo `jarvez-mcp-whatsapp`
+  Notas: repo criado em `../jarvez-mcp-whatsapp` seguindo a estrutura standalone de `../jarvez-mcp-onenote` e `../jarvez-mcp-thinq`, com `server.py`, `core/`, `tools/` e `data/`.
+- [x] Migrar codigo de `backend/actions_domains/whatsapp.py`
+  Notas: o recorte `whatsapp_channel_status/list_chats/whatsapp_send_text/send_message` foi portado para `../jarvez-mcp-whatsapp/tools/whatsapp.py`, e os helpers de conectividade com o bridge HTTP e leitura do SQLite local sairam para `../jarvez-mcp-whatsapp/core/whatsapp_client.py`; journal persistido, fallback `whatsapp_legacy_v1` e channel state ficaram no Jarvez.
+- [x] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas: `../jarvez-mcp-whatsapp/README.md` documenta instalacao, variaveis de ambiente, execucao standalone, `claude mcp add --transport stdio` e a fronteira entre o repo novo e o control plane do Jarvez.
+- [x] Criar CHANGELOG.md com v0.1.0
+  Notas: `../jarvez-mcp-whatsapp/CHANGELOG.md` criado com a entrada `v0.1.0 - 2026-03-17`.
+- [x] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-whatsapp com tag v0.1.0
+  Notas: repo publicado em `https://github.com/GuilhermeCostaProenca/jarvez-mcp-whatsapp`, branch `main` enviada, tag `v0.1.0` criada em `2026-03-17` e HEAD local em `84ecf74dccfc3d462c1cfd81ae2673d2828786bd`.
+- [x] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas: `backend/actions.py` agora marca `whatsapp_channel_status` e `whatsapp_send_text` como compatibilidade temporaria enquanto o Jarvez preserva localmente journal, fallback e channel state.
+- [x] Registrar em AGENTS.md como repositorio de referencia
+  Notas: `AGENTS.md` ganhou a entrada `jarvez-mcp-whatsapp` na tabela de repositorios de referencia.
 
 ##### Dominio: onenote
 Contexto tecnico: `backend/actions_domains/onenote.py` ja esta isolado, mas os helpers de OAuth, token persistence e chamadas Graph ainda estao na facade de `backend/actions.py`.
@@ -529,16 +529,16 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 
 ## Aceite final
 - [ ] Todos os dominios extraiveis tem repo publico no GitHub
-  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq` e `jarvez-mcp-onenote`.
+  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`.
 - [ ] Jarvez consome MCPs reais pelo client interno e nao apenas por repos publicados
-  Notas: integrar e validar no backend principal pelo menos `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq` e `jarvez-mcp-onenote`.
+  Notas: integrar e validar no backend principal pelo menos `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`.
 - [ ] `actions.py` nao tem mais handlers de dominio, so glue code
   Notas:
 - [ ] Jarvez conecta nos MCP servers externos via `claude mcp add`
   Notas: alem do fluxo manual no Claude, o backend principal precisa conseguir subir, descobrir tools e chamar MCPs reais via `backend/mcp/`.
 - [ ] AGENTS.md atualizado com todos os novos repos
-  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq` e `jarvez-mcp-onenote`; seguem pendentes os proximos dominios extraidos.
+  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq`, `jarvez-mcp-onenote` e `jarvez-mcp-whatsapp`; seguem pendentes os proximos dominios extraidos.
 
 ## Nota de sincronizacao
-- A ordem restante continua fazendo sentido. Proximo dominio recomendado da Fase B: `whatsapp`, porque `onenote` ja foi extraido e `ac` ainda depende do acoplamento ThinQ + automacao local.
+- A ordem restante continua fazendo sentido. Proximo dominio recomendado da Fase B: `ac`, mas so depois de fixar explicitamente a fronteira entre controle remoto via `thinq` e as preferencias/automacoes locais que continuam no Jarvez.
 - Na Fase E, o piloto recomendado de integracao real e `jarvez-mcp-spotify`, porque oferece o melhor equilibrio entre baixo acoplamento no Jarvez principal e cobertura real de manifesto, env, discovery, `call_tool` e fallback legacy.
