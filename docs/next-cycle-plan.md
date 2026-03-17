@@ -487,14 +487,14 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
   Notas: concluido com `ClientSession.initialize()` + `list_tools`; o piloto `spotify` descobriu `spotify_status`, `spotify_get_devices`, `spotify_transfer_playback`, `spotify_play`, `spotify_pause`, `spotify_next_track`, `spotify_previous_track`, `spotify_set_volume` e `spotify_create_surprise_playlist`.
 - [x] E5. Implementar `call_tool` com timeout, retries e tratamento uniforme de erro
   Notas: concluido com `call_tool()` em `backend/mcp/client.py`; validado no piloto com `spotify_status`, retornando MCP `status=ok` e payload real `spotify_auth_required` quando nao autenticado.
-- [ ] E6. Implementar heranca e injecao controlada de env por servidor MCP
-  Notas: permitir apenas as variaveis necessarias por dominio, com redaction no log e fronteira clara entre env global do Jarvez e env especifico do MCP.
-- [ ] E7. Expor `healthcheck` e `status` dos MCPs ativos
-  Notas: o backend principal precisa enxergar processo ativo, ultima descoberta de tools, ultima falha, ultimo sucesso e tempo de resposta por servidor.
-- [ ] E8. Persistir logs, auditoria e `evidence` das chamadas MCP
-  Notas: toda chamada MCP precisa gerar trilha equivalente ao padrao atual de `actions.py`, incluindo servidor, tool, args redigidos, duracao e retorno resumido.
-- [ ] E9. Implementar fallback explicito para handlers legacy
-  Notas: antes de migrar qualquer dominio, a facade deve conseguir tentar MCP primeiro e cair no handler local com motivo registrado quando houver indisponibilidade ou erro configurado para fallback.
+- [x] E6. Implementar heranca e injecao controlada de env por servidor MCP
+  Notas: concluido com `env_allowlist` e `env_overrides` em `backend/mcp/types.py` + `backend/mcp/registry.py`; o piloto `spotify` sobe com env explicitamente filtrado em `backend/mcp/client.py` e redaction de segredos nos logs/status.
+- [x] E7. Expor `healthcheck` e `status` dos MCPs ativos
+  Notas: concluido em `backend/mcp/manager.py` e `backend/backend_mcp.py`; o backend agora expoe `get_mcp_server_status()`/`get_mcp_status_snapshot()` com processo ativo, ultima descoberta, ultimo sucesso, ultima falha, ultimo erro e tempo de resposta.
+- [x] E8. Persistir logs, auditoria e `evidence` das chamadas MCP
+  Notas: concluido com a tabela SQLite `mcp_call_audit` em `backend/actions_core/store.py` e registro automatico no manager; chamadas do piloto `spotify` persistem servidor, tool, args redigidos, duracao, resumo do retorno e tipo de erro.
+- [x] E9. Implementar fallback explicito para handlers legacy
+  Notas: concluido com `call_tool_with_fallback()` em `backend/mcp/manager.py` + wrapper em `backend/backend_mcp.py`; o fallback respeita `legacy_fallback_enabled`, registra o motivo (`tool_error` no teste/manual) e nao altera os handlers legacy existentes.
 - [ ] E10. Migrar `actions.py` gradualmente para roteamento via MCP
   Notas: ativar por dominio e por action, sem big bang; primeiro registrar wrappers MCP mantendo compatibilidade dos nomes atuais de tool.
 - [ ] E11. Validar um dominio piloto em integracao real

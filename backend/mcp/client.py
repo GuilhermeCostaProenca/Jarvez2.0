@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import AsyncExitStack
 from datetime import timedelta
+import logging
 from typing import Any
 
 from ._vendor import ClientSession, StdioServerParameters, stdio_client
 from .types import JsonObject, McpClientError, McpServerConfig, McpToolCallResult, McpToolInfo
+
+logger = logging.getLogger(__name__)
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -51,10 +55,49 @@ class StdioMcpClient:
         self._exit_stack: AsyncExitStack | None = None
         self._session: ClientSession | None = None
         self._initialize_payload: JsonObject | None = None
+        self._resolved_env: dict[str, str] = {}
+        self._redacted_env: JsonObject = {}
 
     @property
     def is_running(self) -> bool:
         return self._session is not None
+
+    @property
+    def redacted_env(self) -> JsonObject:
+        return dict(self._redacted_env)
+
+    @property
+    def env_keys(self) -> list[str]:
+        return list(self._resolved_env.keys())
+
+    @staticmethod
+    def _redact_env_value(name: str, value: Any) -> str:
+        text = str(value or "")
+        lowered = name.strip().casefold()
+        if any(marker in lowered for marker in ("token", "secret", "password", "key")):
+            return "***REDACTED***"
+        if len(text) > 160:
+            return f"{text[:157]}..."
+        return text
+
+    def _build_process_env(self) -> dict[str, str]:
+        resolved: dict[str, str] = {}
+        for key in self.config.env_allowlist:
+            name = str(key or "").strip()
+            if not name:
+                continue
+            value = os.getenv(name)
+            if value is None:
+                continue
+            resolved[name] = value
+        for key, value in self.config.env_overrides.items():
+            name = str(key or "").strip()
+            if not name:
+                continue
+            resolved[name] = str(value)
+        self._resolved_env = dict(resolved)
+        self._redacted_env = {name: self._redact_env_value(name, value) for name, value in resolved.items()}
+        return resolved
 
     async def start(self) -> None:
         if self._session is not None:
@@ -64,9 +107,17 @@ class StdioMcpClient:
 
         exit_stack = AsyncExitStack()
         try:
+            process_env = self._build_process_env()
+            logger.info(
+                "starting mcp server name=%s cwd=%s env=%s",
+                self.config.name,
+                self.config.cwd,
+                self._redacted_env,
+            )
             server_params = StdioServerParameters(
                 command=self.config.command,
                 args=self.config.args,
+                env=process_env,
                 cwd=self.config.cwd,
             )
             read_stream, write_stream = await exit_stack.enter_async_context(stdio_client(server_params))

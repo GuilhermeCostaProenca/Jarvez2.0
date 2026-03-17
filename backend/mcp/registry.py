@@ -2,12 +2,23 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 from .types import McpClientError, McpServerConfig, McpToolInfo
 
 
 def _jarvez_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def _redact_env_value(name: str, value: Any) -> str:
+    text = str(value or "")
+    lowered = name.strip().casefold()
+    if any(marker in lowered for marker in ("token", "secret", "password", "key")):
+        return "***REDACTED***"
+    if len(text) > 160:
+        return f"{text[:157]}..."
+    return text
 
 
 def _pilot_spotify_config() -> McpServerConfig:
@@ -20,6 +31,30 @@ def _pilot_spotify_config() -> McpServerConfig:
         enabled=True,
         timeout_seconds=20,
         legacy_fallback_enabled=True,
+        env_allowlist=[
+            "PATH",
+            "PATHEXT",
+            "SYSTEMROOT",
+            "WINDIR",
+            "COMSPEC",
+            "TEMP",
+            "TMP",
+            "LOCALAPPDATA",
+            "APPDATA",
+            "PROGRAMDATA",
+            "USERPROFILE",
+            "SPOTIFY_CLIENT_ID",
+            "SPOTIFY_CLIENT_SECRET",
+            "SPOTIFY_REDIRECT_URI",
+            "SPOTIFY_SCOPES",
+            "SPOTIFY_DEFAULT_DEVICE_NAME",
+            "SPOTIFY_ACCESS_TOKEN",
+            "SPOTIFY_REFRESH_TOKEN",
+            "SPOTIFY_ACCESS_TOKEN_EXPIRES_AT",
+            "SPOTIFY_TOKENS_PATH",
+            "SPOTIFY_DEVICE_ALIASES_PATH",
+            "JARVEZ_FRONTEND_URL",
+        ],
     )
 
 
@@ -71,6 +106,11 @@ class McpRegistry:
                     "enabled": config.enabled,
                     "timeout_seconds": config.timeout_seconds,
                     "legacy_fallback_enabled": config.legacy_fallback_enabled,
+                    "env_allowlist": list(config.env_allowlist),
+                    "env_overrides": {
+                        str(key): _redact_env_value(str(key), value)
+                        for key, value in config.env_overrides.items()
+                    },
                 }
             )
         return snapshot

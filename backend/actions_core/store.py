@@ -129,6 +129,29 @@ class JarvezStateStore:
                 ON channel_messages(channel, direction, created_at DESC)
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS mcp_call_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    server_name TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    success INTEGER NOT NULL,
+                    fallback_used INTEGER NOT NULL,
+                    fallback_reason TEXT,
+                    error_type TEXT,
+                    duration_ms INTEGER NOT NULL,
+                    args_json TEXT NOT NULL,
+                    result_summary_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_mcp_call_audit_lookup
+                ON mcp_call_audit(server_name, tool_name, created_at DESC)
+                """
+            )
 
     def upsert_session_state(
         self,
@@ -540,6 +563,119 @@ class JarvezStateStore:
             conn.execute("DELETE FROM pending_confirmations")
             conn.execute("DELETE FROM authenticated_sessions")
             conn.execute("DELETE FROM channel_messages")
+            conn.execute("DELETE FROM mcp_call_audit")
+
+    def append_mcp_call_audit(
+        self,
+        *,
+        server_name: str,
+        tool_name: str,
+        success: bool,
+        args_payload: Any,
+        duration_ms: int,
+        result_summary: Any,
+        error_type: str | None = None,
+        fallback_used: bool = False,
+        fallback_reason: str | None = None,
+        created_at: str | None = None,
+    ) -> int:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO mcp_call_audit (
+                    server_name,
+                    tool_name,
+                    success,
+                    fallback_used,
+                    fallback_reason,
+                    error_type,
+                    duration_ms,
+                    args_json,
+                    result_summary_json,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    server_name,
+                    tool_name,
+                    1 if success else 0,
+                    1 if fallback_used else 0,
+                    fallback_reason,
+                    error_type,
+                    int(duration_ms),
+                    json.dumps(_to_payload(args_payload), ensure_ascii=False),
+                    json.dumps(_to_payload(result_summary), ensure_ascii=False),
+                    created_at or _now_iso(),
+                ),
+            )
+            return int(cursor.lastrowid or 0)
+
+    def list_mcp_call_audit(
+        self,
+        *,
+        server_name: str | None = None,
+        tool_name: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        args: list[Any] = []
+        if server_name:
+            clauses.append("server_name = ?")
+            args.append(server_name)
+        if tool_name:
+            clauses.append("tool_name = ?")
+            args.append(tool_name)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        safe_limit = max(1, min(int(limit), 500))
+        rows: list[dict[str, Any]] = []
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"""
+                SELECT
+                    id,
+                    server_name,
+                    tool_name,
+                    success,
+                    fallback_used,
+                    fallback_reason,
+                    error_type,
+                    duration_ms,
+                    args_json,
+                    result_summary_json,
+                    created_at
+                FROM mcp_call_audit
+                {where}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                [*args, safe_limit],
+            )
+            for row in cursor.fetchall():
+                try:
+                    args_payload = json.loads(str(row["args_json"]))
+                except Exception:
+                    args_payload = None
+                try:
+                    result_summary = json.loads(str(row["result_summary_json"]))
+                except Exception:
+                    result_summary = None
+                rows.append(
+                    {
+                        "id": int(row["id"]),
+                        "server_name": str(row["server_name"]),
+                        "tool_name": str(row["tool_name"]),
+                        "success": bool(row["success"]),
+                        "fallback_used": bool(row["fallback_used"]),
+                        "fallback_reason": str(row["fallback_reason"]) if row["fallback_reason"] is not None else None,
+                        "error_type": str(row["error_type"]) if row["error_type"] is not None else None,
+                        "duration_ms": int(row["duration_ms"]),
+                        "args_payload": args_payload,
+                        "result_summary": result_summary,
+                        "created_at": str(row["created_at"]),
+                    }
+                )
+        return rows
 
 
 _STATE_STORE: JarvezStateStore | None = None
