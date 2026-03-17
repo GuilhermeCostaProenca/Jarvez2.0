@@ -444,20 +444,20 @@ Contexto tecnico: `backend/actions_domains/research.py` pode virar MCP, mas o da
 
 ##### Dominio: rpg
 Contexto tecnico: `backend/actions_domains/rpg.py` depende de `backend/rpg_knowledge.py`, `references/gerador-ficha-tormenta20`, `references/artonMap`, PDFs/SQLite locais, arquivos de sessao e backlinks com OneNote; nao houve MCP publico confirmado para este stack.
-- [ ] Criar repo `jarvez-mcp-rpg`
-  Notas:
-- [ ] Migrar codigo de `backend/actions_domains/rpg.py`
-  Notas:
-- [ ] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
-  Notas:
-- [ ] Criar CHANGELOG.md com v0.1.0
-  Notas:
-- [ ] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-rpg com tag v0.1.0
-  Notas:
-- [ ] Adicionar comentario DEPRECATED nos handlers em `actions.py`
-  Notas:
-- [ ] Registrar em AGENTS.md como repositorio de referencia
-  Notas:
+- [x] Criar repo `jarvez-mcp-rpg`
+  Notas: repo criado em `../jarvez-mcp-rpg` como MCP standalone do dominio RPG, com `server.py`, `core/`, `tools/`, `rpg_engine/` e assets vendorizados necessarios.
+- [x] Migrar codigo de `backend/actions_domains/rpg.py`
+  Notas: a superficie `rpg_*` foi extraida para `../jarvez-mcp-rpg`, preservando knowledge index, sessoes, fichas e integracao com os assets locais do dominio.
+- [x] Escrever README com instrucoes de conexao (Claude Code + Jarvez)
+  Notas: `../jarvez-mcp-rpg/README.md` documenta instalacao, `claude mcp add --transport stdio`, variaveis de ambiente e a estrategia de integracao futura com o Jarvez.
+- [x] Criar CHANGELOG.md com v0.1.0
+  Notas: `../jarvez-mcp-rpg/CHANGELOG.md` existe e acompanha a publicacao inicial `v0.1.0`.
+- [x] Subir para github.com/GuilhermeCostaProenca/jarvez-mcp-rpg com tag v0.1.0
+  Notas: repo publicado em `https://github.com/GuilhermeCostaProenca/jarvez-mcp-rpg`, branch `main` ativa, tag `v0.1.0` existente e HEAD local em `462dfb668fe60bdf2accb07cea0ef7d4b454f9e7`.
+- [x] Adicionar comentario DEPRECATED nos handlers em `actions.py`
+  Notas: `backend/actions.py` ja marca a superficie `rpg_*` como migrada para `github.com/GuilhermeCostaProenca/jarvez-mcp-rpg`, mantendo compatibilidade temporaria no monolito.
+- [x] Registrar em AGENTS.md como repositorio de referencia
+  Notas: `AGENTS.md` ja lista `jarvez-mcp-rpg` na tabela de repositorios de referencia.
 
 ##### Dominio: workflows
 Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `backend/workflows/`, mas approval gates, session snapshot e integracao com projeto/codex continuam no backend do Jarvez.
@@ -503,10 +503,13 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
 
 ## Aceite final
 - [ ] Todos os dominios extraiveis tem repo publico no GitHub
-  Notas:
+  Notas: publicados ate agora com tag `v0.1.0`: `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant` e `jarvez-mcp-thinq`.
 - [ ] `actions.py` nao tem mais handlers de dominio, so glue code
   Notas:
 - [ ] Jarvez conecta nos MCP servers externos via `claude mcp add`
   Notas:
 - [ ] AGENTS.md atualizado com todos os novos repos
-  Notas:
+  Notas: `AGENTS.md` ja inclui `jarvez-mcp-rpg`, `jarvez-mcp-spotify`, `jarvez-mcp-home-assistant` e `jarvez-mcp-thinq`; seguem pendentes os proximos dominios extraidos.
+
+## Nota de sincronizacao
+- A ordem restante continua fazendo sentido. Proximo dominio recomendado da Fase B: `onenote`, porque ja esta isolado em `backend/actions_domains/onenote.py`, tem melhor relacao risco/beneficio que `whatsapp` e nao depende do acoplamento ThinQ + automacao que segura `ac`.
