@@ -238,7 +238,26 @@ class McpManager:
         legacy_handler: Callable[[], Any] | Callable[[], Awaitable[Any]] | None = None,
     ) -> tuple[McpToolCallResult | None, Any | None, str | None]:
         config = self.registry.get_server(server_name)
-        result = await self.call_tool(server_name, tool_name, params)
+        started_at = time.perf_counter()
+        try:
+            result = await self.call_tool(server_name, tool_name, params)
+        except McpClientError as exc:
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            result = McpToolCallResult(
+                ok=False,
+                status=exc.status,
+                detail=exc.detail,
+            )
+            self._append_audit_record(
+                server_name=server_name,
+                tool_name=tool_name,
+                success=False,
+                params=params,
+                duration_ms=duration_ms,
+                result=result,
+                fallback_used=False,
+                error_type=exc.status,
+            )
         if result.ok:
             return result, None, None
         if not config.legacy_fallback_enabled or legacy_handler is None:

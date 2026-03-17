@@ -201,6 +201,7 @@ from coding_llm import explain_project_state, propose_patch_plan, summarize_diff
 from evals import append_metric, baseline_scenarios, read_metrics, summarize_action_metrics, summarize_slo
 from github_catalog import GitHubCatalogClient, GitHubRepo
 from integrations.whatsapp_mcp_client import WhatsAppMcpClient
+from backend_mcp import McpToolCallResult, call_mcp_tool_with_legacy_fallback
 from orchestration import (
     build_provider_registry,
     build_task_plan,
@@ -7301,22 +7302,133 @@ async def _onenote_append_to_page(params: JsonObject, ctx: ActionContext) -> Act
     )
 
 
+def _action_result_from_mcp_result(
+    result: McpToolCallResult,
+    *,
+    server_name: str,
+    tool_name: str,
+    fallback_used: bool,
+    fallback_reason: str | None = None,
+) -> ActionResult:
+    payload = result.structured_content if isinstance(result.structured_content, dict) else {}
+    evidence = payload.get("evidence") if isinstance(payload.get("evidence"), dict) else {}
+    normalized_evidence = dict(evidence)
+    normalized_evidence.update(
+        {
+            "provider": "mcp" if not fallback_used else "legacy",
+            "mcp_server": server_name,
+            "mcp_tool": tool_name,
+            "mcp_status": result.status,
+        }
+    )
+    if fallback_reason:
+        normalized_evidence["fallback_reason"] = fallback_reason
+
+    data = payload.get("data")
+    normalized_data = data if isinstance(data, dict) else None
+    message = str(payload.get("message") or result.text or result.detail or f"MCP tool '{tool_name}' executada.")
+    error = payload.get("error")
+    risk = payload.get("risk")
+    policy_decision = payload.get("policy_decision")
+    return ActionResult(
+        success=bool(payload.get("success", result.ok)),
+        message=message,
+        data=normalized_data,
+        error=str(error) if error is not None else None,
+        risk=str(risk) if risk is not None else None,
+        policy_decision=str(policy_decision) if policy_decision is not None else None,
+        evidence=normalized_evidence,
+        fallback_used=fallback_used,
+    )
+
+
+async def _spotify_route_via_mcp(
+    tool_name: str,
+    params: JsonObject,
+    legacy_handler: Callable[[], Awaitable[ActionResult]],
+) -> ActionResult:
+    try:
+        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
+            "spotify",
+            tool_name,
+            params,
+            legacy_handler=legacy_handler,
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.warning(
+            "spotify MCP route failed unexpectedly; using legacy handler",
+            extra={"tool": tool_name, "error": str(error)},
+            exc_info=True,
+        )
+        legacy_result = await legacy_handler()
+        evidence = dict(legacy_result.evidence or {})
+        evidence.update(
+            {
+                "provider": "legacy",
+                "mcp_server": "spotify",
+                "mcp_tool": tool_name,
+                "fallback_reason": "transport_exception",
+            }
+        )
+        legacy_result.evidence = evidence
+        legacy_result.fallback_used = True
+        return legacy_result
+
+    if legacy_value is not None:
+        if isinstance(legacy_value, ActionResult):
+            legacy_result = legacy_value
+        else:
+            legacy_result = ActionResult(
+                success=True,
+                message=f"Fallback legacy executado para '{tool_name}'.",
+                data={"value": legacy_value} if isinstance(legacy_value, dict) else None,
+            )
+        evidence = dict(legacy_result.evidence or {})
+        evidence.update(
+            {
+                "provider": "legacy",
+                "mcp_server": "spotify",
+                "mcp_tool": tool_name,
+                "fallback_reason": fallback_reason or "legacy_fallback",
+            }
+        )
+        legacy_result.evidence = evidence
+        legacy_result.fallback_used = True
+        return legacy_result
+
+    if mcp_result is None:
+        return await legacy_handler()
+
+    return _action_result_from_mcp_result(
+        mcp_result,
+        server_name="spotify",
+        tool_name=tool_name,
+        fallback_used=False,
+    )
+
+
 # DEPRECATED: wrappers Spotify permanecem aqui apenas como compatibilidade enquanto o dominio e migrado para ../jarvez-mcp-spotify.
 async def _spotify_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_status(
-        params,
-        ctx,
-        spotify_initialize_cache=_spotify_initialize_cache,
-        spotify_api_request=_spotify_api_request,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_status(
+            params,
+            ctx,
+            spotify_initialize_cache=_spotify_initialize_cache,
+            spotify_api_request=_spotify_api_request,
+        )
+
+    return await _spotify_route_via_mcp("spotify_status", params, _legacy_handler)
 
 
 async def _spotify_get_devices(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_spotify_get_devices(
-        params,
-        ctx,
-        spotify_api_request=_spotify_api_request,
-    )
+    async def _legacy_handler() -> ActionResult:
+        return await domain_spotify_get_devices(
+            params,
+            ctx,
+            spotify_api_request=_spotify_api_request,
+        )
+
+    return await _spotify_route_via_mcp("spotify_get_devices", params, _legacy_handler)
 
 
 async def _spotify_transfer_playback(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001

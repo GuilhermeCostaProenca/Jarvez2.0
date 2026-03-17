@@ -495,10 +495,10 @@ Contexto tecnico: a extracao inclui `backend/actions_domains/workflows.py` e `ba
   Notas: concluido com a tabela SQLite `mcp_call_audit` em `backend/actions_core/store.py` e registro automatico no manager; chamadas do piloto `spotify` persistem servidor, tool, args redigidos, duracao, resumo do retorno e tipo de erro.
 - [x] E9. Implementar fallback explicito para handlers legacy
   Notas: concluido com `call_tool_with_fallback()` em `backend/mcp/manager.py` + wrapper em `backend/backend_mcp.py`; o fallback respeita `legacy_fallback_enabled`, registra o motivo (`tool_error` no teste/manual) e nao altera os handlers legacy existentes.
-- [ ] E10. Migrar `actions.py` gradualmente para roteamento via MCP
-  Notas: ativar por dominio e por action, sem big bang; primeiro registrar wrappers MCP mantendo compatibilidade dos nomes atuais de tool.
-- [ ] E11. Validar um dominio piloto em integracao real
-  Notas: piloto recomendado `jarvez-mcp-spotify`, porque ja esta isolado, tem superficie clara, exercita auth/env e discovery sem o acoplamento operacional de `whatsapp`, `ac` ou os assets pesados de `rpg`.
+- [x] E10. Migrar `actions.py` gradualmente para roteamento via MCP
+  Notas: concluido no primeiro recorte seguro com `spotify_status` e `spotify_get_devices`; `backend/actions.py` agora tenta o MCP `spotify` primeiro via `call_mcp_tool_with_legacy_fallback()` e preserva os handlers legacy locais sem remocao.
+- [x] E11. Validar um dominio piloto em integracao real
+  Notas: concluido com o piloto `jarvez-mcp-spotify`; `dispatch_action("spotify_status")` e `dispatch_action("spotify_get_devices")` ja executam via MCP no backend principal, com `evidence.provider="mcp"`, `fallback_used=false` no teste manual atual e fallback legacy coberto em teste dedicado.
 - [ ] E12. Expandir a validacao real para `jarvez-mcp-home-assistant`, `jarvez-mcp-thinq` e `jarvez-mcp-rpg`
   Notas: so depois do piloto estabilizar; `home-assistant` valida comandos simples, `thinq` valida env/discovery mais sensiveis e `rpg` valida payloads ricos e assets locais.
 
