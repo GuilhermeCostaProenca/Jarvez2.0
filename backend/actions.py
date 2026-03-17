@@ -6443,6 +6443,7 @@ def _workflow_default_validation_plan(project_name: str | None) -> list[JsonObje
     ]
 
 
+# DEPRECATED: migrated to jarvez-mcp-workflows
 async def _workflow_run(params: JsonObject, ctx: ActionContext) -> ActionResult:
     result = await domain_workflow_run_action(
         params,
@@ -6468,6 +6469,7 @@ async def _workflow_run(params: JsonObject, ctx: ActionContext) -> ActionResult:
     return result
 
 
+# DEPRECATED: migrated to jarvez-mcp-workflows
 async def _workflow_status(params: JsonObject, ctx: ActionContext) -> ActionResult:
     return await domain_workflow_status_action(
         params,
@@ -6478,6 +6480,7 @@ async def _workflow_status(params: JsonObject, ctx: ActionContext) -> ActionResu
     )
 
 
+# DEPRECATED: migrated to jarvez-mcp-workflows
 async def _workflow_cancel(params: JsonObject, ctx: ActionContext) -> ActionResult:
     result = await domain_workflow_cancel_action(
         params,
@@ -6492,6 +6495,7 @@ async def _workflow_cancel(params: JsonObject, ctx: ActionContext) -> ActionResu
     return result
 
 
+# DEPRECATED: migrated to jarvez-mcp-workflows
 async def _workflow_approve(params: JsonObject, ctx: ActionContext) -> ActionResult:
     result = await domain_workflow_approve_action(
         params,
@@ -6513,6 +6517,7 @@ async def _workflow_approve(params: JsonObject, ctx: ActionContext) -> ActionRes
     return result
 
 
+# DEPRECATED: migrated to jarvez-mcp-workflows
 async def _workflow_resume(params: JsonObject, ctx: ActionContext) -> ActionResult:
     result = await domain_workflow_resume_action(
         params,

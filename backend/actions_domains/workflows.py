@@ -32,6 +32,7 @@ def _project_id(payload: JsonObject | None) -> str | None:
     return str(payload.get("project_id", "")).strip() or None
 
 
+# DEPRECATED: migrated to jarvez-mcp-workflows
 async def workflow_run_action(
     params: JsonObject,
     ctx: ActionContext,
@@ -110,6 +111,7 @@ async def workflow_run_action(
     )
 
 
+# DEPRECATED: migrated to jarvez-mcp-workflows
 async def workflow_status_action(
     params: JsonObject,
     ctx: ActionContext,
@@ -138,6 +140,7 @@ async def workflow_status_action(
     )
 
 
+# DEPRECATED: migrated to jarvez-mcp-workflows
 async def workflow_cancel_action(
     params: JsonObject,
     ctx: ActionContext,
@@ -165,6 +168,7 @@ async def workflow_cancel_action(
     )
 
 
+# DEPRECATED: migrated to jarvez-mcp-workflows
 async def workflow_approve_action(
     params: JsonObject,
     ctx: ActionContext,
@@ -220,6 +224,7 @@ async def workflow_approve_action(
     )
 
 
+# DEPRECATED: migrated to jarvez-mcp-workflows
 async def workflow_resume_action(
     params: JsonObject,
     ctx: ActionContext,
