@@ -19,7 +19,14 @@ export type VoiceInteractivityStateValue =
 export interface VoiceInteractivityState {
   state: VoiceInteractivityStateValue;
   source?: 'backend' | 'client' | string;
-  activation_mode?: 'button' | 'wake_word' | 'voice' | 'system' | 'unknown' | string;
+  activation_mode?:
+    | 'button'
+    | 'wake_word'
+    | 'push_to_talk'
+    | 'voice'
+    | 'system'
+    | 'unknown'
+    | string;
   raw_client_state?: string;
   display_message?: string;
   spoken_message?: string;

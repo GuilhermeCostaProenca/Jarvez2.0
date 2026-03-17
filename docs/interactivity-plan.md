@@ -31,8 +31,8 @@ Decisoes base deste plano:
 - [ ] UI. Visual e feedback
   Notas: estado do assistente visivel e sincronizado com o backend, sem poluir a sessao principal.
 
-- [ ] G. Gestos e interacao fisica
-  Notas: botao principal, wake word, cancelamento rapido, repeticao e historico recente por gesto.
+- [x] G. Gestos e interacao fisica
+  Notas: `StartAudioButton` agora suporta toque, toggle e push-to-talk; a sessao principal ganhou cancelamento rapido, repeticao da ultima resposta e drawer compacto de recentes.
 
 ---
 
@@ -119,17 +119,17 @@ Contexto tecnico: a UI ja hidrata snapshot em `useAgentActionEvents`, tem `sessi
 
 Contexto tecnico: hoje ja existe `StartAudioButton` no frontend, mas nao um modelo completo de gestos ou controles fisicos. O cancelamento de acoes existe em dominios especificos e no kill switch/policy, mas nao como experiencia unica de interacao. Esta frente depende do state machine de interatividade para que botao, wake word e gestos compartilhem o mesmo contrato.
 
-- [ ] G1. Padronizar gesto de iniciar e parar escuta
-  Notas: toque/hold no botao principal com fallback consistente para wake word em desktop e mobile.
+- [x] G1. Padronizar gesto de iniciar e parar escuta
+  Notas: `StartAudioButton` passou a emitir `voice-toggle`, `voice-activation` e `voice-deactivation`, com toque simples para toggle e hold para push-to-talk no mesmo contrato da Frente V.
 
-- [ ] G2. Criar gesto rapido de cancelar acao em andamento
-  Notas: botao de emergencia que chame cancelamento ou kill local sem exigir navegacao adicional.
+- [x] G2. Criar gesto rapido de cancelar acao em andamento
+  Notas: a sessao principal agora mostra botao `Cancelar agora` quando ha execucao, confirmacao ou background ativos e envia cancelamento imediato pelo canal existente.
 
-- [ ] G3. Permitir repetir ultima resposta ou acao
-  Notas: gesto simples para repetir audio ou refazer resposta; nao reexecutar acao destrutiva por padrao.
+- [x] G3. Permitir repetir ultima resposta ou acao
+  Notas: a UI ganhou repeticao segura da ultima resposta via `speechSynthesis`, sem reexecutar acoes destrutivas por padrao.
 
-- [ ] G4. Expor historico recente por gesto leve
-  Notas: swipe ou drawer com ultimas acoes, status e possivel retry.
+- [x] G4. Expor historico recente por gesto leve
+  Notas: a sessao principal agora abre um drawer compacto por swipe ou toque, mostrando ultimas acoes, status, tarefas em background e retry para falhas recentes.
 
 ---
 

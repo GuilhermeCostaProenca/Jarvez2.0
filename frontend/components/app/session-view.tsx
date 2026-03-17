@@ -4,9 +4,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpenText,
   Disc3,
+  GripHorizontal,
+  History,
   MessageCircleMore,
   PanelRightClose,
   PanelRightOpen,
+  RotateCcw,
+  Square,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -353,8 +357,10 @@ export const SessionView = ({
   const { messages } = useSessionMessages(session);
   const [chatOpen, setChatOpen] = useState(false);
   const [integrationsMenuOpen, setIntegrationsMenuOpen] = useState(false);
+  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const vantaEffectRef = useRef<VantaEffect | null>(null);
+  const historySwipeStartYRef = useRef<number | null>(null);
   const opsDispatcherIdRef = useRef(
     `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   );
@@ -377,7 +383,14 @@ export const SessionView = ({
     codexTaskEvents,
     codexTaskHistory,
     voiceInteractivity,
+    pushToTalkActive,
+    isActionInProgress,
+    recentInteractions,
+    hasReplayableResponse,
     securitySession,
+    repeatLastResponse,
+    retryRecentInteraction,
+    cancelActiveInteraction,
     confirmPendingAction,
     cancelPendingAction,
   } = useAgentActionEvents();
@@ -458,6 +471,30 @@ export const SessionView = ({
   const hasCompactFeedbackRow =
     Boolean(voiceInteractivity?.state && voiceInteractivity.state !== 'idle') ||
     backgroundSummaries.length > 0;
+  const shouldShowEmergencyCancel =
+    isActionInProgress || assistantUiState === 'executing' || assistantUiState === 'background';
+  const shouldShowHistoryHandle =
+    recentInteractions.length > 0 || hasReplayableResponse || backgroundSummaries.length > 0;
+
+  const handleHistoryGestureStart = (clientY: number) => {
+    historySwipeStartYRef.current = clientY;
+  };
+
+  const handleHistoryGestureEnd = (clientY: number) => {
+    const startY = historySwipeStartYRef.current;
+    historySwipeStartYRef.current = null;
+    if (startY == null) {
+      return;
+    }
+    const delta = startY - clientY;
+    if (delta > 36) {
+      setHistoryDrawerOpen(true);
+      return;
+    }
+    if (delta < -36) {
+      setHistoryDrawerOpen(false);
+    }
+  };
 
   useEffect(() => {
     const loadScript = (src: string): Promise<boolean> => {
@@ -909,6 +946,39 @@ export const SessionView = ({
                   {contextLabel}
                 </span>
                 <div className="ml-auto flex items-center gap-2">
+                  {hasReplayableResponse && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={repeatLastResponse}
+                    >
+                      <RotateCcw className="size-4" />
+                      <span>Repetir</span>
+                    </Button>
+                  )}
+                  {shouldShowEmergencyCancel && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => void cancelActiveInteraction()}
+                    >
+                      <Square className="size-4" />
+                      <span>Cancelar agora</span>
+                    </Button>
+                  )}
+                  {shouldShowHistoryHandle && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setHistoryDrawerOpen((current) => !current)}
+                    >
+                      <History className="size-4" />
+                      <span>Recentes</span>
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     size="sm"
@@ -962,6 +1032,12 @@ export const SessionView = ({
                         <span className="text-white/70">{assistantHint}</span>
                       </div>
 
+                      {pushToTalkActive && (
+                        <div className="rounded-full border border-cyan-300/30 bg-cyan-500/10 px-2.5 py-1 text-[11px] text-cyan-100">
+                          Push-to-talk ativo: solte para processar.
+                        </div>
+                      )}
+
                       {backgroundSummaries.map((entry) => (
                         <div
                           key={entry.key}
@@ -972,6 +1048,32 @@ export const SessionView = ({
                           <span>{entry.detail}</span>
                         </div>
                       ))}
+
+                      {shouldShowEmergencyCancel && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          className="h-7 rounded-full px-3 text-[11px]"
+                          onClick={() => void cancelActiveInteraction()}
+                        >
+                          <Square className="size-3.5" />
+                          <span>Cancelar</span>
+                        </Button>
+                      )}
+
+                      {hasReplayableResponse && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="h-7 rounded-full px-3 text-[11px]"
+                          onClick={repeatLastResponse}
+                        >
+                          <RotateCcw className="size-3.5" />
+                          <span>Repetir audio</span>
+                        </Button>
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -1116,6 +1218,116 @@ export const SessionView = ({
             </motion.aside>
           )}
         </AnimatePresence>
+
+        <AnimatePresence>
+          {historyDrawerOpen && shouldShowHistoryHandle && (
+            <motion.aside
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 24 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="pointer-events-auto fixed inset-x-3 bottom-28 z-[120] mx-auto w-auto max-w-md rounded-3xl border border-white/10 bg-black/70 p-3 shadow-2xl backdrop-blur-xl md:right-4 md:left-auto md:mx-0"
+              onTouchStart={(event) => handleHistoryGestureStart(event.touches[0]?.clientY ?? 0)}
+              onTouchEnd={(event) => handleHistoryGestureEnd(event.changedTouches[0]?.clientY ?? 0)}
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">Recentes</p>
+                  <p className="text-[11px] text-white/50">
+                    Ultimas acoes, tarefas em background e retry rapido.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setHistoryDrawerOpen(false)}
+                >
+                  <PanelRightClose className="size-4" />
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {recentInteractions.length === 0 ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-[11px] text-white/60">
+                    Ainda nao ha acoes recentes para mostrar.
+                  </div>
+                ) : (
+                  recentInteractions.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-white"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <span className="font-medium text-white">{entry.title}</span>
+                            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white/60">
+                              {entry.status === 'running'
+                                ? 'Em andamento'
+                                : entry.status === 'failed'
+                                  ? 'Falhou'
+                                  : entry.status === 'completed'
+                                    ? 'Concluida'
+                                    : entry.status === 'confirmation_required'
+                                      ? 'Confirmacao'
+                                      : 'Recente'}
+                            </span>
+                            <span className="text-white/40">
+                              {new Date(entry.timestamp).toLocaleTimeString('pt-BR', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-white/70">{entry.message}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {entry.retryable && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              className="h-8 rounded-full px-3 text-[11px]"
+                              onClick={() => void retryRecentInteraction(entry)}
+                            >
+                              Retry
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className="h-8 rounded-full px-3 text-[11px]"
+                            onClick={repeatLastResponse}
+                          >
+                            Ouvir
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.aside>
+          )}
+        </AnimatePresence>
+
+        {shouldShowHistoryHandle && (
+          <div className="pointer-events-auto mb-3 flex justify-center">
+            <button
+              type="button"
+              className="flex items-center gap-2 rounded-full border border-white/10 bg-black/45 px-3 py-1.5 text-[11px] text-white/75 backdrop-blur-md transition-colors hover:bg-black/60"
+              onClick={() => setHistoryDrawerOpen((current) => !current)}
+              onTouchStart={(event) => handleHistoryGestureStart(event.touches[0]?.clientY ?? 0)}
+              onTouchEnd={(event) => handleHistoryGestureEnd(event.changedTouches[0]?.clientY ?? 0)}
+            >
+              <GripHorizontal className="size-4" />
+              <span>{historyDrawerOpen ? 'Fechar recentes' : 'Deslize para ver recentes'}</span>
+              <History className="size-4" />
+            </button>
+          </div>
+        )}
 
         <div className="relative mx-auto max-w-2xl bg-transparent pb-3 opacity-75 transition-opacity duration-200 focus-within:opacity-100 hover:opacity-100 md:pb-12">
           <AgentControlBar

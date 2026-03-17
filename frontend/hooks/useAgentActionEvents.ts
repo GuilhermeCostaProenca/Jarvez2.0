@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useChat, useRoomContext, useTextStream, useVoiceAssistant } from '@livekit/components-react';
 import {
@@ -139,6 +139,34 @@ interface SpeechRecognitionConstructorLike {
   new (): SpeechRecognitionLike;
 }
 
+interface RecentInteractionEntry {
+  id: string;
+  title: string;
+  status: ActionExecutionEvent['status'] | 'running';
+  timestamp: number;
+  message: string;
+  retryable: boolean;
+  actionName?: string;
+  source: 'action' | 'background';
+}
+
+const ACTIVE_VOICE_STATES = new Set<VoiceInteractivityStateValue>([
+  'listening',
+  'transcribing',
+  'thinking',
+  'confirming',
+  'executing',
+  'background',
+  'speaking',
+]);
+
+function formatActionLabel(actionName?: string): string {
+  if (!actionName) {
+    return 'ultima acao';
+  }
+  return actionName.replaceAll('_', ' ');
+}
+
 function safeParseJson<T>(value: string): T | null {
   try {
     return JSON.parse(value) as T;
@@ -242,6 +270,7 @@ export function useAgentActionEvents() {
   const visualVoiceNoticeAt = useRef<Map<string, number>>(new Map());
   const lastPublishedVoiceState = useRef<string>('');
   const lastWakeWordAt = useRef<number>(0);
+  const voiceInteractivityRef = useRef<VoiceInteractivityState | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingActionConfirmation | null>(
     null
   );
@@ -299,6 +328,8 @@ export function useAgentActionEvents() {
   const [workflowState, setWorkflowState] = useState<WorkflowState | null>(null);
   const [automationState, setAutomationState] = useState<AutomationState | null>(null);
   const [voiceInteractivity, setVoiceInteractivity] = useState<VoiceInteractivityState | null>(null);
+  const [pushToTalkActive, setPushToTalkActive] = useState(false);
+  const [lastReplayableMessage, setLastReplayableMessage] = useState('');
   const [securitySession, setSecuritySession] = useState<SecuritySessionState>({
     authenticated: false,
     identityBound: false,
@@ -331,6 +362,25 @@ export function useAgentActionEvents() {
     setWorkflowState(readStoredWorkflowState());
     setAutomationState(readStoredAutomationState());
   }, []);
+
+  useEffect(() => {
+    voiceInteractivityRef.current = voiceInteractivity;
+    if (
+      voiceInteractivity?.spoken_message?.trim() ||
+      voiceInteractivity?.display_message?.trim()
+    ) {
+      setLastReplayableMessage(
+        voiceInteractivity.spoken_message?.trim() || voiceInteractivity.display_message?.trim() || ''
+      );
+    }
+    if (
+      pushToTalkActive &&
+      voiceInteractivity?.state &&
+      !['listening', 'transcribing', 'thinking'].includes(voiceInteractivity.state)
+    ) {
+      setPushToTalkActive(false);
+    }
+  }, [pushToTalkActive, voiceInteractivity]);
 
   const pushEvent = useCallback((event: ActionExecutionEvent) => {
     setEvents((current) => [event, ...current].slice(0, 12));
@@ -544,6 +594,86 @@ export function useAgentActionEvents() {
     [room]
   );
 
+  const setClientVoiceInteractivity = useCallback(
+    (payload: {
+      state: VoiceInteractivityStateValue;
+      activationMode?: string;
+      rawClientState?: string;
+      displayMessage?: string;
+      spokenMessage?: string;
+      errorCode?: string;
+      canRetry?: boolean;
+      wakeWordAvailable?: boolean;
+    }) => {
+      const nextState: VoiceInteractivityState = {
+        state: payload.state,
+        source: 'client',
+        activation_mode: payload.activationMode,
+        raw_client_state: payload.rawClientState,
+        display_message: payload.displayMessage,
+        spoken_message: payload.spokenMessage,
+        error_code: payload.errorCode,
+        can_retry: payload.canRetry,
+        wake_word_available:
+          payload.wakeWordAvailable ?? voiceInteractivityRef.current?.wake_word_available,
+        updated_at: new Date().toISOString(),
+      };
+      setVoiceInteractivity(nextState);
+      publishClientVoiceState(payload);
+    },
+    [publishClientVoiceState]
+  );
+
+  const speakReplayText = useCallback(
+    (text: string) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        toast.message('Repeticao de audio indisponivel neste navegador.');
+        return;
+      }
+
+      const activationMode = voiceInteractivityRef.current?.activation_mode ?? 'button';
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'pt-BR';
+      utterance.rate = 1.04;
+      utterance.pitch = 1.01;
+      utterance.onstart = () => {
+        setClientVoiceInteractivity({
+          state: 'speaking',
+          activationMode,
+          rawClientState: 'gesture_repeat_start',
+          displayMessage: 'Repetindo a ultima resposta.',
+          spokenMessage: text,
+        });
+      };
+      utterance.onend = () => {
+        setClientVoiceInteractivity({
+          state: 'idle',
+          activationMode,
+          rawClientState: 'gesture_repeat_end',
+          displayMessage: 'Pronto.',
+        });
+      };
+      utterance.onerror = () => {
+        setClientVoiceInteractivity({
+          state: 'error',
+          activationMode,
+          rawClientState: 'gesture_repeat_error',
+          displayMessage: 'Nao consegui repetir a ultima resposta.',
+          errorCode: 'repeat_audio_error',
+          canRetry: true,
+        });
+      };
+
+      try {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        toast.error('Nao consegui repetir a ultima resposta.');
+      }
+    },
+    [setClientVoiceInteractivity]
+  );
+
   useEffect(() => {
     const mappedState = mapVoiceAssistantState(voiceAssistantState);
     publishClientVoiceState({
@@ -570,24 +700,75 @@ export function useAgentActionEvents() {
       return;
     }
 
-    const handleActivation = (event: Event) => {
-      const customEvent = event as CustomEvent<{ mode?: string }>;
-      publishClientVoiceState({
+    const activateListening = (mode?: string) => {
+      const activationMode =
+        mode === 'wake_word'
+          ? 'wake_word'
+          : mode === 'push_to_talk'
+            ? 'push_to_talk'
+            : 'button';
+      if (activationMode === 'push_to_talk') {
+        setPushToTalkActive(true);
+      }
+      setClientVoiceInteractivity({
         state: 'listening',
-        activationMode: customEvent.detail?.mode === 'wake_word' ? 'wake_word' : 'button',
-        rawClientState: 'manual_activation',
+        activationMode,
+        rawClientState:
+          activationMode === 'push_to_talk' ? 'push_to_talk_start' : 'manual_activation',
         displayMessage:
-          customEvent.detail?.mode === 'wake_word'
+          activationMode === 'wake_word'
             ? 'Wake word detectado.'
-            : 'Escuta ativada.',
+            : activationMode === 'push_to_talk'
+              ? 'Segure e fale.'
+              : 'Escuta ativada.',
       });
     };
 
+    const deactivateListening = (mode?: string) => {
+      const activationMode = mode === 'push_to_talk' ? 'push_to_talk' : 'button';
+      if (activationMode === 'push_to_talk') {
+        setPushToTalkActive(false);
+      }
+      setClientVoiceInteractivity({
+        state: activationMode === 'push_to_talk' ? 'transcribing' : 'idle',
+        activationMode,
+        rawClientState:
+          activationMode === 'push_to_talk' ? 'push_to_talk_release' : 'manual_deactivation',
+        displayMessage:
+          activationMode === 'push_to_talk' ? 'Processando sua fala.' : 'Escuta pausada.',
+      });
+    };
+
+    const handleActivation = (event: Event) => {
+      const customEvent = event as CustomEvent<{ mode?: string }>;
+      activateListening(customEvent.detail?.mode);
+    };
+
+    const handleDeactivation = (event: Event) => {
+      const customEvent = event as CustomEvent<{ mode?: string }>;
+      deactivateListening(customEvent.detail?.mode);
+    };
+
+    const handleToggle = (event: Event) => {
+      const customEvent = event as CustomEvent<{ mode?: string }>;
+      const currentState =
+        voiceInteractivityRef.current?.state ?? mapVoiceAssistantState(voiceAssistantState);
+      if (ACTIVE_VOICE_STATES.has(currentState)) {
+        deactivateListening(customEvent.detail?.mode);
+        return;
+      }
+      activateListening(customEvent.detail?.mode);
+    };
+
     window.addEventListener('jarvez:voice-activation', handleActivation as EventListener);
+    window.addEventListener('jarvez:voice-deactivation', handleDeactivation as EventListener);
+    window.addEventListener('jarvez:voice-toggle', handleToggle as EventListener);
     return () => {
       window.removeEventListener('jarvez:voice-activation', handleActivation as EventListener);
+      window.removeEventListener('jarvez:voice-deactivation', handleDeactivation as EventListener);
+      window.removeEventListener('jarvez:voice-toggle', handleToggle as EventListener);
     };
-  }, [publishClientVoiceState]);
+  }, [setClientVoiceInteractivity, voiceAssistantState]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1574,6 +1755,168 @@ export function useAgentActionEvents() {
     upsertCodexTaskHistory,
   ]);
 
+  const recentInteractions = useMemo<RecentInteractionEntry[]>(() => {
+    const backgroundEntries: RecentInteractionEntry[] = [];
+    if (browserTask?.status === 'running') {
+      backgroundEntries.push({
+        id: `browser-${browserTask.task_id ?? 'running'}`,
+        title: 'Browser agent',
+        status: 'running',
+        timestamp: Date.now(),
+        message: browserTask.summary ?? browserTask.request ?? 'Automacao em andamento.',
+        retryable: false,
+        source: 'background',
+      });
+    }
+    if (workflowState && ['planning', 'awaiting_confirmation', 'running'].includes(workflowState.status ?? '')) {
+      backgroundEntries.push({
+        id: `workflow-${workflowState.workflow_id ?? workflowState.status ?? 'running'}`,
+        title: 'Workflow',
+        status: 'running',
+        timestamp: Date.now(),
+        message: workflowState.summary ?? workflowState.current_step ?? 'Fluxo em andamento.',
+        retryable: false,
+        source: 'background',
+      });
+    }
+    if (automationState && ['scheduled', 'running'].includes(automationState.status ?? '')) {
+      backgroundEntries.push({
+        id: `automation-${automationState.automation_id ?? automationState.status ?? 'running'}`,
+        title: 'Automacao',
+        status: 'running',
+        timestamp: Date.now(),
+        message: automationState.summary ?? 'Automacao ativa.',
+        retryable: false,
+        source: 'background',
+      });
+    }
+    if (activeCodexTask?.status === 'running') {
+      backgroundEntries.push({
+        id: `codex-${activeCodexTask.task_id ?? 'running'}`,
+        title: 'Codex',
+        status: 'running',
+        timestamp: Date.now(),
+        message: activeCodexTask.summary ?? activeCodexTask.request ?? 'Tarefa de codigo em andamento.',
+        retryable: false,
+        source: 'background',
+      });
+    }
+
+    const actionEntries = events.map((event) => ({
+      id: event.callId,
+      title: formatActionLabel(event.actionName),
+      status: event.status,
+      timestamp: event.timestamp,
+      message: event.message ?? 'Sem detalhe adicional.',
+      retryable: event.status === 'failed',
+      actionName: event.actionName,
+      source: 'action' as const,
+    }));
+
+    return [...backgroundEntries, ...actionEntries].slice(0, 8);
+  }, [activeCodexTask, automationState, browserTask, events, workflowState]);
+
+  const hasReplayableResponse = Boolean(lastReplayableMessage.trim());
+  const isActionInProgress =
+    Boolean(pendingConfirmation) ||
+    Boolean(
+      voiceInteractivity?.state &&
+        ['thinking', 'confirming', 'executing', 'background'].includes(voiceInteractivity.state)
+    ) ||
+    recentInteractions.some((entry) => entry.status === 'running');
+
+  const repeatLastResponse = useCallback(() => {
+    const text =
+      lastReplayableMessage.trim() ||
+      voiceInteractivityRef.current?.spoken_message?.trim() ||
+      voiceInteractivityRef.current?.display_message?.trim() ||
+      '';
+    if (!text) {
+      toast.message('Nao ha resposta recente para repetir.');
+      return;
+    }
+    speakReplayText(text);
+  }, [lastReplayableMessage, speakReplayText]);
+
+  const cancelActiveInteraction = useCallback(async () => {
+    if (!isActionInProgress) {
+      toast.message('Nenhuma acao em andamento para cancelar.');
+      return;
+    }
+
+    if (pendingConfirmation) {
+      setPendingConfirmation(null);
+    }
+    setPushToTalkActive(false);
+    setClientVoiceInteractivity({
+      state: 'thinking',
+      activationMode: voiceInteractivityRef.current?.activation_mode ?? 'button',
+      rawClientState: 'gesture_cancel_request',
+      displayMessage: 'Cancelando agora.',
+      spokenMessage: 'Cancelando agora.',
+      canRetry: true,
+    });
+
+    try {
+      await send(
+        'Cancelar a acao em andamento e qualquer tarefa em segundo plano que possa ser interrompida com seguranca.'
+      );
+      toast.message('Pedido de cancelamento enviado.');
+      setClientVoiceInteractivity({
+        state: 'idle',
+        activationMode: voiceInteractivityRef.current?.activation_mode ?? 'button',
+        rawClientState: 'gesture_cancel_sent',
+        displayMessage: 'Cancelamento enviado.',
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Nao consegui enviar o cancelamento.';
+      toast.error(message);
+      setClientVoiceInteractivity({
+        state: 'error',
+        activationMode: voiceInteractivityRef.current?.activation_mode ?? 'button',
+        rawClientState: 'gesture_cancel_error',
+        displayMessage: message,
+        errorCode: 'gesture_cancel_error',
+        canRetry: true,
+      });
+    }
+  }, [isActionInProgress, pendingConfirmation, send, setClientVoiceInteractivity]);
+
+  const retryRecentInteraction = useCallback(
+    async (entry: RecentInteractionEntry) => {
+      if (!entry.retryable) {
+        return;
+      }
+
+      setClientVoiceInteractivity({
+        state: 'confirming',
+        activationMode: voiceInteractivityRef.current?.activation_mode ?? 'button',
+        rawClientState: 'gesture_retry_request',
+        displayMessage: `Tentando novamente ${entry.title}.`,
+      });
+
+      try {
+        await send(
+          `Tente novamente a acao ${entry.actionName ?? entry.title}, considerando o ultimo contexto e pedindo clarificacao se houver ambiguidade.`
+        );
+        toast.message('Retry enviado ao Jarvez.');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Nao consegui reenviar a acao.';
+        toast.error(message);
+        setClientVoiceInteractivity({
+          state: 'error',
+          activationMode: voiceInteractivityRef.current?.activation_mode ?? 'button',
+          rawClientState: 'gesture_retry_error',
+          displayMessage: message,
+          errorCode: 'gesture_retry_error',
+          canRetry: true,
+        });
+      }
+    },
+    [send, setClientVoiceInteractivity]
+  );
+
   const confirmPendingAction = useCallback(async () => {
     if (!pendingConfirmation) {
       return;
@@ -1631,9 +1974,16 @@ export function useAgentActionEvents() {
     workflowState,
     automationState,
     voiceInteractivity,
+    pushToTalkActive,
+    isActionInProgress,
+    recentInteractions,
+    hasReplayableResponse,
     codexTaskEvents,
     codexTaskHistory,
     securitySession,
+    repeatLastResponse,
+    retryRecentInteraction,
+    cancelActiveInteraction,
     confirmPendingAction,
     cancelPendingAction,
   };
