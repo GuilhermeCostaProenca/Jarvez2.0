@@ -201,8 +201,8 @@ Contexto tecnico: esta frente depende de camera estavel e pipeline de landmarks 
 
 ## Riscos abertos
 
-- [ ] Falso positivo de identidade contextual
-  Notas: mitigar com thresholds conservadores, fusao de sinais (`voice`, `face`, `voice+face`) e nunca usar identidade como permissao automatica.
+- [x] Falso positivo de identidade contextual
+  Notas: mitigado com thresholds conservadores em speaker_id.py e face_id.py, fusao de sinais e identidade nunca usada como permissao automatica.
 
 - [x] Pipeline de camera consumir recursos demais
   Notas: mitigado com amostragem (pose a cada 5 frames), OpenCV como primeira linha, lazy import de mediapipe e telemetria local de FPS/erros.

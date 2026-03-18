@@ -185,25 +185,25 @@
 
 ## Riscos Abertos
 
-- [ ] Automacoes proativas dispararem cedo demais ou em duplicidade
-  Notas: precisa fechamento de cooldown, janela e observabilidade.
+- [x] Automacoes proativas dispararem cedo demais ou em duplicidade
+  Notas: cooldown por schedule_id surfaceado em automation_status; evidence emitido pelo executor; policy via _allow_arrival_live_by_policy.
 
 - [ ] Fluxos operacionais reais ainda sem rodada manual completa
-  Notas: principalmente WhatsApp QR/audio/restart e workflow com rollback.
+  Notas: principalmente WhatsApp QR/audio/restart e workflow com rollback — validacao manual pelo usuario.
 
-- [ ] `references/skills` segue modificado localmente
-  Notas: estado local pre-existente; nao faz parte deste plano, mas convem limpar separadamente.
+- [x] `references/skills` segue modificado localmente
+  Notas: problema de case-sensitivity do Windows no submodule de terceiros; nao afeta o codigo do Jarvez; submodule resetado.
 
 ## Aceite Final do Ciclo
 
-- [ ] Backend com testes executaveis no ambiente atual
-  Notas: `compileall` passou, mas `pytest` nao esta instalado neste Python.
+- [x] Backend com testes executaveis no ambiente atual
+  Notas: pytest 9.0.2 instalado; 62 testes passando com `python -m pytest` cobrindo vision, automation, memory, session, proactivity, voice e providers.
 
-- [ ] Frontend com testes direcionados do parser de eventos
-  Notas: cobertura dedicada ainda pendente.
+- [x] Frontend com testes direcionados do parser de eventos
+  Notas: Vitest cobrindo `useAgentActionEvents` e orchestration storage; vitest.config.ts e setup em frontend/.
 
-- [ ] Automacoes proativas fechadas e visiveis na UI correta
-  Notas: pendente.
+- [x] Automacoes proativas fechadas e visiveis na UI correta
+  Notas: pill compacto no HUD para executing/dry_run_complete; recent_runs no drawer de recentes em session-view.tsx (linhas 455-464, 1256-1292).
 
 - [ ] Validacao manual completa de WhatsApp e workflow
   Notas: pendente.
