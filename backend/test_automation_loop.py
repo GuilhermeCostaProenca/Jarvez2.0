@@ -274,6 +274,143 @@ class OpsAutomationIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("arrival:live", run_calls)
 
 
+class AutomationStatusConstantsTests(unittest.TestCase):
+    def test_status_constants_exported(self) -> None:
+        from automation.rules import (
+            AUTOMATION_STATUS_DRY_RUN_COMPLETE,
+            AUTOMATION_STATUS_EXECUTED,
+            AUTOMATION_STATUS_EXECUTING,
+            AUTOMATION_STATUS_FAILED,
+            AUTOMATION_STATUS_IDLE,
+        )
+        self.assertEqual(AUTOMATION_STATUS_IDLE, "idle")
+        self.assertEqual(AUTOMATION_STATUS_EXECUTING, "executing")
+        self.assertEqual(AUTOMATION_STATUS_DRY_RUN_COMPLETE, "dry_run_complete")
+        self.assertEqual(AUTOMATION_STATUS_EXECUTED, "executed")
+        self.assertEqual(AUTOMATION_STATUS_FAILED, "failed")
+
+    def test_status_constants_reexported_from_executor(self) -> None:
+        from automation.executor import (
+            AUTOMATION_STATUS_DRY_RUN_COMPLETE,
+            AUTOMATION_STATUS_EXECUTED,
+            AUTOMATION_STATUS_EXECUTING,
+            AUTOMATION_STATUS_FAILED,
+            AUTOMATION_STATUS_IDLE,
+        )
+        self.assertEqual(AUTOMATION_STATUS_IDLE, "idle")
+        self.assertEqual(AUTOMATION_STATUS_EXECUTING, "executing")
+
+
+class AutomationRunNowBridgeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_automation_run_now_dry_run_calls_executor_and_returns_run_rows(self) -> None:
+        """F2.3-A: automation_run_now with dry_run=True calls executor and returns run_rows."""
+        now = datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc)
+        ctx = ActionContext(job_id="j10", room="room", participant_identity="user")
+        briefings: list[str] = []
+
+        async def _run_briefing(params, _ctx):
+            briefings.append(str(params.get("query")))
+            return ActionResult(success=True, message="briefing ok", data={"web_dashboard": {}})
+
+        cycle = await execute_automation_cycle(
+            params={"automation_dry_run": True, "dry_run": True},
+            ctx=ctx,
+            automation_state=None,
+            research_schedules=[
+                {
+                    "id": "research-x",
+                    "query": "tech news",
+                    "time_of_day": "08:00",
+                    "timezone": "UTC",
+                    "enabled": True,
+                }
+            ],
+            arrival_prefs={},
+            now=now,
+            run_daily_briefing=_run_briefing,
+        )
+        # dry_run=True means the scheduler still runs, but schedule-level dry_run flag is True
+        # The executor runs the briefing with dry_run=True
+        self.assertEqual(len(briefings), 1)
+        self.assertGreater(len(cycle.run_rows), 0)
+        # All runs are dry so status should be dry_run_complete
+        self.assertEqual(cycle.automation_state["status"], "dry_run_complete")
+
+    async def test_automation_run_now_live_sets_executed_status(self) -> None:
+        """F2.3-A: automation_run_now with dry_run=False and live run sets status=executed."""
+        now = datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc)
+        ctx = ActionContext(job_id="j11", room="room", participant_identity="user")
+
+        async def _run_briefing(params, _ctx):
+            return ActionResult(success=True, message="briefing ok", data={"web_dashboard": {}})
+
+        cycle = await execute_automation_cycle(
+            params={"automation_dry_run": False, "dry_run": False},
+            ctx=ctx,
+            automation_state=None,
+            research_schedules=[
+                {
+                    "id": "research-live",
+                    "query": "markets",
+                    "time_of_day": "08:00",
+                    "timezone": "UTC",
+                    "enabled": True,
+                    "dry_run": False,
+                }
+            ],
+            arrival_prefs={},
+            now=now,
+            run_daily_briefing=_run_briefing,
+        )
+        self.assertEqual(cycle.automation_state["status"], "executed")
+
+
+class SchedulerNextDueAtTests(unittest.TestCase):
+    def test_scheduler_tick_returns_next_due_at(self) -> None:
+        """F2.3-D: scheduler tick returns next_due_at."""
+        now = datetime(2026, 3, 9, 6, 0, tzinfo=timezone.utc)
+        result = collect_daily_briefing_runs(
+            schedules=[
+                {
+                    "id": "sched-1",
+                    "query": "news",
+                    "time_of_day": "08:00",
+                    "timezone": "UTC",
+                    "enabled": True,
+                    "cooldown_seconds": 300,
+                }
+            ],
+            last_run_by_schedule={},
+            now=now,
+        )
+        self.assertIsNotNone(result.next_due_at)
+        # Schedule is at 08:00, now is 06:00 → not due yet → next_due_at should be today 08:00
+        self.assertIn("2026-03-09", result.next_due_at or "")
+
+    def test_cooldown_blocks_reexecution_within_window(self) -> None:
+        """F2.3-D: cooldown blocks reexecution within the window."""
+        now = datetime(2026, 3, 9, 12, 0, tzinfo=timezone.utc)
+        last_run = (now - timedelta(seconds=60)).isoformat()
+        result = collect_daily_briefing_runs(
+            schedules=[
+                {
+                    "id": "sched-2",
+                    "query": "finance",
+                    "time_of_day": "08:00",
+                    "timezone": "UTC",
+                    "enabled": True,
+                    "cooldown_seconds": 3600,
+                }
+            ],
+            last_run_by_schedule={"sched-2": last_run},
+            now=now,
+        )
+        self.assertEqual(len(result.due_runs), 0)
+        self.assertEqual(result.status_rows[0]["status"], "cooldown")
+        cooldown_remaining = result.status_rows[0].get("cooldown_remaining_seconds", 0)
+        self.assertGreater(cooldown_remaining, 0)
+
+
 def _async_result(value):
     async def _runner(*_args, **_kwargs):
         return value

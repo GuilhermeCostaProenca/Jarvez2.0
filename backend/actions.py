@@ -65,6 +65,9 @@ from actions_core import (
     register_action,
 )
 from actions_core.dispatch import merge_event_state
+from automation.executor import execute_automation_cycle
+from automation.rules import AUTOMATION_STATUS_EXECUTING
+from automation.scheduler import collect_daily_briefing_runs
 from actions_domains import (
     ac_apply_preset as domain_ac_apply_preset,
     ac_configure_arrival_prefs as domain_ac_configure_arrival_prefs,
@@ -6719,11 +6722,95 @@ async def _build_whatsapp_channel_status_result() -> ActionResult:
     )
 
 
+async def _run_web_briefing_via_actions(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    """Adapter: invokes the web_search_dashboard domain handler for automation cycles."""
+    return await domain_web_search_dashboard(
+        params,
+        ctx,
+        collapse_spaces=_collapse_spaces,
+        run_web_search=_run_web_search,
+        build_summary=_build_web_dashboard_summary,
+        frontend_dashboard_url=_frontend_dashboard_url,
+    )
+
+
+async def _run_arrival_prepare_via_actions(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    """Adapter: invokes the ac_prepare_arrival domain handler for automation cycles."""
+    return await _ac_prepare_arrival(params, ctx)
+
+
+def _allow_arrival_live_by_policy(ctx: ActionContext, trigger: JsonObject) -> tuple[bool, JsonObject]:
+    """Evaluate whether arrival live execution is allowed under current policy."""
+    try:
+        from policy import (
+            classify_action_risk,
+            evaluate_policy,
+            get_domain_trust,
+            get_effective_autonomy_mode,
+            get_trust_drift,
+            is_blocked,
+        )
+    except Exception:
+        return False, {"decision": "deny", "reason": "policy_module_unavailable"}
+
+    domain = "home"
+    kill_active, kill_reason = is_blocked(domain=domain)
+    trust = get_domain_trust(domain)
+    trust_drift = get_trust_drift(ctx.participant_identity, ctx.room, domain)
+    policy_eval = evaluate_policy(
+        risk=classify_action_risk("ac_prepare_arrival"),
+        mode=get_effective_autonomy_mode(ctx.participant_identity, ctx.room, domain=domain),
+        requires_confirmation=False,
+        kill_switch_active=kill_active,
+        kill_switch_reason=kill_reason,
+        domain=domain,
+        domain_trust_score=trust.score,
+        trust_drift_active=bool(trust_drift and trust_drift.active),
+        trust_drift_reason=(trust_drift.reason if trust_drift else None),
+    )
+    decision = str(policy_eval.decision)
+    details: JsonObject = {
+        "decision": decision,
+        "reason": policy_eval.reason,
+        "domain": domain,
+        "trigger": trigger.get("source"),
+    }
+    allow_live = decision in {"allow", "allow_with_log", "allow_with_guardrail"}
+    return allow_live, details
+
+
 async def _automation_status(params: JsonObject, ctx: ActionContext) -> ActionResult:
     _ = params
     automation_state = _load_event_namespace(ctx.participant_identity, ctx.room, "automation_state")
     proactivity_state = _load_event_namespace(ctx.participant_identity, ctx.room, PROACTIVITY_NAMESPACE)
     research_schedules = _load_event_namespace(ctx.participant_identity, ctx.room, "research_schedules")
+
+    # Compute recent_runs from loop state
+    loop_state = automation_state.get("loop", {}) if isinstance(automation_state, dict) else {}
+    recent_runs = list(loop_state.get("recent_runs", []))[:5] if isinstance(loop_state.get("recent_runs"), list) else []
+
+    # Compute scheduler_status and next_due_at
+    scheduler_status_rows: list[Any] = []
+    next_due_at: str | None = None
+    control_loop_enabled = bool(
+        str(os.getenv("JARVEZ_CONTROL_LOOP_ENABLED", "0")).strip() not in {"0", "false", "off", "no"}
+    )
+    if isinstance(research_schedules, list) and research_schedules:
+        daily_briefing_state = loop_state.get("daily_briefing", {}) if isinstance(loop_state, dict) else {}
+        last_run_by_schedule = daily_briefing_state.get("last_run_by_schedule", {}) if isinstance(daily_briefing_state, dict) else {}
+        tick_result = collect_daily_briefing_runs(
+            schedules=research_schedules,
+            last_run_by_schedule=last_run_by_schedule,
+        )
+        scheduler_status_rows = tick_result.status_rows
+        next_due_at = tick_result.next_due_at
+
+    # Compute cooldown_remaining per schedule
+    cooldown_by_schedule: dict[str, int] = {}
+    for row in scheduler_status_rows:
+        if isinstance(row, dict) and row.get("id") and row.get("cooldown_remaining_seconds") is not None:
+            cooldown_by_schedule[str(row["id"])] = int(row["cooldown_remaining_seconds"])
+
     return ActionResult(
         success=True,
         message="Estado das automacoes carregado.",
@@ -6731,35 +6818,115 @@ async def _automation_status(params: JsonObject, ctx: ActionContext) -> ActionRe
             "automation_state": automation_state if isinstance(automation_state, dict) else None,
             "proactivity_state": proactivity_state if isinstance(proactivity_state, dict) else None,
             "research_schedules": research_schedules if isinstance(research_schedules, list) else [],
+            "recent_runs": recent_runs,
+            "scheduler_status": scheduler_status_rows,
+            "next_due_at": next_due_at,
+            "cooldown_remaining_by_schedule": cooldown_by_schedule,
+            "loop_enabled": control_loop_enabled,
         },
     )
 
 
 async def _automation_run_now(params: JsonObject, ctx: ActionContext) -> ActionResult:
     automation_type = str(params.get("automation_type") or "manual").strip().lower()
-    summary = "Execucao manual solicitada."
-    if automation_type == "daily_briefing":
-        schedules = _load_event_namespace(ctx.participant_identity, ctx.room, "research_schedules")
-        if not isinstance(schedules, list) or not schedules:
-            return ActionResult(
-                success=False,
-                message="Nenhum briefing diario configurado para executar agora.",
-                error="research_schedule_missing",
-            )
-        summary = "Briefing diario enfileirado para execucao manual."
-    automation_state = {
-        "automation_id": f"auto_{uuid.uuid4().hex[:10]}",
+    dry_run = bool(params.get("dry_run", True))
+
+    research_schedules = _load_event_namespace(ctx.participant_identity, ctx.room, "research_schedules")
+    current_automation_state = _load_event_namespace(ctx.participant_identity, ctx.room, "automation_state")
+    arrival_prefs = _load_ac_arrival_prefs()
+
+    if automation_type == "daily_briefing" and (not isinstance(research_schedules, list) or not research_schedules):
+        return ActionResult(
+            success=False,
+            message="Nenhum briefing diario configurado para executar agora.",
+            error="research_schedule_missing",
+        )
+
+    # Mark as executing immediately
+    run_id = f"auto_{uuid.uuid4().hex[:10]}"
+    executing_state: JsonObject = {
+        "automation_id": run_id,
         "automation_type": automation_type,
-        "status": "scheduled",
-        "summary": summary,
-        "dry_run": bool(params.get("dry_run", True)),
+        "status": AUTOMATION_STATUS_EXECUTING,
+        "summary": "Execucao manual em andamento.",
+        "dry_run": dry_run,
         "last_run_at": _now_iso(),
     }
-    _persist_event_namespace(ctx.participant_identity, ctx.room, "automation_state", automation_state)
+    _persist_event_namespace(ctx.participant_identity, ctx.room, "automation_state", executing_state)
+
+    # Build cycle params: force all schedules due by omitting time filter override
+    cycle_params: JsonObject = {
+        "automation_dry_run": dry_run,
+        "dry_run": dry_run,
+        "automation_type": automation_type,
+    }
+    # For manual run, mark every schedule as due by temporarily clearing last_run_by_schedule
+    if isinstance(current_automation_state, dict):
+        loop = current_automation_state.get("loop", {})
+        if isinstance(loop, dict):
+            daily_state = loop.get("daily_briefing", {})
+            if isinstance(daily_state, dict):
+                # Keep the existing state but allow manual override via force param
+                pass
+
+    try:
+        cycle_result = await execute_automation_cycle(
+            params=cycle_params,
+            ctx=ctx,
+            automation_state=current_automation_state,
+            research_schedules=research_schedules if isinstance(research_schedules, list) else [],
+            arrival_prefs=arrival_prefs if isinstance(arrival_prefs, dict) else {},
+            run_daily_briefing=_run_web_briefing_via_actions,
+            run_arrival_prepare=_run_arrival_prepare_via_actions,
+            allow_arrival_live=_allow_arrival_live_by_policy,
+        )
+    except Exception as exc:
+        failed_state: JsonObject = {
+            "automation_id": run_id,
+            "automation_type": automation_type,
+            "status": "failed",
+            "summary": f"Execucao falhou: {exc}",
+            "dry_run": dry_run,
+            "last_run_at": _now_iso(),
+            "error": str(exc),
+        }
+        _persist_event_namespace(ctx.participant_identity, ctx.room, "automation_state", failed_state)
+        await _publish_agent_event(ctx, {"type": "session_snapshot_update", "automation_state": failed_state})
+        return ActionResult(
+            success=False,
+            message=f"Execucao do ciclo falhou: {exc}",
+            error=str(exc),
+            data={"automation_state": failed_state},
+        )
+
+    # Persist updated state and emit snapshot
+    _persist_event_namespace(
+        ctx.participant_identity, ctx.room, "automation_state", cycle_result.automation_state
+    )
+    await _publish_agent_event(
+        ctx,
+        {"type": "session_snapshot_update", "automation_state": cycle_result.automation_state},
+    )
+
+    run_count = len(cycle_result.run_rows)
+    status_label = cycle_result.automation_state.get("status", "idle")
+    summary_msg = (
+        f"Automacao manual concluida: {run_count} etapa(s), status={status_label}, dry_run={dry_run}."
+    )
     return ActionResult(
         success=True,
-        message=summary,
-        data={"automation_state": automation_state},
+        message=summary_msg,
+        data={
+            "automation_state": cycle_result.automation_state,
+            "run_rows": cycle_result.run_rows,
+            "trace_rows": cycle_result.trace_rows[:10],
+            "evidence_rows": cycle_result.evidence_rows[:5],
+            "scheduler_status": cycle_result.scheduler_status,
+            "dry_run": dry_run,
+            "runs_executed": run_count,
+        },
+        trace_id=cycle_result.trace_id,
+        evidence=cycle_result.evidence_rows[0] if cycle_result.evidence_rows else None,
     )
 
 

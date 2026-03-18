@@ -452,11 +452,16 @@ export const SessionView = ({
         detail: workflowState.summary ?? workflowState.current_step ?? 'Fluxo em andamento.',
       });
     }
-    if (automationState && ['scheduled', 'running'].includes(automationState.status ?? '')) {
+    if (automationState && ['scheduled', 'running', 'executing', 'dry_run_complete'].includes(automationState.status ?? '')) {
+      const automationDetail = automationState.status === 'dry_run_complete'
+        ? 'Simulacao concluida — aguardando aprovacao.'
+        : automationState.status === 'executing'
+          ? `Executando: ${automationState.automation_type ?? 'automacao'}...`
+          : automationState.summary ?? 'Automacao ativa.';
       entries.push({
         key: `automation-${automationState.automation_id ?? automationState.status ?? 'running'}`,
         label: 'Automacao',
-        detail: automationState.summary ?? 'Automacao ativa.',
+        detail: automationDetail,
       });
     }
     if (activeCodexTask?.status === 'running') {
@@ -1248,11 +1253,47 @@ export const SessionView = ({
               </div>
 
               <div className="space-y-2">
-                {recentInteractions.length === 0 ? (
+                {automationState?.loop?.recent_runs && automationState.loop.recent_runs.length > 0 && (
+                  <div className="rounded-2xl border border-violet-300/20 bg-violet-500/8 px-3 py-2">
+                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-violet-300/80">
+                      Loop proativo
+                    </p>
+                    {automationState.loop.recent_runs.slice(0, 5).map((run, idx) => (
+                      <div
+                        key={run.trace_id ?? `run-${idx}`}
+                        className="mb-1 flex items-center gap-2 text-[11px]"
+                      >
+                        <span
+                          className={
+                            run.success
+                              ? 'text-emerald-300'
+                              : 'text-rose-300'
+                          }
+                        >
+                          {run.success ? '✓' : '✗'}
+                        </span>
+                        <span className="text-white/80">
+                          {run.automation_type ?? 'auto'} / {run.stage ?? run.action_name ?? '—'}
+                        </span>
+                        {run.dry_run && (
+                          <span className="rounded-full border border-amber-300/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-200">
+                            dry
+                          </span>
+                        )}
+                        {run.executed_at && (
+                          <span className="ml-auto text-white/40">
+                            {new Date(run.executed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {recentInteractions.length === 0 && !(automationState?.loop?.recent_runs?.length) ? (
                   <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-[11px] text-white/60">
                     Ainda nao ha acoes recentes para mostrar.
                   </div>
-                ) : (
+                ) : recentInteractions.length > 0 ? (
                   recentInteractions.map((entry) => (
                     <div
                       key={entry.id}
@@ -1307,7 +1348,7 @@ export const SessionView = ({
                       </div>
                     </div>
                   ))
-                )}
+                ) : null}
               </div>
             </motion.aside>
           )}

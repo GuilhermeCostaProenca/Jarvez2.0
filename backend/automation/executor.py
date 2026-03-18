@@ -7,6 +7,11 @@ from typing import Any, Awaitable, Callable
 from actions_core import ActionContext, ActionResult
 
 from .rules import (
+    AUTOMATION_STATUS_DRY_RUN_COMPLETE,
+    AUTOMATION_STATUS_EXECUTED,
+    AUTOMATION_STATUS_EXECUTING,
+    AUTOMATION_STATUS_FAILED,
+    AUTOMATION_STATUS_IDLE,
     append_bounded,
     build_evidence,
     build_trace_entry,
@@ -277,7 +282,17 @@ async def execute_automation_cycle(
     for trace in trace_rows:
         loop["recent_traces"] = append_bounded(loop["recent_traces"], trace, limit=120)
 
-    base_state["status"] = "executed" if run_rows else "idle"
+    all_dry = all(bool(r.get("dry_run")) for r in run_rows) if run_rows else True
+    any_failed = any(not bool(r.get("success")) for r in run_rows)
+    if not run_rows:
+        new_status = AUTOMATION_STATUS_IDLE
+    elif any_failed:
+        new_status = AUTOMATION_STATUS_FAILED
+    elif all_dry:
+        new_status = AUTOMATION_STATUS_DRY_RUN_COMPLETE
+    else:
+        new_status = AUTOMATION_STATUS_EXECUTED
+    base_state["status"] = new_status
     base_state["last_cycle_at"] = to_iso(utc_now)
     base_state["last_scheduler_due_at"] = scheduler_tick.next_due_at
     base_state["scheduler_status"] = scheduler_tick.status_rows[:20]

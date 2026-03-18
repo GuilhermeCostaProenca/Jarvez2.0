@@ -8,6 +8,13 @@ JsonObject = dict[str, Any]
 
 AUTOMATION_STATE_VERSION = "f2.3"
 
+# Intermediate execution status constants
+AUTOMATION_STATUS_IDLE = "idle"
+AUTOMATION_STATUS_EXECUTING = "executing"
+AUTOMATION_STATUS_DRY_RUN_COMPLETE = "dry_run_complete"
+AUTOMATION_STATUS_EXECUTED = "executed"
+AUTOMATION_STATUS_FAILED = "failed"
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)

@@ -36,8 +36,8 @@
 - [x] F2.2. WhatsApp bidirecional completo usando `whatsapp-mcp`, com rollback legado
   Notas: a referencia foi vendorizada em `references/whatsapp-mcp`, existe cliente/backend de integracao, journal persistido e fallback para Cloud API legado. Validar pareamento QR e fluxo completo ainda continua importante em ambiente real.
 
-- [ ] F2.3. Loop de contexto proativo de verdade
-  Notas: o substrato de automacao existe e ha partes de scheduler/trigger no backend, mas este item ainda precisa fechamento operacional, regras finais, status visivel e validacao ponta a ponta.
+- [x] F2.3. Loop de contexto proativo de verdade
+  Notas: implementado F2.3-A (bridge automation_run_now->executor), F2.3-B (background loop no agent.py ja existia com JARVEZ_CONTROL_LOOP_ENABLED), F2.3-C (constantes de status intermediario em rules.py e executor.py), F2.3-D (automation_status retorna recent_runs/scheduler_status/next_due_at/loop_enabled), F2.3-E (UI pill para executing/dry_run_complete e automation runs no drawer de recentes), F2.3-F (docs atualizados). Testes em backend/test_automation_loop.py.
 
 - [x] F2.4. Fluxo "tenho uma ideia" -> planejamento -> implementacao automatica
   Notas: `backend/workflows/` e `backend/actions_domains/workflows.py` ja existem, com `workflow_run/status/cancel/approve/resume`, persistencia e approval gates.
@@ -131,17 +131,17 @@
 
 ### F2.3
 
-- [ ] Fechar regras de scheduler e triggers
-  Notas: falta definicao final e validacao operacional.
+- [x] Fechar regras de scheduler e triggers
+  Notas: scheduler e triggers ja existiam; execute_automation_cycle agora e invocado de verdade pelo automation_run_now.
 
-- [ ] Expor `automation_status` e `automation_run_now`
-  Notas: revisar o que ja existe no backend e fechar o contrato realtime/UI.
+- [x] Expor `automation_status` e `automation_run_now`
+  Notas: automation_run_now agora invoca o executor; automation_status retorna recent_runs, scheduler_status, next_due_at, cooldown_by_schedule e loop_enabled.
 
-- [ ] Renderizar automacoes no Trust Center sem poluir a sessao principal
-  Notas: pendente.
+- [x] Renderizar automacoes no Trust Center sem poluir a sessao principal
+  Notas: pill compacto no HUD superior para executing/dry_run_complete; automation runs no drawer de recentes (Recentes).
 
-- [ ] Validar cooldown, evidence e protecoes de policy
-  Notas: pendente.
+- [x] Validar cooldown, evidence e protecoes de policy
+  Notas: cooldown surfaceado em automation_status; evidence emitido pelo executor e retornado pelo automation_run_now; policy avaliada via _allow_arrival_live_by_policy.
 
 ### F2.4
 
@@ -177,8 +177,8 @@
 - [x] F2.2 dependente do vendor da referencia
   Notas: concluido.
 
-- [ ] F2.3 dependente de F1.4 e ajustes finais de scheduler
-  Notas: base pronta, fechamento pendente.
+- [x] F2.3 dependente de F1.4 e ajustes finais de scheduler
+  Notas: concluido.
 
 - [x] F2.4 dependente de F1.4, F1.5 e split de dominios
   Notas: concluido.

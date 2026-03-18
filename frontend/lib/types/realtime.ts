@@ -720,16 +720,62 @@ export interface WorkflowState {
   error?: string;
 }
 
+export interface AutomationRunRow {
+  automation_type?: string;
+  source?: string;
+  stage?: string;
+  action_name?: string;
+  success?: boolean;
+  message?: string;
+  error?: string | null;
+  dry_run?: boolean;
+  trace_id?: string;
+  executed_at?: string;
+  schedule_id?: string | null;
+}
+
+export interface AutomationSchedulerStatus {
+  id?: string | null;
+  automation_type?: string;
+  query?: string;
+  enabled?: boolean;
+  status?: 'due' | 'pending' | 'cooldown' | 'already_ran' | 'disabled' | 'skipped' | string;
+  reason?: string;
+  timezone?: string;
+  time_of_day?: string | null;
+  next_due_at?: string;
+  last_run_at?: string;
+  cooldown_remaining_seconds?: number;
+}
+
 export interface AutomationState {
   automation_id?: string;
   automation_type?: string;
-  status?: 'idle' | 'scheduled' | 'running' | 'completed' | 'failed' | string;
+  status?: 'idle' | 'executing' | 'dry_run_complete' | 'executed' | 'scheduled' | 'running' | 'completed' | 'failed' | string;
   summary?: string;
   dry_run?: boolean;
   last_run_at?: string;
   next_run_at?: string;
   cooldown_remaining_seconds?: number;
   evidence?: Record<string, unknown> | null;
+  last_cycle_at?: string;
+  last_scheduler_due_at?: string | null;
+  recent_runs?: AutomationRunRow[];
+  loop?: {
+    recent_runs?: AutomationRunRow[];
+    daily_briefing?: {
+      last_run_by_schedule?: Record<string, string>;
+      recent_status?: AutomationSchedulerStatus[];
+    };
+    arrival?: {
+      last_trigger_at?: string | null;
+      last_live_run_at?: string | null;
+      last_presence_state?: string | null;
+    };
+  };
+  scheduler_status?: AutomationSchedulerStatus[];
+  arrival_status?: Record<string, unknown>;
+  loop_enabled?: boolean;
 }
 
 export interface SecuritySessionState {
