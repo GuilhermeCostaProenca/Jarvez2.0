@@ -21,8 +21,8 @@ Decisoes base deste plano:
 
 ## Checklist Mestre
 
-- [ ] ID. Identidade e reconhecimento
-  Notas: speaker identification, reconhecimento facial, cadastro de perfil local e contexto por pessoa sem virar autenticacao.
+- [x] ID. Identidade e reconhecimento
+  Notas: `backend/identity/` agora cobre store local, speaker ID, face ID, onboarding explicito e contexto operacional sem bypass de autenticacao.
 
 - [ ] CAM. Visao e presenca
   Notas: webcam passiva, deteccao de presenca, postura, movimento e eventos fisicos com pipeline local sempre ligado.
@@ -39,23 +39,23 @@ Decisoes base deste plano:
 
 Contexto tecnico: o Jarvez ja tem uma base local reutilizavel em `backend/voice_biometrics.py`, com buffer de audio recente, embeddings locais, armazenamento criptografado de perfis de voz e fluxo de `verify_voice_identity` registrado em `backend/actions.py`. Essa base hoje esta orientada a step-up por voz e PIN, entao a evolucao aqui e separar claramente duas camadas: identidade contextual (`quem esta falando`) e autenticacao/confirmacao (`posso executar algo sensivel`). Para voz, o caminho mais pragmatico para v1 e reaproveitar o buffer e o armazenamento local existentes, avaliando `resemblyzer` como encoder principal e mantendo o pipeline atual como fallback temporario ate a migracao estar estavel. Para rosto, a preferencia e `InsightFace` pela melhor relacao entre precisao e uso de GPU local numa RTX 3050 6GB; `face_recognition`/`dlib` fica como fallback mais simples, mas menos atraente para uso continuo. O cadastro de perfil deve guardar apenas nome, embeddings e metadados de confianca em armazenamento local dedicado, com onboarding explicito para convidado e sem qualquer concessao automatica de permissao.
 
-- [ ] ID1. Criar modelo de perfil de identidade local
-  Notas: definir armazenamento em `backend/data/identity/` para dono, convidados explicitamente cadastrados, embeddings de voz/rosto, nivel de confianca e timestamps sem sair do dispositivo.
+- [x] ID1. Criar modelo de perfil de identidade local
+  Notas: `backend/identity/identity_store.py` implementa CRUD local em `backend/data/identity/profiles.json`; `.gitignore` ganhou entrada explicita para `backend/data/identity/`.
 
-- [ ] ID2. Evoluir speaker identification a partir da base de voz existente
-  Notas: reaproveitar `backend/voice_biometrics.py`, `VoiceProfileStore` e `verify_voice_identity` para separar reconhecimento contextual de step-up de seguranca.
+- [x] ID2. Evoluir speaker identification a partir da base de voz existente
+  Notas: `backend/identity/speaker_id.py` reaproveita o buffer de `backend/voice_biometrics.py`, usa `resemblyzer` quando disponivel e mantem `verify_voice_identity` intacto para step-up.
 
-- [ ] ID3. Adicionar reconhecimento facial local por perfil
-  Notas: webcam gera embeddings faciais locais, com `InsightFace` como preferencia e `face_recognition` como fallback, sempre com calibacao inicial por perfil.
+- [x] ID3. Adicionar reconhecimento facial local por perfil
+  Notas: `backend/identity/face_id.py` usa `insightface`/ONNX local com captura pontual de frame e comparacao contra perfis cadastrados.
 
-- [ ] ID4. Criar fluxo explicito de cadastro de convidado
-  Notas: so cadastrar terceiros quando o usuario disser explicitamente quem e a pessoa; gravar amigo nao libera nenhuma acao nem muda policy.
+- [x] ID4. Criar fluxo explicito de cadastro de convidado
+  Notas: action `register_identity` registra owner/guest por pedido explicito, salva voz e/ou rosto localmente e responde que isso nao libera acoes sensiveis.
 
-- [ ] ID5. Expor identidade reconhecida como contexto do Jarvez
-  Notas: publicar nome reconhecido, confianca e fonte (`voice`, `face`, `voice+face`) como contexto e memoria operacional, sem marcar sessao como autenticada por causa disso.
+- [x] ID5. Expor identidade reconhecida como contexto do Jarvez
+  Notas: `recognized_identity` agora entra no snapshot da sessao e no bootstrap do `MemoryManager`, sempre como contexto e nunca como autenticacao.
 
-- [ ] ID6. Preservar confirmacao para acoes sensiveis
-  Notas: mensagens, dados privados, codigo e outras actions sensiveis continuam exigindo confirmacao/autenticacao independente da identidade reconhecida.
+- [x] ID6. Preservar confirmacao para acoes sensiveis
+  Notas: `dispatch_action` ganhou comentario explicito de que reconhecimento de identidade nao faz bypass de `requires_auth` nem `requires_confirmation`.
 
 ## Frente CAM - Visao e presenca
 

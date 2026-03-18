@@ -16,6 +16,7 @@ Thumbs.db
 
 # Generated artifacts and temp work
 backend/data/
+backend/data/identity/
 backend/models/
 backend/output/
 backend/test_kokoro_output.wav

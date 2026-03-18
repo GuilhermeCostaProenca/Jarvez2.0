@@ -194,6 +194,13 @@ from actions_domains import (
     workflow_status_action as domain_workflow_status_action,
 )
 from voice_biometrics import VoiceProfileStore, get_recent_voice_embedding
+from identity import (
+    IdentityStore,
+    capture_face_embedding,
+    extract_current_speaker_embedding,
+    identify_face,
+    identify_speaker,
+)
 from code_knowledge import CodeKnowledgeIndex
 from codex_cli import is_codex_available, run_exec_streaming
 from code_worker_client import CodeWorkerClient
@@ -299,6 +306,7 @@ SESSION_STATE_NAMESPACES = {
     "active_character",
     "active_codex_task",
     "codex_history",
+    "recognized_identity",
 }
 EVENT_STATE_NAMESPACES = {
     "research_schedules",
@@ -346,6 +354,7 @@ AMBIGUOUS_CONFIRMATION_RE = re.compile(
 BOOL_FALSE_VALUES = {"0", "false", "off", "no", "nao", "nÃ£o"}
 
 VOICE_PROFILE_STORE = VoiceProfileStore.from_env()
+IDENTITY_STORE = IdentityStore.from_env()
 PROJECT_CATALOG_SINGLETON: ProjectCatalog | None = None
 CODE_WORKER_CLIENT: CodeWorkerClient | None = None
 GITHUB_CATALOG_CLIENT: GitHubCatalogClient | None = None
@@ -1543,6 +1552,46 @@ def _security_status_payload(identity: str, room: str) -> JsonObject:
         **_active_project_payload(identity, room),
         **_capability_payload(identity, room),
     }
+
+
+def _recognized_identity_payload(*, name: str, confidence: float, source: str) -> JsonObject:
+    return {
+        "name": name or "unknown",
+        "confidence": max(0.0, min(float(confidence), 1.0)),
+        "source": source or "voice",
+        "updated_at": _now_iso(),
+    }
+
+
+def _persist_recognized_identity_context(ctx: ActionContext, payload: JsonObject) -> JsonObject:
+    normalized = _recognized_identity_payload(
+        name=str(payload.get("name") or "unknown"),
+        confidence=float(payload.get("confidence") or 0.0),
+        source=str(payload.get("source") or "voice"),
+    )
+    _persist_session_namespace(ctx.participant_identity, ctx.room, "recognized_identity", normalized)
+    return normalized
+
+
+def _combine_identity_matches(*, voice_match: JsonObject | None, face_match: JsonObject | None) -> JsonObject:
+    if isinstance(voice_match, dict) and isinstance(face_match, dict):
+        voice_name = str(voice_match.get("name") or "unknown")
+        face_name = str(face_match.get("name") or "unknown")
+        if voice_name != "unknown" and voice_name == face_name:
+            return _recognized_identity_payload(
+                name=voice_name,
+                confidence=max(float(voice_match.get("confidence") or 0.0), float(face_match.get("confidence") or 0.0)),
+                source="voice+face",
+            )
+    candidates = [item for item in (voice_match, face_match) if isinstance(item, dict)]
+    if not candidates:
+        return _recognized_identity_payload(name="unknown", confidence=0.0, source="voice")
+    best = max(candidates, key=lambda item: float(item.get("confidence") or 0.0))
+    return _recognized_identity_payload(
+        name=str(best.get("name") or "unknown"),
+        confidence=float(best.get("confidence") or 0.0),
+        source=str(best.get("source") or "voice"),
+    )
 
 
 def _workspace_root() -> Path:
@@ -6067,6 +6116,7 @@ async def dispatch_action(
             )
             return await _finalize(result)
 
+    # identity recognition does not bypass confirmation or authentication.
     if spec.requires_auth and not bypass_auth and not _is_authenticated(ctx.participant_identity, ctx.room):
         result = ActionResult(
             success=False,
@@ -6092,6 +6142,7 @@ async def dispatch_action(
         _touch_authenticated(ctx.participant_identity)
 
     requires_confirmation = spec.requires_confirmation or policy_eval.decision == "require_confirmation"
+    # identity recognition does not bypass confirmation.
     if requires_confirmation and not skip_confirmation and name != "confirm_action":
         pending = _store_confirmation(name, params, ctx)
         confirmation_message = _build_confirmation_message(name, params)
@@ -7314,6 +7365,158 @@ async def _verify_voice_identity(params: JsonObject, ctx: ActionContext) -> Acti
         clear_authentication=_clear_authentication,
         security_status_payload=_security_status_payload,
         voice_step_up_pending=VOICE_STEP_UP_PENDING,
+    )
+
+
+async def _identify_contextual_identity(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    mode = str(params.get("mode") or "voice").strip().lower()
+    if mode not in {"voice", "face", "both"}:
+        return ActionResult(
+            success=False,
+            message="Modo invalido para identidade contextual. Use voice, face ou both.",
+            error="invalid identity mode",
+        )
+
+    camera_index_raw = params.get("camera_index", 0)
+    try:
+        camera_index = int(camera_index_raw)
+    except (TypeError, ValueError):
+        camera_index = 0
+
+    voice_match: JsonObject | None = None
+    face_match: JsonObject | None = None
+
+    if mode in {"voice", "both"}:
+        voice_result = identify_speaker(ctx.participant_identity, IDENTITY_STORE)
+        voice_match = _recognized_identity_payload(
+            name=voice_result.name,
+            confidence=voice_result.confidence,
+            source="voice",
+        )
+        voice_match["matched"] = voice_result.matched
+        voice_match["method"] = voice_result.method
+        voice_match["compared_profiles"] = voice_result.compared_profiles
+
+    if mode in {"face", "both"}:
+        face_result = identify_face(IDENTITY_STORE, camera_index=camera_index)
+        face_match = _recognized_identity_payload(
+            name=face_result.name,
+            confidence=face_result.confidence,
+            source="face",
+        )
+        face_match["matched"] = face_result.matched
+        face_match["method"] = face_result.method
+        face_match["compared_profiles"] = face_result.compared_profiles
+        face_match["face_detected"] = face_result.face_detected
+
+    combined = _combine_identity_matches(voice_match=voice_match, face_match=face_match)
+    persisted = _persist_recognized_identity_context(ctx, combined)
+    if persisted["name"] == "unknown":
+        return ActionResult(
+            success=False,
+            message="Nao consegui reconhecer a identidade atual com confianca suficiente.",
+            data={
+                "recognized_identity": persisted,
+                "voice_match": voice_match,
+                "face_match": face_match,
+                "authentication_bypass": False,
+            },
+            error="identity_not_recognized",
+        )
+    return ActionResult(
+        success=True,
+        message=f"Identidade contextual reconhecida como {persisted['name']}. Isso nao autentica a sessao.",
+        data={
+            "recognized_identity": persisted,
+            "voice_match": voice_match,
+            "face_match": face_match,
+            "authentication_bypass": False,
+        },
+    )
+
+
+async def _register_identity(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    name = str(params.get("name") or "").strip()
+    if not name:
+        return ActionResult(success=False, message="Informe um nome para cadastrar a identidade.", error="missing name")
+
+    role = str(params.get("role") or "guest").strip().lower() or "guest"
+    if role not in {"owner", "guest"}:
+        return ActionResult(success=False, message="Role invalido. Use owner ou guest.", error="invalid role")
+
+    confidence_level = str(params.get("confidence_level") or "medium").strip().lower() or "medium"
+    if confidence_level not in {"low", "medium", "high"}:
+        confidence_level = "medium"
+
+    capture_voice = bool(params.get("capture_voice", True))
+    capture_face = bool(params.get("capture_face", True))
+    if not capture_voice and not capture_face:
+        return ActionResult(
+            success=False,
+            message="Escolha pelo menos uma modalidade para cadastro: voz ou rosto.",
+            error="missing identity modality",
+        )
+
+    camera_index_raw = params.get("camera_index", 0)
+    try:
+        camera_index = int(camera_index_raw)
+    except (TypeError, ValueError):
+        camera_index = 0
+
+    existing = IDENTITY_STORE.get_profile(name)
+    voice_embeddings = list(existing.voice_embeddings) if existing is not None else []
+    face_embeddings = list(existing.face_embeddings) if existing is not None else []
+    captured_modalities: list[str] = []
+    issues: list[str] = []
+
+    if capture_voice:
+        voice_embedding, voice_method = extract_current_speaker_embedding(ctx.participant_identity)
+        if voice_embedding is None:
+            issues.append("Nao detectei audio suficiente para cadastrar a voz agora.")
+        else:
+            voice_embeddings.append([float(value) for value in voice_embedding])
+            captured_modalities.append("voice")
+            issues.append(f"Voz capturada via {voice_method}.")
+
+    if capture_face:
+        face_embedding = capture_face_embedding(camera_index=camera_index)
+        if face_embedding is None:
+            issues.append("Nao detectei rosto suficiente para cadastrar a face agora.")
+        else:
+            face_embeddings.append([float(value) for value in face_embedding])
+            captured_modalities.append("face")
+
+    if not captured_modalities:
+        return ActionResult(
+            success=False,
+            message="Nao consegui capturar voz nem rosto para esse cadastro.",
+            data={"issues": issues, "authentication_bypass": False},
+            error="identity_capture_failed",
+        )
+
+    profile = IDENTITY_STORE.upsert_profile(
+        name=name,
+        role=role,
+        confidence_level=confidence_level,
+        voice_embeddings=voice_embeddings,
+        face_embeddings=face_embeddings,
+        registered_at=existing.registered_at if existing is not None else None,
+    )
+    source = "voice+face" if len(captured_modalities) == 2 else captured_modalities[0]
+    recognized_identity = _persist_recognized_identity_context(
+        ctx,
+        _recognized_identity_payload(name=profile.name, confidence=1.0, source=source),
+    )
+    return ActionResult(
+        success=True,
+        message=f"Identidade '{profile.name}' registrada localmente. Isso serve so para contexto e nao libera acoes sensiveis.",
+        data={
+            "profile": profile.to_payload(),
+            "recognized_identity": recognized_identity,
+            "captured_modalities": captured_modalities,
+            "issues": issues,
+            "authentication_bypass": False,
+        },
     )
 
 
@@ -10903,6 +11106,49 @@ def register_default_actions() -> None:
             },
             requires_confirmation=False,
             handler=_rpg_ideate_next_session,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="identify_contextual_identity",
+            description="Reconhece de forma contextual quem esta falando e/ou na frente da camera, sem autenticar a sessao.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "mode": {"type": "string", "enum": ["voice", "face", "both"]},
+                    "camera_index": {"type": "integer", "minimum": 0},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_identify_contextual_identity,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="register_identity",
+            description=(
+                "Cadastra uma identidade local por voz e/ou rosto quando o usuario pedir explicitamente. "
+                "Serve apenas para contexto e nao libera acoes sensiveis."
+            ),
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "minLength": 1},
+                    "role": {"type": "string", "enum": ["owner", "guest"]},
+                    "confidence_level": {"type": "string", "enum": ["low", "medium", "high"]},
+                    "capture_voice": {"type": "boolean"},
+                    "capture_face": {"type": "boolean"},
+                    "camera_index": {"type": "integer", "minimum": 0},
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_register_identity,
         )
     )
 

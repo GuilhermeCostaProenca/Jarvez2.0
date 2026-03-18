@@ -38,6 +38,13 @@ export interface VoiceInteractivityState {
   updated_at?: string;
 }
 
+export interface RecognizedIdentity {
+  name?: string;
+  confidence?: number;
+  source?: 'voice' | 'face' | 'voice+face' | string;
+  updated_at?: string;
+}
+
 export interface ToolCallEvent {
   name: string;
   status: 'started' | 'completed' | 'failed' | 'confirmation_required';
@@ -77,6 +84,7 @@ export interface ActionResultPayload {
     voice_score?: number;
     step_up_required?: boolean;
     private_access_granted?: boolean;
+    recognized_identity?: RecognizedIdentity | null;
     persona_mode?: string;
     current_persona_mode?: string;
     applied_persona_mode?: string;
@@ -808,6 +816,7 @@ export interface SessionSnapshot {
   browser_tasks?: BrowserTaskState | BrowserTaskState[] | null;
   workflow_state?: WorkflowState | null;
   automation_state?: AutomationState | null;
+  recognized_identity?: RecognizedIdentity | null;
   whatsapp_channel?: Record<string, unknown> | null;
   voice_interactivity?: VoiceInteractivityState | null;
 }

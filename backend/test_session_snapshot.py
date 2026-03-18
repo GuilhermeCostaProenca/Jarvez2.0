@@ -32,6 +32,11 @@ class SessionSnapshotTests(unittest.IsolatedAsyncioTestCase):
                 "room": room,
             },
             _load_event_namespace=_load_event_namespace,
+            _load_session_namespace=lambda participant_identity, room, namespace: {
+                "namespace": namespace,
+                "participant_identity": participant_identity,
+                "room": room,
+            },
             _codex_task_to_payload=lambda task: {"task_id": getattr(task, "task_id", "")},
             get_active_codex_task=lambda participant_identity, room: SimpleNamespace(task_id=f"{participant_identity}:{room}"),
             _codex_history_payload=lambda participant_identity, room: [
@@ -70,6 +75,7 @@ class SessionSnapshotTests(unittest.IsolatedAsyncioTestCase):
             "workflow_state",
             "automation_state",
             "proactivity_state",
+            "recognized_identity",
             "whatsapp_channel",
         ):
             self.assertIn(key, snapshot)

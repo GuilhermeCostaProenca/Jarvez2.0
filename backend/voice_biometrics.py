@@ -248,6 +248,21 @@ def get_recent_voice_embedding(
     return [float(x) for x in embedding]
 
 
+def get_recent_voice_audio(
+    participant_identity: str,
+    *,
+    seconds: float = 4.0,
+    min_seconds: float = 1.2,
+    target_sample_rate: int = 16000,
+) -> tuple[np.ndarray, int] | None:
+    return VOICE_AUDIO_BUFFER.get_recent_audio(
+        participant_identity,
+        seconds=seconds,
+        min_seconds=min_seconds,
+        target_sample_rate=target_sample_rate,
+    )
+
+
 class VoiceProfileStore:
     def __init__(self, file_path: Path, key: bytes):
         self._file_path = file_path

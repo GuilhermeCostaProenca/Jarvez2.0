@@ -101,6 +101,23 @@ class MemoryManagerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(preference, {"value": "natural"})
 
+    async def test_bootstrap_includes_recognized_identity_context(self) -> None:
+        manager = MemoryManager(mem0=self.mem0, state_store=self.store)
+        manager.set_identity_context(
+            participant_identity="user-a",
+            room="room-1",
+            payload={"name": "Guilherme", "confidence": 0.97, "source": "voice+face"},
+        )
+
+        bootstrap = await manager.load_bootstrap_context(
+            participant_identity="user-a",
+            room="room-1",
+            user_name="Usuario",
+            authenticated=False,
+        )
+
+        self.assertTrue(any("recognized_identity" in message for message in bootstrap.prompt_messages))
+
     async def test_old_turns_become_summary_instead_of_disappearing(self) -> None:
         manager = MemoryManager(mem0=self.mem0, state_store=self.store, summary_after_days=1)
         old_timestamp = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()

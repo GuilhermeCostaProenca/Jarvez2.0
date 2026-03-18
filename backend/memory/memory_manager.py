@@ -35,6 +35,7 @@ EXPLICIT_PUBLIC_RE = re.compile(
 DEFAULT_RECENT_TURNS = max(3, int(os.getenv("JARVEZ_MEMORY_RECENT_TURNS", "8")))
 DEFAULT_SUMMARY_AFTER_DAYS = max(1, int(os.getenv("JARVEZ_MEMORY_SUMMARY_AFTER_DAYS", "7")))
 DEFAULT_TURN_MAX_CHARS = max(120, int(os.getenv("JARVEZ_MEMORY_TURN_MAX_CHARS", "280")))
+IDENTITY_CONTEXT_NAMESPACE = "recognized_identity"
 
 
 @dataclass(slots=True)
@@ -93,6 +94,7 @@ class MemoryManager:
             participant_identity=participant_identity,
             scope=PUBLIC_SCOPE,
         )
+        recognized_identity = self.get_identity_context(participant_identity=participant_identity, room=room)
         private_bundle = (
             await self.load_scope_memories(participant_identity=participant_identity, scope=PRIVATE_SCOPE)
             if authenticated
@@ -104,6 +106,8 @@ class MemoryManager:
         structured_payload: dict[str, Any] = {"user_name": user_name}
         if preferences:
             structured_payload["preferences"] = preferences
+        if recognized_identity:
+            structured_payload["recognized_identity"] = recognized_identity
         if latest_summary and latest_summary.get("summary"):
             structured_payload["previous_session_summary"] = latest_summary["summary"]
         if recent_turns:
@@ -247,6 +251,22 @@ class MemoryManager:
 
     def list_preferences(self, *, participant_identity: str) -> dict[str, Any]:
         return self.state_store.list_user_preferences(participant_identity=participant_identity)
+
+    def set_identity_context(self, *, participant_identity: str, room: str, payload: dict[str, Any]) -> None:
+        self.state_store.upsert_session_state(
+            participant_identity=participant_identity,
+            room=room,
+            namespace=IDENTITY_CONTEXT_NAMESPACE,
+            payload=payload,
+        )
+
+    def get_identity_context(self, *, participant_identity: str, room: str) -> dict[str, Any] | None:
+        current = self.state_store.get_session_state(
+            participant_identity=participant_identity,
+            room=room,
+            namespace=IDENTITY_CONTEXT_NAMESPACE,
+        )
+        return current if isinstance(current, dict) else None
 
     def summarize_and_prune_old_turns(self, *, participant_identity: str, room: str) -> None:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=self.summary_after_days)).isoformat()
