@@ -49,8 +49,8 @@
 - [x] Dividir `backend/test_actions.py` em suites menores sem mudar assertions
   Notas: entraram suites como `backend/test_actions_domains_split.py`, `backend/test_actions_core_events.py`, `backend/test_orchestration_router.py` e correlatas.
 
-- [ ] Adicionar Vitest no frontend para `useAgentActionEvents` e storages criticos
-  Notas: ainda nao fechado. O parser de eventos foi endurecido no codigo, mas a camada de teste frontend dedicada ainda precisa ser formalizada.
+- [x] Adicionar Vitest no frontend para `useAgentActionEvents` e storages criticos
+  Notas: concluido. Vitest 4.x configurado em `frontend/vitest.config.ts`. 42 testes passando: `frontend/__tests__/useAgentActionEvents.test.ts` (logic pura do hook — extractActionResult, mapVoiceAssistantState, normalizeCodexTask, normalizeSessionSnapshot, formatActionLabel, pipeline integration) e `frontend/__tests__/orchestration-storage.test.ts` (clampScore, normalizeNoEvidenceTimeoutMs, normalizeMaxAutoRetries, normalizeDomainTrustScores, normalizeBackendDomainTrustScores, ciclo read/write localStorage). `pnpm test` e `pnpm typecheck` passando.
 
 ### F1.2
 
