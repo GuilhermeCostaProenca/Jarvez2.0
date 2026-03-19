@@ -54,8 +54,10 @@ async def call_mcp_tool_with_legacy_fallback(
     params: dict[str, object] | None = None,
     legacy_handler=None,
 ):
+    # Legacy fallback is intentionally disabled. Jarvez only routes via MCP.
+    # legacy_handler is ignored — errors surface directly to the user.
     manager = get_default_mcp_manager()
-    return await manager.call_tool_with_fallback(server_name, tool_name, params, legacy_handler)
+    return await manager.call_tool_with_fallback(server_name, tool_name, params, None)
 
 
 def get_mcp_status_snapshot():

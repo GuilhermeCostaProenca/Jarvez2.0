@@ -21,7 +21,7 @@ class VoiceRuntime:
 
 
 def _build_google_realtime_model(*, voice_name: str, audio_output: bool) -> object:
-    from livekit.plugins import google
+    from livekit.plugins import google  # must be imported at top-level in agent.py first
 
     modalities = ["AUDIO"] if audio_output else ["TEXT"]
     return google.beta.realtime.RealtimeModel(

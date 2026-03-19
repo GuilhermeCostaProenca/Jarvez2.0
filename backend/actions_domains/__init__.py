@@ -34,15 +34,6 @@ from .codex import (
     codex_exec_task_action,
     run_codex_task,
 )
-from .home_assistant import (
-    call_service,
-    git_clone_repository,
-    open_desktop_resource,
-    run_local_command,
-    set_light_brightness,
-    turn_light_off,
-    turn_light_on,
-)
 from .onenote import (
     onenote_append_to_page,
     onenote_create_character_page,
@@ -84,6 +75,7 @@ from .policy import (
     policy_trust_drift_report_action,
 )
 from .projects import (
+    git_clone_repository,
     github_clone_and_register_action,
     github_find_repo_action,
     github_list_repos_action,
@@ -97,6 +89,7 @@ from .projects import (
     project_select_action,
     project_update_action,
 )
+from .research import save_web_briefing_schedule
 from .rpg import (
     rpg_assume_character,
     rpg_clear_character_mode,
@@ -111,7 +104,6 @@ from .rpg import (
     rpg_session_recording,
     rpg_write_session_summary,
 )
-from .research import save_web_briefing_schedule, web_search_dashboard
 from .session import (
     authenticate_identity,
     confirm_action,
@@ -122,33 +114,6 @@ from .session import (
     set_memory_scope,
     set_persona_mode_action,
     verify_voice_identity,
-)
-from .spotify import (
-    spotify_create_surprise_playlist,
-    spotify_get_devices,
-    spotify_next_track,
-    spotify_pause,
-    spotify_play,
-    spotify_previous_track,
-    spotify_set_volume,
-    spotify_status,
-    spotify_transfer_playback,
-)
-from .thinq import (
-    thinq_control_device,
-    thinq_get_device_profile,
-    thinq_get_device_state,
-    thinq_list_devices,
-    thinq_status,
-)
-from .whatsapp import whatsapp_get_recent_messages, whatsapp_send_audio_tts, whatsapp_send_text
-from .whatsapp_channel import build_whatsapp_channel_status
-from .workflows import (
-    workflow_approve_action,
-    workflow_cancel_action,
-    workflow_resume_action,
-    workflow_run_action,
-    workflow_status_action,
 )
 
 __all__ = [
@@ -167,7 +132,6 @@ __all__ = [
     "ac_turn_off",
     "ac_turn_on",
     "authenticate_identity",
-    "build_whatsapp_channel_status",
     "code_apply_patch_action",
     "code_explain_project_action",
     "code_git_diff_action",
@@ -186,9 +150,6 @@ __all__ = [
     "confirm_action",
     "autonomy_killswitch_action",
     "autonomy_set_mode_action",
-    "call_service",
-    "git_clone_repository",
-    "open_desktop_resource",
     "orchestrate_task_action",
     "onenote_append_to_page",
     "onenote_create_character_page",
@@ -200,6 +161,7 @@ __all__ = [
     "onenote_status",
     "get_persona_mode_action",
     "get_security_status",
+    "git_clone_repository",
     "github_clone_and_register_action",
     "github_find_repo_action",
     "github_list_repos_action",
@@ -242,41 +204,14 @@ __all__ = [
     "rpg_search_knowledge",
     "rpg_session_recording",
     "rpg_write_session_summary",
-    "run_local_command",
     "run_codex_task",
     "save_web_briefing_schedule",
-    "set_light_brightness",
     "set_memory_scope",
     "set_persona_mode_action",
-    "spotify_create_surprise_playlist",
-    "spotify_get_devices",
-    "spotify_next_track",
-    "spotify_pause",
-    "spotify_play",
-    "spotify_previous_track",
-    "spotify_set_volume",
-    "spotify_status",
-    "spotify_transfer_playback",
     "skills_list_action",
     "skills_read_action",
     "subagent_cancel_action",
     "subagent_spawn_action",
     "subagent_status_action",
-    "thinq_control_device",
-    "thinq_get_device_profile",
-    "thinq_get_device_state",
-    "thinq_list_devices",
-    "thinq_status",
-    "turn_light_off",
-    "turn_light_on",
     "verify_voice_identity",
-    "web_search_dashboard",
-    "whatsapp_get_recent_messages",
-    "whatsapp_send_audio_tts",
-    "whatsapp_send_text",
-    "workflow_approve_action",
-    "workflow_cancel_action",
-    "workflow_resume_action",
-    "workflow_run_action",
-    "workflow_status_action",
 ]

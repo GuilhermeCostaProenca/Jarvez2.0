@@ -12,6 +12,7 @@ from livekit import agents, rtc
 from livekit.agents import Agent, AgentSession, ChatContext, RoomInputOptions, function_tool
 from livekit.agents.voice.events import RunContext
 from livekit.rtc._proto.track_pb2 import TrackSource
+from livekit.plugins import google as livekit_google
 from livekit.plugins import noise_cancellation
 from mem0 import AsyncMemoryClient
 

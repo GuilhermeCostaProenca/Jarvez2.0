@@ -196,8 +196,19 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.data and result.data.get("confirmation_token"))
 
     async def test_confirm_action_executes_when_token_valid(self):
+        from backend_mcp import McpToolCallResult
         session = _FakeSession([_FakeMessage("user", "sim, confirmo")])
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a", session=session)
+
+        async def _fake_mcp(server_name, tool_name, params=None, legacy_handler=None):  # noqa: ANN001
+            return (
+                McpToolCallResult(
+                    ok=True, status="ok",
+                    structured_content={"success": True, "message": "ok"},
+                    raw_result={"structuredContent": {"success": True}},
+                ),
+                None, None,
+            )
 
         with patch("actions.os.getenv") as getenv:
             def _fake_getenv(key, default=""):
@@ -206,11 +217,10 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
                 return default
 
             getenv.side_effect = _fake_getenv
-            await dispatch_action("authenticate_identity", {"pin": "1234"}, ctx)
-            initial = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, ctx)
-            token = str(initial.data["confirmation_token"])
-
-            with patch("actions._call_home_assistant", return_value=ActionResult(True, "ok")):
+            with patch("actions.call_mcp_tool_with_legacy_fallback", side_effect=_fake_mcp):
+                await dispatch_action("authenticate_identity", {"pin": "1234"}, ctx)
+                initial = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, ctx)
+                token = str(initial.data["confirmation_token"])
                 result = await dispatch_action("confirm_action", {"confirmation_token": token}, ctx)
 
         self.assertTrue(result.success)

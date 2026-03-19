@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import datetime, timezone
 import os
 import re
 import secrets
 from typing import Any
-import webbrowser
 
 from actions_core import ActionContext, ActionResult
 
@@ -22,65 +19,11 @@ def _default_briefing_cooldown_seconds() -> int:
     return max(60, min(value, 86_400))
 
 
-# DEPRECATED: migrated to jarvez-mcp-research
-async def web_search_dashboard(
-    params: JsonObject,
-    ctx: ActionContext,
-    *,
-    collapse_spaces: Callable[[str], str],
-    run_web_search: Callable[[str], tuple[list[JsonObject], ActionResult | None]]
-    | Callable[[str, int], tuple[list[JsonObject], ActionResult | None]],
-    build_summary: Callable[[str, list[JsonObject]], str],
-    frontend_dashboard_url: Callable[[], str],
-) -> ActionResult:
-    _ = ctx
-    query = collapse_spaces(str(params.get("query", "")))
-    max_results = int(params.get("max_results", 5))
-    if not query:
-        return ActionResult(success=False, message="Informe o que devo pesquisar na web.", error="missing query")
-
-    max_results = max(3, min(max_results, 8))
-    results, search_error = run_web_search(query, max_results=max_results)  # type: ignore[misc]
-    if search_error is not None:
-        return search_error
-
-    image_urls = [
-        str(item["image_url"])
-        for item in results
-        if isinstance(item.get("image_url"), str) and str(item.get("image_url")).strip()
-    ][:4]
-    summary = build_summary(query, results)
-    generated_at = datetime.now(timezone.utc).isoformat()
-    dashboard_url = frontend_dashboard_url()
-    dashboard_opened = False
-
-    try:
-        dashboard_opened = bool(webbrowser.open(dashboard_url, new=2))
-    except OSError:
-        dashboard_opened = False
-
-    return ActionResult(
-        success=True,
-        message=f"Pesquisa web compilada para '{query}'.",
-        data={
-            "web_dashboard": {
-                "query": query,
-                "summary": summary,
-                "generated_at": generated_at,
-                "results": results,
-                "images": image_urls,
-                "dashboard_url": dashboard_url,
-                "dashboard_opened": dashboard_opened,
-            }
-        },
-    )
-
-
 async def save_web_briefing_schedule(
     params: JsonObject,
     ctx: ActionContext,
     *,
-    collapse_spaces: Callable[[str], str],
+    collapse_spaces,
 ) -> ActionResult:
     _ = ctx
     query = collapse_spaces(str(params.get("query", "")))

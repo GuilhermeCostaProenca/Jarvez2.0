@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -420,5 +421,84 @@ async def project_search_action(
             "project": project_record_to_payload(record),
             "results": results,
             **active_project_payload(ctx.participant_identity, ctx.room),
+        },
+    )
+
+
+async def git_clone_repository(
+    params: JsonObject,
+    ctx: ActionContext,
+    *,
+    resolve_local_path: Callable[[str], Path | None] | Callable[[str, bool], Path | None],
+    workspace_root: Callable[[], Path],
+    trim_process_output: Callable[[str], str] | Callable[[str, int], str],
+    run_process: Callable[..., subprocess.CompletedProcess[str]],
+) -> ActionResult:
+    _ = ctx
+    repository_url = str(params.get("repository_url", "")).strip()
+    destination = str(params.get("destination", "")).strip()
+    branch = str(params.get("branch", "")).strip()
+    depth = params.get("depth")
+
+    if not repository_url:
+        return ActionResult(success=False, message="Informe a URL do repositorio.", error="missing repository url")
+
+    destination_path: Path | None = None
+    if destination:
+        try:
+            destination_path = resolve_local_path(destination, must_exist=False)  # type: ignore[call-arg]
+        except TypeError:
+            destination_path = resolve_local_path(destination)  # type: ignore[call-arg]
+        if destination_path is None:
+            return ActionResult(success=False, message="Destino invalido.", error="invalid destination")
+        if destination_path.exists():
+            return ActionResult(success=False, message="O destino informado ja existe.", error="destination exists")
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+
+    command_line = ["git", "clone"]
+    if branch:
+        command_line.extend(["--branch", branch])
+    if isinstance(depth, int) and depth > 0:
+        command_line.extend(["--depth", str(depth)])
+    command_line.append(repository_url)
+    if destination_path is not None:
+        command_line.append(str(destination_path))
+
+    try:
+        completed = run_process(
+            command_line,
+            cwd=str(workspace_root()),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return ActionResult(success=False, message=f"Falha ao executar git clone: {error}", error=str(error))
+
+    stdout = trim_process_output(completed.stdout or "")
+    stderr = trim_process_output(completed.stderr or "")
+    if completed.returncode != 0:
+        return ActionResult(
+            success=False,
+            message="O git clone falhou.",
+            data={
+                "command_line": command_line,
+                "stdout": stdout,
+                "stderr": stderr,
+                "returncode": completed.returncode,
+            },
+            error=stderr or f"exit code {completed.returncode}",
+        )
+
+    return ActionResult(
+        success=True,
+        message="Repositorio clonado com sucesso.",
+        data={
+            "command_line": command_line,
+            "destination": str(destination_path) if destination_path is not None else str(workspace_root()),
+            "stdout": stdout,
+            "stderr": stderr,
+            "returncode": completed.returncode,
         },
     )

@@ -84,7 +84,6 @@ from actions_domains import (
     ac_turn_off as domain_ac_turn_off,
     ac_turn_on as domain_ac_turn_on,
     authenticate_identity as domain_authenticate_identity,
-    call_service as domain_call_service,
     code_apply_patch_action as domain_code_apply_patch_action,
     code_explain_project_action as domain_code_explain_project_action,
     code_git_diff_action as domain_code_git_diff_action,
@@ -102,12 +101,10 @@ from actions_domains import (
     codex_exec_task_action as domain_codex_exec_task_action,
     run_codex_task as domain_run_codex_task,
     confirm_action as domain_confirm_action,
-    git_clone_repository as domain_git_clone_repository,
     get_persona_mode_action as domain_get_persona_mode_action,
     get_security_status as domain_get_security_status,
     list_persona_modes as domain_list_persona_modes,
     lock_private_mode as domain_lock_private_mode,
-    open_desktop_resource as domain_open_desktop_resource,
     onenote_append_to_page as domain_onenote_append_to_page,
     onenote_create_character_page as domain_onenote_create_character_page,
     onenote_get_page_content as domain_onenote_get_page_content,
@@ -156,20 +153,9 @@ from actions_domains import (
     rpg_session_recording as domain_rpg_session_recording,
     rpg_write_session_summary as domain_rpg_write_session_summary,
     providers_health_check_action as domain_providers_health_check_action,
-    run_local_command as domain_run_local_command,
     save_web_briefing_schedule as domain_save_web_briefing_schedule,
-    set_light_brightness as domain_set_light_brightness,
     set_memory_scope as domain_set_memory_scope,
     set_persona_mode_action as domain_set_persona_mode_action,
-    spotify_create_surprise_playlist as domain_spotify_create_surprise_playlist,
-    spotify_get_devices as domain_spotify_get_devices,
-    spotify_next_track as domain_spotify_next_track,
-    spotify_pause as domain_spotify_pause,
-    spotify_play as domain_spotify_play,
-    spotify_previous_track as domain_spotify_previous_track,
-    spotify_set_volume as domain_spotify_set_volume,
-    spotify_status as domain_spotify_status,
-    spotify_transfer_playback as domain_spotify_transfer_playback,
     skills_list_action as domain_skills_list_action,
     skills_read_action as domain_skills_read_action,
     subagent_cancel_action as domain_subagent_cancel_action,
@@ -178,23 +164,8 @@ from actions_domains import (
     github_clone_and_register_action as domain_github_clone_and_register_action,
     github_find_repo_action as domain_github_find_repo_action,
     github_list_repos_action as domain_github_list_repos_action,
-    thinq_control_device as domain_thinq_control_device,
-    thinq_get_device_profile as domain_thinq_get_device_profile,
-    thinq_get_device_state as domain_thinq_get_device_state,
-    thinq_list_devices as domain_thinq_list_devices,
-    thinq_status as domain_thinq_status,
-    turn_light_off as domain_turn_light_off,
-    turn_light_on as domain_turn_light_on,
     verify_voice_identity as domain_verify_voice_identity,
-    web_search_dashboard as domain_web_search_dashboard,
-    whatsapp_get_recent_messages as domain_whatsapp_get_recent_messages,
-    whatsapp_send_audio_tts as domain_whatsapp_send_audio_tts,
-    whatsapp_send_text as domain_whatsapp_send_text,
-    workflow_approve_action as domain_workflow_approve_action,
-    workflow_cancel_action as domain_workflow_cancel_action,
-    workflow_resume_action as domain_workflow_resume_action,
-    workflow_run_action as domain_workflow_run_action,
-    workflow_status_action as domain_workflow_status_action,
+    git_clone_repository as domain_git_clone_repository,
 )
 from voice_biometrics import VoiceProfileStore, get_recent_voice_embedding
 from identity import (
@@ -211,7 +182,7 @@ from coding_llm import explain_project_state, propose_patch_plan, summarize_diff
 from evals import append_metric, baseline_scenarios, read_metrics, summarize_action_metrics, summarize_slo
 from github_catalog import GitHubCatalogClient, GitHubRepo
 from integrations.whatsapp_mcp_client import WhatsAppMcpClient
-from backend_mcp import McpToolCallResult, call_mcp_tool_with_legacy_fallback
+from backend_mcp import McpToolCallResult, call_mcp_tool, call_mcp_tool_with_legacy_fallback
 from orchestration import (
     build_provider_registry,
     build_task_plan,
@@ -6321,7 +6292,7 @@ async def _turn_light_on(params: JsonObject, ctx: ActionContext) -> ActionResult
             call_service=_call_service_legacy,
         )
 
-    return await _home_assistant_route_via_mcp("turn_light_on", params, _legacy_handler)
+    return await _home_assistant_route_via_mcp("turn_light_on", params)
 
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant
@@ -6334,7 +6305,7 @@ async def _turn_light_off(params: JsonObject, ctx: ActionContext) -> ActionResul
             call_service=_call_service_legacy,
         )
 
-    return await _home_assistant_route_via_mcp("turn_light_off", params, _legacy_handler)
+    return await _home_assistant_route_via_mcp("turn_light_off", params)
 
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant
@@ -6347,7 +6318,7 @@ async def _set_light_brightness(params: JsonObject, ctx: ActionContext) -> Actio
             call_service=_call_service_legacy,
         )
 
-    return await _home_assistant_route_via_mcp("set_light_brightness", params, _legacy_handler)
+    return await _home_assistant_route_via_mcp("set_light_brightness", params)
 
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-home-assistant
@@ -6356,7 +6327,7 @@ async def _call_service(params: JsonObject, ctx: ActionContext) -> ActionResult:
     async def _legacy_handler() -> ActionResult:
         return await _call_service_legacy(params, ctx)
 
-    return await _home_assistant_route_via_mcp("call_service", params, _legacy_handler)
+    return await _home_assistant_route_via_mcp("call_service", params)
 
 
 async def _call_service_legacy(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -6612,101 +6583,22 @@ def _workflow_default_validation_plan(project_name: str | None) -> list[JsonObje
     ]
 
 
-# DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-whatsapp
-# This handler keeps local journal/channel-state enrichment while the standalone MCP covers connectivity probes.
 async def _whatsapp_channel_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    async def _legacy_handler() -> ActionResult:
-        return await _build_whatsapp_channel_status_result()
-
     probe_params: JsonObject = {
         "limit": 1,
         "page": 0,
         "include_last_message": False,
         "sort_by": "last_active",
     }
-    try:
-        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
-            "whatsapp",
-            "list_chats",
-            probe_params,
-            legacy_handler=_legacy_handler,
-        )
-    except Exception as error:  # noqa: BLE001
-        logger.warning(
-            "whatsapp MCP route failed unexpectedly; using legacy handler",
-            extra={"tool": "list_chats", "error": str(error)},
-            exc_info=True,
-        )
-        legacy_result = await _legacy_handler()
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "whatsapp",
-                "mcp_tool": "list_chats",
-                "fallback_reason": "transport_exception",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
-
-    if legacy_value is not None:
-        if isinstance(legacy_value, ActionResult):
-            legacy_result = legacy_value
-        else:
-            legacy_result = await _legacy_handler()
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "whatsapp",
-                "mcp_tool": "list_chats",
-                "fallback_reason": fallback_reason or "legacy_fallback",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
-
-    result = await _legacy_handler()
-    if mcp_result is None:
-        return result
-
-    whatsapp_channel = result.data.get("whatsapp_channel") if isinstance(result.data, dict) else None
-    if isinstance(whatsapp_channel, dict):
-        probe_payload = mcp_result.structured_content
-        probe_count = len(probe_payload) if isinstance(probe_payload, list) else None
-        whatsapp_channel["mcp_stdio"] = {
-            "connected": bool(mcp_result.ok),
-            "tool": "list_chats",
-            "probe_result_count": probe_count,
-        }
-    evidence = dict(result.evidence or {})
-    evidence.update(
-        {
-            "provider": "mcp",
-            "mcp_server": "whatsapp",
-            "mcp_tool": "list_chats",
-            "mcp_status": mcp_result.status,
-        }
-    )
-    result.evidence = evidence
-    result.fallback_used = False
-    return result
-
-
-async def _build_whatsapp_channel_status_result() -> ActionResult:
-    from actions_domains.whatsapp_channel import build_whatsapp_channel_status
-
-    status = build_whatsapp_channel_status()
+    mcp_result = await call_mcp_tool("whatsapp", "list_chats", probe_params)
+    messages: dict[str, object] = {}
     try:
         total = STATE_STORE.count_channel_messages(channel="whatsapp")
         inbound_total = STATE_STORE.count_channel_messages(channel="whatsapp", direction="inbound")
         outbound_total = STATE_STORE.count_channel_messages(channel="whatsapp", direction="outbound")
         latest_inbound = STATE_STORE.latest_channel_message(channel="whatsapp", direction="inbound")
         latest_outbound = STATE_STORE.latest_channel_message(channel="whatsapp", direction="outbound")
-        status["messages"] = {
+        messages = {
             "total": total,
             "inbound_total": inbound_total,
             "outbound_total": outbound_total,
@@ -6714,24 +6606,37 @@ async def _build_whatsapp_channel_status_result() -> ActionResult:
             "last_outbound_at": latest_outbound.get("created_at") if isinstance(latest_outbound, dict) else None,
         }
     except Exception:
-        logger.warning("failed to enrich whatsapp channel status", exc_info=True)
+        logger.warning("failed to read whatsapp channel journal stats", exc_info=True)
     return ActionResult(
-        success=True,
-        message="Status do canal WhatsApp carregado.",
-        data={"whatsapp_channel": status},
+        success=mcp_result.ok,
+        message="Status do canal WhatsApp carregado." if mcp_result.ok else "Canal WhatsApp indisponivel.",
+        data={
+            "whatsapp_channel": {
+                "mode": "mcp",
+                "mcp_stdio": {
+                    "connected": bool(mcp_result.ok),
+                    "tool": "list_chats",
+                    "status": mcp_result.status,
+                },
+                "messages": messages,
+            }
+        },
+        evidence={
+            "provider": "mcp",
+            "mcp_server": "whatsapp",
+            "mcp_tool": "list_chats",
+            "mcp_status": mcp_result.status,
+        },
     )
+
+
+async def _web_search_dashboard(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    return await call_mcp_tool("research", "research_run", params)
 
 
 async def _run_web_briefing_via_actions(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    """Adapter: invokes the web_search_dashboard domain handler for automation cycles."""
-    return await domain_web_search_dashboard(
-        params,
-        ctx,
-        collapse_spaces=_collapse_spaces,
-        run_web_search=_run_web_search,
-        build_summary=_build_web_dashboard_summary,
-        frontend_dashboard_url=_frontend_dashboard_url,
-    )
+    """Adapter: invokes the web_search_dashboard MCP tool for automation cycles."""
+    return await _web_search_dashboard(params, ctx)
 
 
 async def _run_arrival_prepare_via_actions(params: JsonObject, ctx: ActionContext) -> ActionResult:
@@ -7054,7 +6959,7 @@ async def _thinq_status(params: JsonObject, ctx: ActionContext) -> ActionResult:
             thinq_api_base=_thinq_api_base,
         )
 
-    return await _thinq_route_via_mcp("thinq_status", params, _legacy_handler)
+    return await _thinq_route_via_mcp("thinq_status", params)
 
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-thinq
@@ -7068,7 +6973,7 @@ async def _thinq_list_devices(params: JsonObject, ctx: ActionContext) -> ActionR
             thinq_simplify_device=_thinq_simplify_device,
         )
 
-    return await _thinq_route_via_mcp("thinq_list_devices", params, _legacy_handler)
+    return await _thinq_route_via_mcp("thinq_list_devices", params)
 
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-thinq
@@ -7139,7 +7044,7 @@ async def _ac_get_status(params: JsonObject, ctx: ActionContext) -> ActionResult
         for key in ("device_name", "device_id")
         if params.get(key) is not None
     }
-    result = await _thinq_route_via_mcp("thinq_get_device_state", mcp_params, _legacy_handler)
+    result = await _thinq_route_via_mcp("thinq_get_device_state", mcp_params)
     return _ac_result_with_mcp_message(result, action_name="ac_get_status")
 
 
@@ -7218,7 +7123,7 @@ async def _ac_turn_on(params: JsonObject, ctx: ActionContext) -> ActionResult:
     for key in ("device_name", "device_id", "conditional"):
         if params.get(key) is not None:
             mcp_params[key] = params.get(key)
-    result = await _thinq_route_via_mcp("thinq_control_device", mcp_params, _legacy_handler)
+    result = await _thinq_route_via_mcp("thinq_control_device", mcp_params)
     return _ac_result_with_mcp_message(result, action_name="ac_turn_on")
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-ac
@@ -7237,7 +7142,7 @@ async def _ac_turn_off(params: JsonObject, ctx: ActionContext) -> ActionResult:
     for key in ("device_name", "device_id", "conditional"):
         if params.get(key) is not None:
             mcp_params[key] = params.get(key)
-    result = await _thinq_route_via_mcp("thinq_control_device", mcp_params, _legacy_handler)
+    result = await _thinq_route_via_mcp("thinq_control_device", mcp_params)
     return _ac_result_with_mcp_message(result, action_name="ac_turn_off")
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-ac
@@ -7716,7 +7621,7 @@ async def _spotify_transfer_playback(params: JsonObject, ctx: ActionContext) -> 
             spotify_remember_device_alias=_spotify_remember_device_alias,
         )
 
-    return await _spotify_route_via_mcp("spotify_transfer_playback", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_transfer_playback", params)
 
 
 async def _spotify_play(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -7732,7 +7637,7 @@ async def _spotify_play(params: JsonObject, ctx: ActionContext) -> ActionResult:
             spotify_remember_device_alias=_spotify_remember_device_alias,
         )
 
-    return await _spotify_route_via_mcp("spotify_play", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_play", params)
 
 
 async def _spotify_pause(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -7743,7 +7648,7 @@ async def _spotify_pause(params: JsonObject, ctx: ActionContext) -> ActionResult
             spotify_api_request=_spotify_api_request,
         )
 
-    return await _spotify_route_via_mcp("spotify_pause", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_pause", params)
 
 
 async def _spotify_next_track(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -7754,7 +7659,7 @@ async def _spotify_next_track(params: JsonObject, ctx: ActionContext) -> ActionR
             spotify_api_request=_spotify_api_request,
         )
 
-    return await _spotify_route_via_mcp("spotify_next_track", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_next_track", params)
 
 
 async def _spotify_previous_track(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -7765,7 +7670,7 @@ async def _spotify_previous_track(params: JsonObject, ctx: ActionContext) -> Act
             spotify_api_request=_spotify_api_request,
         )
 
-    return await _spotify_route_via_mcp("spotify_previous_track", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_previous_track", params)
 
 
 async def _spotify_set_volume(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -7779,7 +7684,7 @@ async def _spotify_set_volume(params: JsonObject, ctx: ActionContext) -> ActionR
             spotify_remember_device_alias=_spotify_remember_device_alias,
         )
 
-    return await _spotify_route_via_mcp("spotify_set_volume", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_set_volume", params)
 
 
 async def _spotify_create_surprise_playlist(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -7791,7 +7696,7 @@ async def _spotify_create_surprise_playlist(params: JsonObject, ctx: ActionConte
             spotify_pick_surprise_tracks=_spotify_pick_surprise_tracks,
         )
 
-    return await _spotify_route_via_mcp("spotify_create_surprise_playlist", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_create_surprise_playlist", params)
 
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-onenote
@@ -7907,264 +7812,64 @@ def _action_result_from_mcp_result(
     )
 
 
-async def _spotify_route_via_mcp(
-    tool_name: str,
-    params: JsonObject,
-    legacy_handler: Callable[[], Awaitable[ActionResult]],
-) -> ActionResult:
-    try:
-        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
-            "spotify",
-            tool_name,
-            params,
-            legacy_handler=legacy_handler,
-        )
-    except Exception as error:  # noqa: BLE001
-        logger.warning(
-            "spotify MCP route failed unexpectedly; using legacy handler",
-            extra={"tool": tool_name, "error": str(error)},
-            exc_info=True,
-        )
-        legacy_result = await legacy_handler()
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "spotify",
-                "mcp_tool": tool_name,
-                "fallback_reason": "transport_exception",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
-
-    if legacy_value is not None:
-        if isinstance(legacy_value, ActionResult):
-            legacy_result = legacy_value
-        else:
-            legacy_result = ActionResult(
-                success=True,
-                message=f"Fallback legacy executado para '{tool_name}'.",
-                data={"value": legacy_value} if isinstance(legacy_value, dict) else None,
-            )
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "spotify",
-                "mcp_tool": tool_name,
-                "fallback_reason": fallback_reason or "legacy_fallback",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
-
-    if mcp_result is None:
-        return await legacy_handler()
-
-    return _action_result_from_mcp_result(
-        mcp_result,
-        server_name="spotify",
-        tool_name=tool_name,
-        fallback_used=False,
+async def _spotify_route_via_mcp(tool_name: str, params: JsonObject) -> ActionResult:
+    mcp_result, _legacy_value, _fallback_reason = await call_mcp_tool_with_legacy_fallback(
+        "spotify", tool_name, params
     )
-
-
-async def _onenote_route_via_mcp(
-    tool_name: str,
-    params: JsonObject,
-    legacy_handler: Callable[[], Awaitable[ActionResult]],
-) -> ActionResult:
-    try:
-        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
-            "onenote",
-            tool_name,
-            params,
-            legacy_handler=legacy_handler,
+    if mcp_result is None or not mcp_result.ok:
+        return ActionResult(
+            success=False,
+            message=f"Spotify MCP indisponivel para '{tool_name}'.",
+            error="mcp_unavailable",
+            evidence={"provider": "mcp", "mcp_server": "spotify", "mcp_tool": tool_name,
+                      "mcp_status": mcp_result.status if mcp_result else "unavailable"},
         )
-    except Exception as error:  # noqa: BLE001
-        logger.warning(
-            "onenote MCP route failed unexpectedly; using legacy handler",
-            extra={"tool": tool_name, "error": str(error)},
-            exc_info=True,
-        )
-        legacy_result = await legacy_handler()
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "onenote",
-                "mcp_tool": tool_name,
-                "fallback_reason": "transport_exception",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
+    return _action_result_from_mcp_result(mcp_result, server_name="spotify", tool_name=tool_name, fallback_used=False)
 
-    if legacy_value is not None:
-        if isinstance(legacy_value, ActionResult):
-            legacy_result = legacy_value
-        else:
-            legacy_result = ActionResult(
-                success=True,
-                message=f"Fallback legacy executado para '{tool_name}'.",
-                data={"value": legacy_value} if isinstance(legacy_value, dict) else None,
-            )
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "onenote",
-                "mcp_tool": tool_name,
-                "fallback_reason": fallback_reason or "legacy_fallback",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
 
-    if mcp_result is None:
-        return await legacy_handler()
-
-    return _action_result_from_mcp_result(
-        mcp_result,
-        server_name="onenote",
-        tool_name=tool_name,
-        fallback_used=False,
+async def _onenote_route_via_mcp(tool_name: str, params: JsonObject) -> ActionResult:
+    mcp_result, _legacy_value, _fallback_reason = await call_mcp_tool_with_legacy_fallback(
+        "onenote", tool_name, params
     )
-
-
-async def _home_assistant_route_via_mcp(
-    tool_name: str,
-    params: JsonObject,
-    legacy_handler: Callable[[], Awaitable[ActionResult]],
-) -> ActionResult:
-    try:
-        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
-            "home_assistant",
-            tool_name,
-            params,
-            legacy_handler=legacy_handler,
+    if mcp_result is None or not mcp_result.ok:
+        return ActionResult(
+            success=False,
+            message=f"OneNote MCP indisponivel para '{tool_name}'.",
+            error="mcp_unavailable",
+            evidence={"provider": "mcp", "mcp_server": "onenote", "mcp_tool": tool_name,
+                      "mcp_status": mcp_result.status if mcp_result else "unavailable"},
         )
-    except Exception as error:  # noqa: BLE001
-        logger.warning(
-            "home assistant MCP route failed unexpectedly; using legacy handler",
-            extra={"tool": tool_name, "error": str(error)},
-            exc_info=True,
-        )
-        legacy_result = await legacy_handler()
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "home_assistant",
-                "mcp_tool": tool_name,
-                "fallback_reason": "transport_exception",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
+    return _action_result_from_mcp_result(mcp_result, server_name="onenote", tool_name=tool_name, fallback_used=False)
 
-    if legacy_value is not None:
-        if isinstance(legacy_value, ActionResult):
-            legacy_result = legacy_value
-        else:
-            legacy_result = ActionResult(
-                success=True,
-                message=f"Fallback legacy executado para '{tool_name}'.",
-                data={"value": legacy_value} if isinstance(legacy_value, dict) else None,
-            )
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "home_assistant",
-                "mcp_tool": tool_name,
-                "fallback_reason": fallback_reason or "legacy_fallback",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
 
-    if mcp_result is None:
-        return await legacy_handler()
-
-    return _action_result_from_mcp_result(
-        mcp_result,
-        server_name="home_assistant",
-        tool_name=tool_name,
-        fallback_used=False,
+async def _home_assistant_route_via_mcp(tool_name: str, params: JsonObject) -> ActionResult:
+    mcp_result, _legacy_value, _fallback_reason = await call_mcp_tool_with_legacy_fallback(
+        "home_assistant", tool_name, params
     )
-
-
-async def _thinq_route_via_mcp(
-    tool_name: str,
-    params: JsonObject,
-    legacy_handler: Callable[[], Awaitable[ActionResult]],
-) -> ActionResult:
-    try:
-        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
-            "thinq",
-            tool_name,
-            params,
-            legacy_handler=legacy_handler,
+    if mcp_result is None or not mcp_result.ok:
+        return ActionResult(
+            success=False,
+            message=f"Home Assistant MCP indisponivel para '{tool_name}'.",
+            error="mcp_unavailable",
+            evidence={"provider": "mcp", "mcp_server": "home_assistant", "mcp_tool": tool_name,
+                      "mcp_status": mcp_result.status if mcp_result else "unavailable"},
         )
-    except Exception as error:  # noqa: BLE001
-        logger.warning(
-            "thinq MCP route failed unexpectedly; using legacy handler",
-            extra={"tool": tool_name, "error": str(error)},
-            exc_info=True,
-        )
-        legacy_result = await legacy_handler()
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "thinq",
-                "mcp_tool": tool_name,
-                "fallback_reason": "transport_exception",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
+    return _action_result_from_mcp_result(mcp_result, server_name="home_assistant", tool_name=tool_name, fallback_used=False)
 
-    if legacy_value is not None:
-        if isinstance(legacy_value, ActionResult):
-            legacy_result = legacy_value
-        else:
-            legacy_result = ActionResult(
-                success=True,
-                message=f"Fallback legacy executado para '{tool_name}'.",
-                data={"value": legacy_value} if isinstance(legacy_value, dict) else None,
-            )
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "thinq",
-                "mcp_tool": tool_name,
-                "fallback_reason": fallback_reason or "legacy_fallback",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
 
-    if mcp_result is None:
-        return await legacy_handler()
-
-    return _action_result_from_mcp_result(
-        mcp_result,
-        server_name="thinq",
-        tool_name=tool_name,
-        fallback_used=False,
+async def _thinq_route_via_mcp(tool_name: str, params: JsonObject) -> ActionResult:
+    mcp_result, _legacy_value, _fallback_reason = await call_mcp_tool_with_legacy_fallback(
+        "thinq", tool_name, params
     )
+    if mcp_result is None or not mcp_result.ok:
+        return ActionResult(
+            success=False,
+            message=f"ThinQ MCP indisponivel para '{tool_name}'.",
+            error="mcp_unavailable",
+            evidence={"provider": "mcp", "mcp_server": "thinq", "mcp_tool": tool_name,
+                      "mcp_status": mcp_result.status if mcp_result else "unavailable"},
+        )
+    return _action_result_from_mcp_result(mcp_result, server_name="thinq", tool_name=tool_name, fallback_used=False)
 
 
 def _ac_result_with_mcp_message(result: ActionResult, *, action_name: str) -> ActionResult:
@@ -8182,128 +7887,38 @@ def _ac_result_with_mcp_message(result: ActionResult, *, action_name: str) -> Ac
     return result
 
 
-async def _rpg_route_via_mcp(
-    tool_name: str,
-    params: JsonObject,
-    legacy_handler: Callable[[], Awaitable[ActionResult]],
-) -> ActionResult:
-    try:
-        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
-            "rpg",
-            tool_name,
-            params,
-            legacy_handler=legacy_handler,
-        )
-    except Exception as error:  # noqa: BLE001
-        logger.warning(
-            "rpg MCP route failed unexpectedly; using legacy handler",
-            extra={"tool": tool_name, "error": str(error)},
-            exc_info=True,
-        )
-        legacy_result = await legacy_handler()
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "rpg",
-                "mcp_tool": tool_name,
-                "fallback_reason": "transport_exception",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
-
-    if legacy_value is not None:
-        if isinstance(legacy_value, ActionResult):
-            legacy_result = legacy_value
-        else:
-            legacy_result = ActionResult(
-                success=True,
-                message=f"Fallback legacy executado para '{tool_name}'.",
-                data={"value": legacy_value} if isinstance(legacy_value, dict) else None,
-            )
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "rpg",
-                "mcp_tool": tool_name,
-                "fallback_reason": fallback_reason or "legacy_fallback",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
-
-    if mcp_result is None:
-        return await legacy_handler()
-
-    return _action_result_from_mcp_result(
-        mcp_result,
-        server_name="rpg",
-        tool_name=tool_name,
-        fallback_used=False,
+async def _rpg_route_via_mcp(tool_name: str, params: JsonObject) -> ActionResult:
+    mcp_result, _legacy_value, _fallback_reason = await call_mcp_tool_with_legacy_fallback(
+        "rpg", tool_name, params
     )
+    if mcp_result is None or not mcp_result.ok:
+        return ActionResult(
+            success=False,
+            message=f"RPG MCP indisponivel para '{tool_name}'.",
+            error="mcp_unavailable",
+            evidence={"provider": "mcp", "mcp_server": "rpg", "mcp_tool": tool_name,
+                      "mcp_status": mcp_result.status if mcp_result else "unavailable"},
+        )
+    return _action_result_from_mcp_result(mcp_result, server_name="rpg", tool_name=tool_name, fallback_used=False)
 
 
 async def _whatsapp_route_via_mcp(
     tool_name: str,
     params: JsonObject,
-    legacy_handler: Callable[[], Awaitable[ActionResult]],
+    legacy_handler: object = None,
 ) -> ActionResult:
-    try:
-        mcp_result, legacy_value, fallback_reason = await call_mcp_tool_with_legacy_fallback(
-            "whatsapp",
-            tool_name,
-            params,
-            legacy_handler=legacy_handler,
-        )
-    except Exception as error:  # noqa: BLE001
-        logger.warning(
-            "whatsapp MCP route failed unexpectedly; using legacy handler",
-            extra={"tool": tool_name, "error": str(error)},
-            exc_info=True,
-        )
-        legacy_result = await legacy_handler()
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "whatsapp",
-                "mcp_tool": tool_name,
-                "fallback_reason": "transport_exception",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
-
-    if legacy_value is not None:
-        if isinstance(legacy_value, ActionResult):
-            legacy_result = legacy_value
-        else:
-            legacy_result = ActionResult(
-                success=True,
-                message=f"Fallback legacy executado para '{tool_name}'.",
-                data={"value": legacy_value} if isinstance(legacy_value, dict) else None,
-            )
-        evidence = dict(legacy_result.evidence or {})
-        evidence.update(
-            {
-                "provider": "legacy",
-                "mcp_server": "whatsapp",
-                "mcp_tool": tool_name,
-                "fallback_reason": fallback_reason or "legacy_fallback",
-            }
-        )
-        legacy_result.evidence = evidence
-        legacy_result.fallback_used = True
-        return legacy_result
-
+    mcp_result, _legacy_value, _fallback_reason = await call_mcp_tool_with_legacy_fallback(
+        "whatsapp",
+        tool_name,
+        params,
+    )
     if mcp_result is None:
-        return await legacy_handler()
-
+        return ActionResult(
+            success=False,
+            message=f"WhatsApp MCP indisponivel para '{tool_name}'.",
+            error="mcp_unavailable",
+            evidence={"provider": "mcp", "mcp_server": "whatsapp", "mcp_tool": tool_name},
+        )
     return _action_result_from_mcp_result(
         mcp_result,
         server_name="whatsapp",
@@ -8322,7 +7937,7 @@ async def _spotify_status(params: JsonObject, ctx: ActionContext) -> ActionResul
             spotify_api_request=_spotify_api_request,
         )
 
-    return await _spotify_route_via_mcp("spotify_status", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_status", params)
 
 
 async def _spotify_get_devices(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8333,7 +7948,7 @@ async def _spotify_get_devices(params: JsonObject, ctx: ActionContext) -> Action
             spotify_api_request=_spotify_api_request,
         )
 
-    return await _spotify_route_via_mcp("spotify_get_devices", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_get_devices", params)
 
 
 async def _spotify_transfer_playback(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8347,7 +7962,7 @@ async def _spotify_transfer_playback(params: JsonObject, ctx: ActionContext) -> 
             spotify_remember_device_alias=_spotify_remember_device_alias,
         )
 
-    return await _spotify_route_via_mcp("spotify_transfer_playback", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_transfer_playback", params)
 
 
 async def _spotify_play(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8363,7 +7978,7 @@ async def _spotify_play(params: JsonObject, ctx: ActionContext) -> ActionResult:
             spotify_remember_device_alias=_spotify_remember_device_alias,
         )
 
-    return await _spotify_route_via_mcp("spotify_play", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_play", params)
 
 
 async def _spotify_pause(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8374,7 +7989,7 @@ async def _spotify_pause(params: JsonObject, ctx: ActionContext) -> ActionResult
             spotify_api_request=_spotify_api_request,
         )
 
-    return await _spotify_route_via_mcp("spotify_pause", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_pause", params)
 
 
 async def _spotify_next_track(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8385,7 +8000,7 @@ async def _spotify_next_track(params: JsonObject, ctx: ActionContext) -> ActionR
             spotify_api_request=_spotify_api_request,
         )
 
-    return await _spotify_route_via_mcp("spotify_next_track", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_next_track", params)
 
 
 async def _spotify_previous_track(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8396,7 +8011,7 @@ async def _spotify_previous_track(params: JsonObject, ctx: ActionContext) -> Act
             spotify_api_request=_spotify_api_request,
         )
 
-    return await _spotify_route_via_mcp("spotify_previous_track", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_previous_track", params)
 
 
 async def _spotify_set_volume(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8410,7 +8025,7 @@ async def _spotify_set_volume(params: JsonObject, ctx: ActionContext) -> ActionR
             spotify_remember_device_alias=_spotify_remember_device_alias,
         )
 
-    return await _spotify_route_via_mcp("spotify_set_volume", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_set_volume", params)
 
 
 async def _spotify_create_surprise_playlist(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8422,7 +8037,7 @@ async def _spotify_create_surprise_playlist(params: JsonObject, ctx: ActionConte
             spotify_pick_surprise_tracks=_spotify_pick_surprise_tracks,
         )
 
-    return await _spotify_route_via_mcp("spotify_create_surprise_playlist", params, _legacy_handler)
+    return await _spotify_route_via_mcp("spotify_create_surprise_playlist", params)
 
 
 async def _onenote_status(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8434,7 +8049,7 @@ async def _onenote_status(params: JsonObject, ctx: ActionContext) -> ActionResul
             onenote_api_request=_onenote_api_request,
         )
 
-    return await _onenote_route_via_mcp("onenote_status", params, _legacy_handler)
+    return await _onenote_route_via_mcp("onenote_status", params)
 
 
 async def _onenote_list_notebooks(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8445,7 +8060,7 @@ async def _onenote_list_notebooks(params: JsonObject, ctx: ActionContext) -> Act
             onenote_api_request=_onenote_api_request,
         )
 
-    return await _onenote_route_via_mcp("onenote_list_notebooks", params, _legacy_handler)
+    return await _onenote_route_via_mcp("onenote_list_notebooks", params)
 
 
 async def _onenote_list_sections(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8456,7 +8071,7 @@ async def _onenote_list_sections(params: JsonObject, ctx: ActionContext) -> Acti
             onenote_api_request=_onenote_api_request,
         )
 
-    return await _onenote_route_via_mcp("onenote_list_sections", params, _legacy_handler)
+    return await _onenote_route_via_mcp("onenote_list_sections", params)
 
 
 async def _onenote_list_pages(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -8506,11 +8121,17 @@ async def _onenote_append_to_page(params: JsonObject, ctx: ActionContext) -> Act
 
 
 async def _whatsapp_get_recent_messages(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_whatsapp_get_recent_messages(
-        params,
-        ctx,
-        normalize_whatsapp_to=_normalize_whatsapp_to,
-        whatsapp_read_inbox=_whatsapp_read_inbox,
+    contact = _normalize_whatsapp_to(str(params.get("contact", "")).strip()) if params.get("contact") else None
+    limit = int(params.get("limit", 10))
+    entries = _whatsapp_read_inbox()
+    if contact:
+        entries = [item for item in entries if str(item.get("from", "")).strip() == contact]
+    entries = sorted(entries, key=lambda item: str(item.get("timestamp", "")), reverse=True)
+    sliced = entries[: max(1, min(limit, 50))]
+    return ActionResult(
+        success=True,
+        message=f"{len(sliced)} mensagem(ns) recuperada(s) do WhatsApp.",
+        data={"messages": sliced},
     )
 
 
@@ -8528,18 +8149,10 @@ async def _whatsapp_send_text(params: JsonObject, ctx: ActionContext) -> ActionR
     if not to or not text:
         return ActionResult(success=False, message="Parametros invalidos para WhatsApp.", error="missing to/text")
 
-    async def _legacy_handler() -> ActionResult:
-        return await domain_whatsapp_send_text(
-            normalized_params,
-            ctx,
-            normalize_whatsapp_to=_normalize_whatsapp_to,
-            whatsapp_send_message=_whatsapp_send_message,
-        )
-
     result = await _whatsapp_route_via_mcp(
         "send_message",
         {"recipient": to, "message": text},
-        _legacy_handler,
+        None,
     )
     if result.success:
         if not isinstance(result.data, dict):
@@ -8581,14 +8194,37 @@ async def _whatsapp_send_audio_tts(params: JsonObject, ctx: ActionContext) -> Ac
         params["to"] = params["contact"]
     if "text" not in params and "message" in params:
         params["text"] = params["message"]
-    result = await domain_whatsapp_send_audio_tts(
-        params,
-        ctx,
-        normalize_whatsapp_to=_normalize_whatsapp_to,
-        build_jarvez_tts_file=_build_jarvez_tts_file,
-        upload_whatsapp_media=_upload_whatsapp_media,
-        whatsapp_send_message=_whatsapp_send_message,
-    )
+    to = _normalize_whatsapp_to(str(params.get("to", "")).strip())
+    text_tts = str(params.get("text", "")).strip()
+    if not to or not text_tts:
+        return ActionResult(success=False, message="Parametros invalidos para audio WhatsApp.", error="missing to/text")
+    audio_file, tts_error = await _build_jarvez_tts_file(text_tts)
+    if tts_error is not None:
+        return tts_error
+    if audio_file is None:
+        return ActionResult(success=False, message="Falha ao gerar audio do Jarvez.", error="tts generation failed")
+    media_id_str, media_error = _upload_whatsapp_media(audio_file, "audio/mpeg")
+    try:
+        audio_file.unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+    if media_error is not None:
+        return media_error
+    if not media_id_str:
+        return ActionResult(success=False, message="Nao consegui enviar audio ao WhatsApp.", error="missing media id")
+    audio_payload: JsonObject = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "audio",
+        "audio": {"id": media_id_str},
+    }
+    result = _whatsapp_send_message(audio_payload)
+    if result.success:
+        result.message = f"Audio do Jarvez enviado para {to}."
+        if result.data is None:
+            result.data = {}
+        result.data["media_id"] = media_id_str
     if result.success:
         to = _normalize_whatsapp_to(str(params.get("to", "")).strip())
         text = str(params.get("text", "")).strip() or None
@@ -8635,7 +8271,7 @@ async def _rpg_search_knowledge(params: JsonObject, ctx: ActionContext) -> Actio
             get_rpg_index=_get_rpg_index,
         )
 
-    return await _rpg_route_via_mcp("rpg_search_knowledge", params, _legacy_handler)
+    return await _rpg_route_via_mcp("rpg_search_knowledge", params)
 
 
 async def _code_reindex_repo(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -9796,7 +9432,7 @@ async def _rpg_get_knowledge_stats(params: JsonObject, ctx: ActionContext) -> Ac
             get_rpg_index=_get_rpg_index,
         )
 
-    return await _rpg_route_via_mcp("rpg_get_knowledge_stats", params, _legacy_handler)
+    return await _rpg_route_via_mcp("rpg_get_knowledge_stats", params)
 
 
 # DEPRECATED: migrated to github.com/GuilhermeCostaProenca/jarvez-mcp-rpg

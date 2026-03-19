@@ -92,7 +92,8 @@ class McpSubstrateTests(unittest.TestCase):
         self.assertEqual(audit_rows[-1]["tool_name"], "spotify_status")
         self.assertIn("message", audit_rows[-1]["result_summary"]["structured_content"])
 
-    def test_explicit_legacy_fallback_is_recorded(self) -> None:
+    def test_mcp_failure_surfaces_error_without_fallback(self) -> None:
+        """Legacy fallback is disabled. MCP failure returns (result, None, None) — error surfaces."""
         audit_rows: list[dict[str, object]] = []
 
         class _FakeStore:
@@ -115,10 +116,10 @@ class McpSubstrateTests(unittest.TestCase):
         result, legacy_value, fallback_reason = asyncio.run(_run())
         self.assertIsNotNone(result)
         self.assertFalse(result.ok)
-        self.assertEqual(legacy_value, {"source": "legacy", "success": True})
-        self.assertEqual(fallback_reason, result.status)
-        self.assertGreaterEqual(len(audit_rows), 2)
-        self.assertTrue(any(bool(row.get("fallback_used")) for row in audit_rows))
+        # Legacy fallback is disabled — legacy_value must be None regardless of handler passed
+        self.assertIsNone(legacy_value)
+        self.assertIsNone(fallback_reason)
+        self.assertGreaterEqual(len(audit_rows), 1)
 
     def test_store_can_persist_mcp_audit_rows(self) -> None:
         tmp_dir = Path(tempfile.mkdtemp(prefix="jarvez_mcp_audit_"))
