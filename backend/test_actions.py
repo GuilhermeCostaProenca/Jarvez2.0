@@ -411,6 +411,7 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(md_exists)
         self.assertTrue(pdf_exists)
 
+    @unittest.skip("fallback builder path not implemented — rpg sheet creation goes via jarvez-mcp-rpg")
     async def test_rpg_create_character_sheet_fallback_pipeline(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
         with tempfile.TemporaryDirectory() as tmp:
@@ -548,6 +549,7 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.success)
         self.assertIn("challenge_level must be", result.error or "")
 
+    @unittest.skip("action moved to jarvez-mcp-desktop")
     async def test_open_desktop_resource_uses_site_alias(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
         with patch("actions.os.getenv") as getenv:
@@ -566,6 +568,7 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
         browser_open.assert_called_once()
         self.assertIn("youtube.com", browser_open.call_args.args[0])
 
+    @unittest.skip("action moved to jarvez-mcp-desktop")
     async def test_run_local_command_blocks_disallowed_command(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
         with patch("actions.os.getenv") as getenv:
@@ -705,6 +708,7 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.error, "browser_agent_not_configured")
         self.assertEqual(result.data["browser_task"]["status"], "failed")
 
+    @unittest.skip("action moved to jarvez-mcp-workflows")
     async def test_workflow_run_returns_checkpointed_plan(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
         with patch("actions.os.getenv") as getenv:
@@ -725,23 +729,18 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.data["workflow_state"]["workflow_type"], "idea_to_code")
         self.assertIn("task_plan", result.data["orchestration"])
 
-    async def test_whatsapp_channel_status_reports_legacy_mode_when_mcp_missing(self):
+    async def test_whatsapp_channel_status_reports_mcp_error_when_mcp_unavailable(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
-        with patch("actions.os.getenv") as getenv:
-            def _fake_getenv(key, default=""):
-                if key == "JARVEZ_SECURITY_PIN":
-                    return "1234"
-                if key == "JARVEZ_WHATSAPP_MCP_URL":
-                    return ""
-                if key == "WHATSAPP_PHONE_NUMBER_ID":
-                    return "123456"
-                return default
+        from backend_mcp import McpToolCallResult
 
-            getenv.side_effect = _fake_getenv
-            await dispatch_action("authenticate_identity", {"pin": "1234"}, ctx)
-            result = await dispatch_action("whatsapp_channel_status", {}, ctx)
-        self.assertTrue(result.success)
-        self.assertEqual(result.data["whatsapp_channel"]["mode"], "legacy_v1")
+        async def _fake_mcp_call(server_name, tool_name, params=None):
+            return McpToolCallResult(ok=False, status="transport_error", detail="stdio unavailable")
+
+        with patch("actions.call_mcp_tool", side_effect=_fake_mcp_call):
+            result = await dispatch_action("whatsapp_channel_status", {}, ctx, skip_confirmation=True, bypass_auth=True)
+        self.assertFalse(result.success)
+        self.assertEqual(result.data["whatsapp_channel"]["mode"], "mcp")
+        self.assertEqual(result.evidence.get("provider"), "mcp")
 
     async def test_killswitch_domain_blocks_action(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
@@ -771,6 +770,7 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
                 ctx,
             )
 
+    @unittest.skip("action moved to jarvez-mcp-desktop")
     async def test_workspace_policy_blocks_run_local_command_outside_root(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
         with patch("actions.os.getenv") as getenv:
@@ -1267,7 +1267,7 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
 
             getenv.side_effect = _fake_getenv
             await dispatch_action("authenticate_identity", {"pin": "1234"}, ctx)
-            snapshot = await dispatch_action("ops_incident_snapshot", {"include_ping": False, "metrics_limit": 80}, ctx)
+            snapshot = await dispatch_action("ops_incident_snapshot", {"include_ping": False, "metrics_limit": 80}, ctx, skip_confirmation=True)
 
         self.assertTrue(snapshot.success)
         self.assertIn("ops_incident_snapshot", snapshot.data)

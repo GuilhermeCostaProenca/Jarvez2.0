@@ -624,7 +624,7 @@ def _known_feature_flags() -> list[str]:
     return ["skills_v1", "subagents_v1", "policy_v1", "multi_model_router_v1", "canary_v1"]
 
 
-def _feature_value_from_env(flag_name: str, *, default: bool = True) -> bool:
+def _feature_value_from_env(flag_name: str, default: bool = True) -> bool:
     normalized = flag_name.strip().lower()
     specific = str(os.getenv(f"JARVEZ_FEATURE_{normalized.upper()}", "")).strip().lower()
     if specific:
@@ -10773,6 +10773,27 @@ def register_default_actions() -> None:
             },
             requires_confirmation=True,
             handler=_git_commit_and_push_project_action,
+            requires_auth=True,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="git_clone_repository",
+            description="Clona um repositorio git para um diretorio local.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "repository_url": {"type": "string", "minLength": 1, "maxLength": 500},
+                    "destination": {"type": "string", "minLength": 1, "maxLength": 500},
+                    "branch": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "depth": {"type": "integer", "minimum": 1},
+                },
+                "required": ["repository_url"],
+                "additionalProperties": False,
+            },
+            requires_confirmation=True,
+            handler=_git_clone_repository_helper,
             requires_auth=True,
         )
     )
