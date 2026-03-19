@@ -47,7 +47,7 @@ class ThinQMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
             )
 
         with patch("actions.call_mcp_tool_with_legacy_fallback", side_effect=_fake_call):
-            result = await dispatch_action("thinq_status", {}, ctx)
+            result = await dispatch_action("thinq_status", {}, ctx, skip_confirmation=True, bypass_auth=True)
 
         self.assertTrue(result.success)
         self.assertFalse(result.fallback_used)
@@ -72,7 +72,7 @@ class ThinQMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
             )
 
         with patch("actions.call_mcp_tool_with_legacy_fallback", side_effect=_fake_call):
-            result = await dispatch_action("thinq_list_devices", {}, ctx)
+            result = await dispatch_action("thinq_list_devices", {}, ctx, skip_confirmation=True, bypass_auth=True)
 
         self.assertFalse(result.success)
         self.assertFalse(result.fallback_used)

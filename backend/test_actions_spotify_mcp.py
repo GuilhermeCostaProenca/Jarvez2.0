@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import types
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 if "numpy" not in sys.modules:
     numpy_stub = types.ModuleType("numpy")
@@ -11,7 +11,7 @@ if "numpy" not in sys.modules:
     sys.modules["numpy"] = numpy_stub
 
 import actions as actions_module
-from actions import ActionContext, ActionResult, dispatch_action
+from actions import ActionContext, dispatch_action
 from backend_mcp import McpToolCallResult
 
 
@@ -26,7 +26,7 @@ class SpotifyMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(server_name, "spotify")
             self.assertEqual(tool_name, "spotify_status")
             self.assertEqual(params, {})
-            self.assertIsNotNone(legacy_handler)
+            self.assertIsNone(legacy_handler)
             return (
                 McpToolCallResult(
                     ok=True,
@@ -44,7 +44,7 @@ class SpotifyMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
             )
 
         with patch("actions.call_mcp_tool_with_legacy_fallback", side_effect=_fake_call):
-            result = await dispatch_action("spotify_status", {}, ctx)
+            result = await dispatch_action("spotify_status", {}, ctx, skip_confirmation=True, bypass_auth=True)
 
         self.assertFalse(result.success)
         self.assertEqual(result.error, "spotify_auth_required")
@@ -54,43 +54,31 @@ class SpotifyMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.evidence.get("mcp_server"), "spotify")
         self.assertEqual(result.evidence.get("mcp_tool"), "spotify_status")
 
-    async def test_spotify_get_devices_uses_legacy_fallback_when_mcp_fails(self) -> None:
+    async def test_spotify_get_devices_mcp_failure_surfaces_error(self) -> None:
         ctx = ActionContext(job_id="job-spotify-2", room="room-spotify", participant_identity="user-spotify")
-        legacy_result = ActionResult(
-            success=True,
-            message="1 device(s) Spotify encontrados.",
-            data={"devices": [{"id": "speaker-1", "name": "Sala"}]},
-        )
-        legacy_mock = AsyncMock(return_value=legacy_result)
 
         async def _fake_call(server_name, tool_name, params, legacy_handler=None):  # noqa: ANN001
             self.assertEqual(server_name, "spotify")
             self.assertEqual(tool_name, "spotify_get_devices")
-            self.assertIsNotNone(legacy_handler)
-            fallback_value = await legacy_handler()
+            self.assertIsNone(legacy_handler)
             return (
                 McpToolCallResult(
                     ok=False,
                     status="transport_error",
                     detail="stdio unavailable",
                 ),
-                fallback_value,
-                "transport_error",
+                None,
+                None,
             )
 
         with patch("actions.call_mcp_tool_with_legacy_fallback", side_effect=_fake_call):
-            with patch("actions.domain_spotify_get_devices", legacy_mock):
-                result = await dispatch_action("spotify_get_devices", {}, ctx)
+            result = await dispatch_action("spotify_get_devices", {}, ctx, skip_confirmation=True, bypass_auth=True)
 
-        legacy_mock.assert_awaited_once()
-        self.assertTrue(result.success)
-        self.assertTrue(result.fallback_used)
-        self.assertEqual(result.message, "1 device(s) Spotify encontrados.")
-        self.assertIsInstance(result.data, dict)
-        self.assertEqual(result.data.get("devices"), [{"id": "speaker-1", "name": "Sala"}])
-        self.assertIsInstance(result.evidence, dict)
-        self.assertEqual(result.evidence.get("provider"), "legacy")
-        self.assertEqual(result.evidence.get("fallback_reason"), "transport_error")
+        self.assertFalse(result.success)
+        self.assertFalse(result.fallback_used)
+        self.assertEqual(result.evidence.get("provider"), "mcp")
+        self.assertEqual(result.evidence.get("mcp_server"), "spotify")
+        self.assertEqual(result.evidence.get("mcp_tool"), "spotify_get_devices")
 
     async def test_spotify_pause_routes_through_mcp_for_control_action(self) -> None:
         ctx = ActionContext(job_id="job-spotify-3", room="room-spotify", participant_identity="user-spotify")
@@ -99,7 +87,7 @@ class SpotifyMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(server_name, "spotify")
             self.assertEqual(tool_name, "spotify_pause")
             self.assertEqual(params, {})
-            self.assertIsNotNone(legacy_handler)
+            self.assertIsNone(legacy_handler)
             return (
                 McpToolCallResult(
                     ok=True,
@@ -116,7 +104,7 @@ class SpotifyMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
             )
 
         with patch("actions.call_mcp_tool_with_legacy_fallback", side_effect=_fake_call):
-            result = await dispatch_action("spotify_pause", {}, ctx)
+            result = await dispatch_action("spotify_pause", {}, ctx, skip_confirmation=True, bypass_auth=True)
 
         self.assertTrue(result.success)
         self.assertEqual(result.message, "Playback pausado.")
@@ -126,44 +114,32 @@ class SpotifyMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.evidence.get("provider"), "mcp")
         self.assertEqual(result.evidence.get("mcp_tool"), "spotify_pause")
 
-    async def test_spotify_play_uses_legacy_fallback_when_mcp_fails(self) -> None:
+    async def test_spotify_play_mcp_failure_surfaces_error(self) -> None:
         ctx = ActionContext(job_id="job-spotify-4", room="room-spotify", participant_identity="user-spotify")
-        legacy_result = ActionResult(
-            success=True,
-            message="Tocando agora: musica teste.",
-            data={"uri": "spotify:track:test"},
-        )
-        legacy_mock = AsyncMock(return_value=legacy_result)
 
         async def _fake_call(server_name, tool_name, params, legacy_handler=None):  # noqa: ANN001
             self.assertEqual(server_name, "spotify")
             self.assertEqual(tool_name, "spotify_play")
             self.assertEqual(params, {"query": "musica teste"})
-            self.assertIsNotNone(legacy_handler)
-            fallback_value = await legacy_handler()
+            self.assertIsNone(legacy_handler)
             return (
                 McpToolCallResult(
                     ok=False,
                     status="transport_error",
                     detail="spotify mcp unavailable",
                 ),
-                fallback_value,
-                "transport_error",
+                None,
+                None,
             )
 
         with patch("actions.call_mcp_tool_with_legacy_fallback", side_effect=_fake_call):
-            with patch("actions.domain_spotify_play", legacy_mock):
-                result = await dispatch_action("spotify_play", {"query": "musica teste"}, ctx)
+            result = await dispatch_action("spotify_play", {"query": "musica teste"}, ctx, skip_confirmation=True, bypass_auth=True)
 
-        legacy_mock.assert_awaited_once()
-        self.assertTrue(result.success)
-        self.assertTrue(result.fallback_used)
-        self.assertEqual(result.message, "Tocando agora: musica teste.")
-        self.assertIsInstance(result.data, dict)
-        self.assertEqual(result.data.get("uri"), "spotify:track:test")
-        self.assertEqual(result.evidence.get("provider"), "legacy")
+        self.assertFalse(result.success)
+        self.assertFalse(result.fallback_used)
+        self.assertEqual(result.evidence.get("provider"), "mcp")
+        self.assertEqual(result.evidence.get("mcp_server"), "spotify")
         self.assertEqual(result.evidence.get("mcp_tool"), "spotify_play")
-        self.assertEqual(result.evidence.get("fallback_reason"), "transport_error")
 
 
 if __name__ == "__main__":

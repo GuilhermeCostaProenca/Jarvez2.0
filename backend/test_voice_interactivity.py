@@ -43,7 +43,7 @@ class VoiceInteractivityTests(unittest.IsolatedAsyncioTestCase):
         async def _fake_call(server_name, tool_name, params, legacy_handler=None):  # noqa: ANN001
             self.assertEqual(server_name, "spotify")
             self.assertEqual(tool_name, "spotify_status")
-            self.assertIsNotNone(legacy_handler)
+            self.assertIsNone(legacy_handler)
             return (
                 McpToolCallResult(
                     ok=True,
@@ -62,7 +62,7 @@ class VoiceInteractivityTests(unittest.IsolatedAsyncioTestCase):
         with patch("actions.call_mcp_tool_with_legacy_fallback", side_effect=_fake_call):
             with patch("actions.publish_session_event", side_effect=_fake_publish):
                 with patch("actions._publish_session_snapshot_for_context", AsyncMock()):
-                    result = await dispatch_action("spotify_status", {}, ctx)
+                    result = await dispatch_action("spotify_status", {}, ctx, skip_confirmation=True, bypass_auth=True)
 
         self.assertTrue(result.success)
         voice_states = [
@@ -92,7 +92,7 @@ class VoiceInteractivityTests(unittest.IsolatedAsyncioTestCase):
         async def _fake_call(server_name, tool_name, params, legacy_handler=None):  # noqa: ANN001
             self.assertEqual(server_name, "spotify")
             self.assertEqual(tool_name, "spotify_status")
-            self.assertIsNotNone(legacy_handler)
+            self.assertIsNone(legacy_handler)
             return (
                 McpToolCallResult(
                     ok=True,
@@ -111,7 +111,7 @@ class VoiceInteractivityTests(unittest.IsolatedAsyncioTestCase):
         with patch("actions.call_mcp_tool_with_legacy_fallback", side_effect=_fake_call):
             with patch("actions.publish_session_event", AsyncMock()):
                 with patch("actions._publish_session_snapshot_for_context", AsyncMock()):
-                    result = await dispatch_action("spotify_status", {}, ctx)
+                    result = await dispatch_action("spotify_status", {}, ctx, skip_confirmation=True, bypass_auth=True)
 
         self.assertFalse(result.success)
         payload = actions_module.STATE_STORE.get_event_state(
