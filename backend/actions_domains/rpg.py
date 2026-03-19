@@ -376,7 +376,9 @@ async def rpg_create_character_sheet(
     tormenta20_pdf_template_path: Any,
     log_info: Any,
 ) -> ActionResult:
-    name = str(params.get("name", "")).strip()
+    name = (
+        str(params.get("name") or params.get("nome", "")).strip()
+    )
     if not name:
         return ActionResult(success=False, message="Informe o nome do personagem.", error="missing name")
 
@@ -385,6 +387,7 @@ async def rpg_create_character_sheet(
         str(params.get("class_name", "")).strip()
         or str(params.get("class", "")).strip()
         or str(params.get("character_class", "")).strip()
+        or str(params.get("classe", "")).strip()
         or "A definir"
     )
     safe_world = safe_file_part(world)

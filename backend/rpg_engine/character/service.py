@@ -170,24 +170,25 @@ def _build_character_markdown(sheet: JsonObject) -> str:
 
 
 def _build_request(params: JsonObject) -> CharacterGenerationRequest:
-    name = str(params.get("name", "")).strip()
+    name = str(params.get("name") or params.get("nome", "")).strip()
     if not name:
         raise InvalidCharacterBuildError("Informe o nome do personagem.")
     attrs = _normalize_input_attributes(params.get("attributes") if isinstance(params.get("attributes"), dict) else {})
-    origin = str(params.get("origin", "")).strip() or None
+    origin = str(params.get("origin") or params.get("origem", "")).strip() or None
     if origin:
         _validate_origin(origin, attrs)
     else:
         origin = _default_origin(attrs)
-    level = int(params.get("level", 1) or 1)
+    level = int(params.get("level") or params.get("nivel") or 1)
     return CharacterGenerationRequest(
         name=name,
         world=str(params.get("world", "tormenta20")).strip() or "tormenta20",
-        race=str(params.get("race", "")).strip() or "A definir",
+        race=str(params.get("race") or params.get("raca", "")).strip() or "A definir",
         class_name=(
             str(params.get("class_name", "")).strip()
             or str(params.get("class", "")).strip()
             or str(params.get("character_class", "")).strip()
+            or str(params.get("classe", "")).strip()
             or "A definir"
         ),
         origin=origin,
