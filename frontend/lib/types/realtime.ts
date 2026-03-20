@@ -45,6 +45,26 @@ export interface RecognizedIdentity {
   updated_at?: string;
 }
 
+export interface AuthState {
+  status?:
+    | 'locked'
+    | 'unlock_in_progress'
+    | 'unlocked_by_voice'
+    | 'unlocked_by_face'
+    | 'unlocked_combined'
+    | 'recovery_mode'
+    | string;
+  method?: 'voice' | 'face' | 'voice+face' | 'recovery' | string | null;
+  profile_name?: string | null;
+  confidence?: number | null;
+  voice_confidence?: number | null;
+  face_confidence?: number | null;
+  authenticated_at?: string | null;
+  last_verified_at?: string | null;
+  relock_reason?: string | null;
+  session_id?: string | null;
+}
+
 export interface ToolCallEvent {
   name: string;
   status: 'started' | 'completed' | 'failed' | 'confirmation_required';
@@ -73,6 +93,16 @@ export interface ActionResultPayload {
     action_name?: string;
     params?: Record<string, unknown>;
     authentication_required?: boolean;
+    preferred_unlock_modes?: Array<'voice' | 'face' | string>;
+    recommended_unlock_actions?: Array<'unlock_with_voice' | 'unlock_with_face' | 'authenticate_identity' | string>;
+    recovery_available?: boolean;
+    recovery_action?: 'authenticate_identity' | string | null;
+    unlock_options?: {
+      preferred_unlock_modes?: Array<'voice' | 'face' | string>;
+      recommended_unlock_actions?: Array<'unlock_with_voice' | 'unlock_with_face' | 'authenticate_identity' | string>;
+      recovery_available?: boolean;
+      recovery_action?: 'authenticate_identity' | string | null;
+    };
     security_status?: {
       authenticated?: boolean;
       identity_bound?: boolean;
@@ -84,6 +114,7 @@ export interface ActionResultPayload {
     voice_score?: number;
     step_up_required?: boolean;
     private_access_granted?: boolean;
+    auth_state?: AuthState | null;
     recognized_identity?: RecognizedIdentity | null;
     persona_mode?: string;
     current_persona_mode?: string;
@@ -785,6 +816,14 @@ export interface SecuritySessionState {
   authMethod?: string;
   stepUpRequired: boolean;
   voiceScore?: number;
+  authState?: AuthState | null;
+  recognizedIdentity?: RecognizedIdentity | null;
+  unlockOptions?: {
+    preferred_unlock_modes?: Array<'voice' | 'face' | string>;
+    recommended_unlock_actions?: Array<'unlock_with_voice' | 'unlock_with_face' | 'authenticate_identity' | string>;
+    recovery_available?: boolean;
+    recovery_action?: 'authenticate_identity' | string | null;
+  } | null;
   personaMode?: string;
   personaColorHex?: string;
   personaLabel?: string;
@@ -820,6 +859,13 @@ export interface SessionSnapshot {
       auth_method?: string;
       step_up_required?: boolean;
     };
+    auth_state?: AuthState | null;
+    unlock_options?: {
+      preferred_unlock_modes?: Array<'voice' | 'face' | string>;
+      recommended_unlock_actions?: Array<'unlock_with_voice' | 'unlock_with_face' | 'authenticate_identity' | string>;
+      recovery_available?: boolean;
+      recovery_action?: 'authenticate_identity' | string | null;
+    } | null;
     persona_mode?: string;
     persona_profile?: {
       label?: string;
@@ -862,6 +908,7 @@ export interface SessionSnapshot {
   browser_tasks?: BrowserTaskState | BrowserTaskState[] | null;
   workflow_state?: WorkflowState | null;
   automation_state?: AutomationState | null;
+  auth_state?: AuthState | null;
   recognized_identity?: RecognizedIdentity | null;
   whatsapp_channel?: Record<string, unknown> | null;
   voice_interactivity?: VoiceInteractivityState | null;

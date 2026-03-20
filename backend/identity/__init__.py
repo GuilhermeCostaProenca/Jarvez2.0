@@ -3,12 +3,14 @@ from .face_id import (
     capture_face_embedding,
     capture_webcam_frame,
     identify_face,
+    unlock_with_face,
 )
 from .identity_store import IdentityProfile, IdentityStore
 from .speaker_id import (
     SpeakerIdentificationResult,
     extract_current_speaker_embedding,
     identify_speaker,
+    unlock_with_voice,
 )
 
 __all__ = [
@@ -21,4 +23,6 @@ __all__ = [
     "extract_current_speaker_embedding",
     "identify_face",
     "identify_speaker",
+    "unlock_with_face",
+    "unlock_with_voice",
 ]

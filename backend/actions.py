@@ -174,6 +174,8 @@ from identity import (
     extract_current_speaker_embedding,
     identify_face,
     identify_speaker,
+    unlock_with_face,
+    unlock_with_voice,
 )
 from code_knowledge import CodeKnowledgeIndex
 from codex_cli import is_codex_available, run_exec_streaming
@@ -273,6 +275,7 @@ JsonObject = dict[str, Any]
 ActionHandler = Callable[[JsonObject, "ActionContext"], Awaitable["ActionResult"]]
 STATE_STORE = get_state_store()
 SESSION_STATE_NAMESPACES = {
+    "auth_state",
     "memory_scope",
     "persona_mode",
     "capability_mode",
@@ -329,6 +332,26 @@ BOOL_FALSE_VALUES = {"0", "false", "off", "no", "nao", "nÃ£o"}
 
 VOICE_PROFILE_STORE = VoiceProfileStore.from_env()
 IDENTITY_STORE = IdentityStore.from_env()
+AUTH_STATE_NAMESPACE = "auth_state"
+ENVIRONMENT_ACTIONS = {
+    "turn_light_on",
+    "turn_light_off",
+    "set_light_brightness",
+    "ac_get_status",
+    "ac_turn_on",
+    "ac_turn_off",
+    "ac_send_command",
+    "ac_set_temperature",
+    "ac_set_mode",
+    "ac_set_fan_speed",
+    "ac_set_swing",
+    "ac_set_sleep_timer",
+    "ac_set_start_timer",
+    "ac_set_power_save",
+    "ac_apply_preset",
+    "ac_configure_arrival_prefs",
+    "ac_prepare_arrival",
+}
 PROJECT_CATALOG_SINGLETON: ProjectCatalog | None = None
 CODE_WORKER_CLIENT: CodeWorkerClient | None = None
 GITHUB_CATALOG_CLIENT: GitHubCatalogClient | None = None
@@ -1421,8 +1444,217 @@ def _voice_stepup_threshold() -> float:
         return 0.85
 
 
-def _clear_authentication(identity: str) -> None:
+def _normalize_auth_state_status(value: str | None) -> str:
+    allowed = {
+        "locked",
+        "unlock_in_progress",
+        "unlocked_by_voice",
+        "unlocked_by_face",
+        "unlocked_combined",
+        "recovery_mode",
+    }
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in allowed else "locked"
+
+
+def _normalize_auth_state_method(value: str | None) -> str | None:
+    allowed = {"voice", "face", "voice+face", "recovery"}
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in allowed else None
+
+
+def _auth_state_from_auth_method(auth_method: str | None) -> tuple[str, str | None]:
+    normalized = str(auth_method or "").strip().lower()
+    if normalized in {"voice", "voice_biometric"}:
+        return "unlocked_by_voice", "voice"
+    if normalized in {"face", "face_biometric"}:
+        return "unlocked_by_face", "face"
+    if normalized in {"voice+face", "voice_face", "combined", "voice_face_biometric"}:
+        return "unlocked_combined", "voice+face"
+    if normalized:
+        return "recovery_mode", "recovery"
+    return "locked", None
+
+
+def _auth_state_payload(
+    *,
+    status: str,
+    method: str | None = None,
+    profile_name: str | None = None,
+    confidence: float | None = None,
+    voice_confidence: float | None = None,
+    face_confidence: float | None = None,
+    authenticated_at: str | None = None,
+    last_verified_at: str | None = None,
+    relock_reason: str | None = None,
+    session_id: str | None = None,
+) -> JsonObject:
+    now_iso = _now_iso()
+    payload: JsonObject = {
+        "status": _normalize_auth_state_status(status),
+        "authenticated_at": authenticated_at or now_iso,
+        "last_verified_at": last_verified_at or authenticated_at or now_iso,
+        "session_id": session_id,
+        "method": _normalize_auth_state_method(method),
+        "profile_name": str(profile_name).strip() if profile_name else None,
+        "confidence": max(0.0, min(float(confidence), 1.0)) if confidence is not None else None,
+        "voice_confidence": max(0.0, min(float(voice_confidence), 1.0)) if voice_confidence is not None else None,
+        "face_confidence": max(0.0, min(float(face_confidence), 1.0)) if face_confidence is not None else None,
+        "relock_reason": str(relock_reason).strip() if relock_reason else None,
+    }
+    return payload
+
+
+def _persist_auth_state(
+    participant_identity: str,
+    room: str,
+    payload: JsonObject,
+) -> JsonObject:
+    normalized = _auth_state_payload(
+        status=str(payload.get("status") or "locked"),
+        method=payload.get("method"),
+        profile_name=payload.get("profile_name"),
+        confidence=payload.get("confidence"),
+        voice_confidence=payload.get("voice_confidence"),
+        face_confidence=payload.get("face_confidence"),
+        authenticated_at=payload.get("authenticated_at"),
+        last_verified_at=payload.get("last_verified_at"),
+        relock_reason=payload.get("relock_reason"),
+        session_id=payload.get("session_id"),
+    )
+    _persist_session_namespace(participant_identity, room, AUTH_STATE_NAMESPACE, normalized)
+    return normalized
+
+
+def _derive_auth_state_from_authenticated(identity: str, room: str) -> JsonObject:
+    session = AUTHENTICATED_SESSIONS.get(identity)
+    if session is None:
+        stored = STATE_STORE.get_authenticated_session(participant_identity=identity, room=room)
+        if isinstance(stored, dict):
+            expires_at = _parse_datetime(stored.get("expires_at"))
+            last_activity_at = _parse_datetime(stored.get("last_activity_at"))
+            auth_method = str(stored.get("auth_method") or "").strip()
+            if expires_at is not None and last_activity_at is not None and auth_method:
+                session = AuthenticatedSession(
+                    participant_identity=identity,
+                    room=room,
+                    expires_at=expires_at,
+                    auth_method=auth_method,
+                    last_activity_at=last_activity_at,
+                )
+                AUTHENTICATED_SESSIONS[identity] = session
+    if session is None or session.room != room:
+        return _auth_state_payload(status="locked", session_id=f"{identity}:{room}")
+    status, method = _auth_state_from_auth_method(session.auth_method)
+    timestamp = session.last_activity_at.isoformat() if hasattr(session.last_activity_at, "isoformat") else str(session.last_activity_at)
+    return _auth_state_payload(
+        status=status,
+        method=method,
+        authenticated_at=timestamp,
+        last_verified_at=timestamp,
+        session_id=f"{identity}:{room}",
+    )
+
+
+def _load_auth_state(identity: str, room: str) -> JsonObject:
+    current = _load_session_namespace(identity, room, AUTH_STATE_NAMESPACE)
+    if isinstance(current, dict):
+        return _auth_state_payload(
+            status=str(current.get("status") or "locked"),
+            method=current.get("method"),
+            profile_name=current.get("profile_name"),
+            confidence=current.get("confidence"),
+            voice_confidence=current.get("voice_confidence"),
+            face_confidence=current.get("face_confidence"),
+            authenticated_at=current.get("authenticated_at"),
+            last_verified_at=current.get("last_verified_at"),
+            relock_reason=current.get("relock_reason"),
+            session_id=current.get("session_id") or f"{identity}:{room}",
+        )
+    derived = _derive_auth_state_from_authenticated(identity, room)
+    _persist_auth_state(identity, room, derived)
+    return derived
+
+
+def _is_owner_unlocked(identity: str, room: str) -> bool:
+    if not _is_authenticated(identity, room):
+        return False
+    auth_state = _load_auth_state(identity, room)
+    return str(auth_state.get("status") or "locked") in {
+        "unlocked_by_voice",
+        "unlocked_by_face",
+        "unlocked_combined",
+        "recovery_mode",
+    }
+
+
+def _is_environment_action(name: str) -> bool:
+    return name in ENVIRONMENT_ACTIONS
+
+
+def _preferred_owner_unlock_modes() -> list[str]:
+    try:
+        profiles = [profile for profile in IDENTITY_STORE.list_profiles() if profile.role == "owner"]
+    except Exception:
+        logger.debug("failed to inspect owner unlock modes", exc_info=True)
+        return []
+    modes: list[str] = []
+    for profile in profiles:
+        preferred = list(profile.preferred_unlock_modes or [])
+        if not preferred:
+            if profile.voice_embeddings:
+                preferred.append("voice")
+            if profile.face_embeddings:
+                preferred.append("face")
+        for item in preferred:
+            if item == "voice+face":
+                for atomic in ("voice", "face"):
+                    if atomic not in modes:
+                        modes.append(atomic)
+                continue
+            if item in {"voice", "face"} and item not in modes:
+                modes.append(item)
+    return modes
+
+
+def _unlock_options_payload() -> JsonObject:
+    preferred_modes = _preferred_owner_unlock_modes()
+    recommended_actions: list[str] = []
+    if "voice" in preferred_modes:
+        recommended_actions.append("unlock_with_voice")
+    if "face" in preferred_modes:
+        recommended_actions.append("unlock_with_face")
+    recovery_available = bool(_security_pin() or _security_passphrase())
+    return {
+        "preferred_unlock_modes": preferred_modes,
+        "recommended_unlock_actions": recommended_actions,
+        "recovery_available": recovery_available,
+        "recovery_action": "authenticate_identity" if recovery_available else None,
+    }
+
+
+def _set_unlock_in_progress(
+    identity: str,
+    room: str,
+    *,
+    method: str | None,
+    profile_name: str | None = None,
+) -> JsonObject:
+    return _persist_auth_state(
+        identity,
+        room,
+        _auth_state_payload(
+            status="unlock_in_progress",
+            method=method,
+            profile_name=profile_name,
+            session_id=f"{identity}:{room}",
+        ),
+    )
+
+
+def _clear_authentication(identity: str, *, room: str | None = None, reason: str = "manual_lock") -> None:
     session = AUTHENTICATED_SESSIONS.pop(identity, None)
+    target_room = session.room if session is not None else room
     if session is not None:
         try:
             STATE_STORE.delete_authenticated_session(
@@ -1432,9 +1664,29 @@ def _clear_authentication(identity: str) -> None:
         except Exception:
             logger.warning("failed to delete authenticated session", exc_info=True)
     VOICE_STEP_UP_PENDING.pop(identity, None)
+    if target_room:
+        _persist_auth_state(
+            identity,
+            target_room,
+            _auth_state_payload(
+                status="locked",
+                method=None,
+                relock_reason=reason,
+                session_id=f"{identity}:{target_room}",
+            ),
+        )
 
 
-def _set_authenticated(identity: str, room: str, auth_method: str) -> None:
+def _set_authenticated(
+    identity: str,
+    room: str,
+    auth_method: str,
+    *,
+    profile_name: str | None = None,
+    confidence: float | None = None,
+    voice_confidence: float | None = None,
+    face_confidence: float | None = None,
+) -> None:
     now = datetime.now(timezone.utc)
     session = AuthenticatedSession(
         participant_identity=identity,
@@ -1455,6 +1707,51 @@ def _set_authenticated(identity: str, room: str, auth_method: str) -> None:
     except Exception:
         logger.warning("failed to persist authenticated session", exc_info=True)
     VOICE_STEP_UP_PENDING.pop(identity, None)
+    status, method = _auth_state_from_auth_method(auth_method)
+    _persist_auth_state(
+        identity,
+        room,
+        _auth_state_payload(
+            status=status,
+            method=method,
+            profile_name=profile_name,
+            confidence=confidence,
+            voice_confidence=voice_confidence,
+            face_confidence=face_confidence,
+            authenticated_at=now.isoformat(),
+            last_verified_at=now.isoformat(),
+            session_id=f"{identity}:{room}",
+        ),
+    )
+
+
+def try_auto_authenticate_owner(participant_identity: str, room: str) -> str | None:
+    """Tenta identificar o dono via biometria de voz e autentica a sessao automaticamente.
+    Retorna o nome reconhecido se bem-sucedido, None caso contrario.
+    Usado no inicio de sessao para evitar pedido de PIN quando o dono e reconhecido.
+    """
+    if _is_authenticated(participant_identity, room):
+        return None  # ja autenticado
+    try:
+        result = identify_speaker(participant_identity, IDENTITY_STORE)
+        if not result.matched:
+            return None
+        profile = IDENTITY_STORE.get_profile(result.name)
+        if profile is None or profile.role != "owner":
+            return None
+        _set_authenticated(
+            participant_identity,
+            room,
+            auth_method="voice_biometric",
+            profile_name=result.name,
+            confidence=result.confidence,
+            voice_confidence=result.confidence,
+        )
+        logger.info("auto_auth_owner: %s autenticado via biometria de voz", result.name)
+        return result.name
+    except Exception:
+        logger.debug("try_auto_authenticate_owner falhou", exc_info=True)
+        return None
 
 
 def _touch_authenticated(identity: str) -> None:
@@ -1472,6 +1769,16 @@ def _touch_authenticated(identity: str) -> None:
         )
     except Exception:
         logger.warning("failed to update authenticated session", exc_info=True)
+    current = _load_auth_state(identity, session.room)
+    _persist_auth_state(
+        identity,
+        session.room,
+        {
+            **current,
+            "last_verified_at": session.last_activity_at.isoformat(),
+            "session_id": current.get("session_id") or f"{identity}:{session.room}",
+        },
+    )
 
 
 def _is_authenticated(identity: str, room: str) -> bool:
@@ -1494,14 +1801,14 @@ def _is_authenticated(identity: str, room: str) -> bool:
     if session is None:
         return False
     if session.room != room:
-        _clear_authentication(identity)
+        _clear_authentication(identity, room=room, reason="identity_changed")
         return False
     if session.expires_at <= datetime.now(timezone.utc):
-        _clear_authentication(identity)
+        _clear_authentication(identity, room=room, reason="timeout")
         return False
     idle_limit = timedelta(seconds=_secure_idle_lock_seconds())
     if datetime.now(timezone.utc) - session.last_activity_at > idle_limit:
-        _clear_authentication(identity)
+        _clear_authentication(identity, room=room, reason="timeout")
         return False
     return True
 
@@ -1513,6 +1820,7 @@ def _security_status_payload(identity: str, room: str) -> JsonObject:
     auth_method = session.auth_method if session else None
     step_up_required = identity in VOICE_STEP_UP_PENDING
     persona = _persona_payload(get_persona_mode(identity, room))
+    auth_state = _load_auth_state(identity, room)
     return {
         "security_status": {
             "authenticated": authenticated,
@@ -1521,6 +1829,8 @@ def _security_status_payload(identity: str, room: str) -> JsonObject:
             "auth_method": auth_method,
             "step_up_required": step_up_required,
         },
+        "auth_state": auth_state,
+        "unlock_options": _unlock_options_payload(),
         **persona,
         **_active_character_payload(identity, room),
         **_active_project_payload(identity, room),
@@ -6090,14 +6400,17 @@ async def dispatch_action(
             )
             return await _finalize(result)
 
+    owner_action_requires_unlock = spec.requires_auth and not _is_environment_action(name)
+
     # identity recognition does not bypass confirmation or authentication.
-    if spec.requires_auth and not bypass_auth and not _is_authenticated(ctx.participant_identity, ctx.room):
+    if owner_action_requires_unlock and not bypass_auth and not _is_owner_unlocked(ctx.participant_identity, ctx.room):
         result = ActionResult(
             success=False,
-            message="Esta acao exige modo privado. So peca PIN quando o usuario realmente quiser acessar algo privado ou sensivel.",
+            message="Esta acao exige que a sessao do owner esteja desbloqueada por biometria ou recovery local.",
             data={
                 "authentication_required": True,
                 "step_up_required": ctx.participant_identity in VOICE_STEP_UP_PENDING,
+                **_unlock_options_payload(),
                 **_security_status_payload(ctx.participant_identity, ctx.room),
             },
             error="not authenticated",
@@ -6112,11 +6425,10 @@ async def dispatch_action(
         )
         return await _finalize(result)
 
-    if spec.requires_auth and not bypass_auth:
+    if owner_action_requires_unlock and not bypass_auth:
         _touch_authenticated(ctx.participant_identity)
 
     requires_confirmation = spec.requires_confirmation or policy_eval.decision == "require_confirmation"
-    # identity recognition does not bypass confirmation.
     if requires_confirmation and not skip_confirmation and name != "confirm_action":
         pending = _store_confirmation(name, params, ctx)
         confirmation_message = _build_confirmation_message(name, params)
@@ -7425,8 +7737,193 @@ async def _delete_voice_profile(params: JsonObject, ctx: ActionContext) -> Actio
     return ActionResult(success=True, message=f"Perfil de voz '{name}' removido.")
 
 
+async def _unlock_with_voice(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    _ = params
+    _set_unlock_in_progress(ctx.participant_identity, ctx.room, method="voice")
+    unlock_result = unlock_with_voice(ctx.participant_identity, IDENTITY_STORE)
+    if not unlock_result.matched:
+        reason = "confidence_dropped"
+        if unlock_result.failure_reason == "insufficient_sample":
+            reason = "microphone_unavailable"
+        _persist_auth_state(
+            ctx.participant_identity,
+            ctx.room,
+            _auth_state_payload(
+                status="locked",
+                relock_reason=reason,
+                session_id=f"{ctx.participant_identity}:{ctx.room}",
+            ),
+        )
+        return ActionResult(
+            success=False,
+            message="Nao consegui desbloquear sua sessao por voz com confianca suficiente.",
+            data={
+                "auth_state": _load_auth_state(ctx.participant_identity, ctx.room),
+                "voice_score": unlock_result.confidence,
+                "matched_profile": unlock_result.name,
+                "voice_method": unlock_result.method,
+                "compared_profiles": unlock_result.compared_profiles,
+                "voice_unlock_threshold": unlock_result.threshold_used,
+                "margin_to_second": unlock_result.margin_to_second,
+                "failure_reason": unlock_result.failure_reason,
+            },
+            error="voice_unlock_failed",
+        )
+
+    profile = IDENTITY_STORE.get_profile(unlock_result.name)
+    if profile is None or profile.role != "owner":
+        _persist_auth_state(
+            ctx.participant_identity,
+            ctx.room,
+            _auth_state_payload(
+                status="locked",
+                relock_reason="identity_changed",
+                session_id=f"{ctx.participant_identity}:{ctx.room}",
+            ),
+        )
+        return ActionResult(
+            success=False,
+            message="Reconheci uma voz cadastrada, mas ela nao pode abrir a sessao do owner.",
+            data={
+                "auth_state": _load_auth_state(ctx.participant_identity, ctx.room),
+                "matched_profile": unlock_result.name,
+                "voice_score": unlock_result.confidence,
+            },
+            error="voice_unlock_not_owner",
+        )
+
+    _set_authenticated(
+        ctx.participant_identity,
+        ctx.room,
+        auth_method="voice_biometric",
+        profile_name=unlock_result.name,
+        confidence=unlock_result.confidence,
+        voice_confidence=unlock_result.confidence,
+    )
+    recognized_identity = _persist_recognized_identity_context(
+        ctx,
+        _recognized_identity_payload(
+            name=unlock_result.name,
+            confidence=unlock_result.confidence,
+            source="voice",
+        ),
+    )
+    return ActionResult(
+        success=True,
+        message=f"Sessao desbloqueada por voz como {unlock_result.name}.",
+        data={
+            "auth_state": _load_auth_state(ctx.participant_identity, ctx.room),
+            "recognized_identity": recognized_identity,
+            "voice_score": unlock_result.confidence,
+            "matched_profile": unlock_result.name,
+            "voice_method": unlock_result.method,
+            "compared_profiles": unlock_result.compared_profiles,
+            "voice_unlock_threshold": unlock_result.threshold_used,
+            "margin_to_second": unlock_result.margin_to_second,
+            "private_access_granted": True,
+        },
+    )
+
+
+async def _unlock_with_face(params: JsonObject, ctx: ActionContext) -> ActionResult:
+    camera_index_raw = params.get("camera_index", 0)
+    try:
+        camera_index = int(camera_index_raw)
+    except (TypeError, ValueError):
+        camera_index = 0
+    _set_unlock_in_progress(ctx.participant_identity, ctx.room, method="face")
+    unlock_result = unlock_with_face(IDENTITY_STORE, camera_index=camera_index)
+    if not unlock_result.matched:
+        reason = "confidence_dropped"
+        if unlock_result.failure_reason == "camera_unavailable":
+            reason = "camera_unavailable"
+        elif unlock_result.failure_reason == "face_not_detected":
+            reason = "presence_lost"
+        _persist_auth_state(
+            ctx.participant_identity,
+            ctx.room,
+            _auth_state_payload(
+                status="locked",
+                relock_reason=reason,
+                session_id=f"{ctx.participant_identity}:{ctx.room}",
+            ),
+        )
+        return ActionResult(
+            success=False,
+            message="Nao consegui desbloquear sua sessao por rosto com confianca suficiente.",
+            data={
+                "auth_state": _load_auth_state(ctx.participant_identity, ctx.room),
+                "face_score": unlock_result.confidence,
+                "matched_profile": unlock_result.name,
+                "face_method": unlock_result.method,
+                "compared_profiles": unlock_result.compared_profiles,
+                "face_detected": unlock_result.face_detected,
+                "face_unlock_threshold": unlock_result.threshold_used,
+                "margin_to_second": unlock_result.margin_to_second,
+                "failure_reason": unlock_result.failure_reason,
+            },
+            error="face_unlock_failed",
+        )
+
+    profile = IDENTITY_STORE.get_profile(unlock_result.name)
+    if profile is None or profile.role != "owner":
+        _persist_auth_state(
+            ctx.participant_identity,
+            ctx.room,
+            _auth_state_payload(
+                status="locked",
+                relock_reason="identity_changed",
+                session_id=f"{ctx.participant_identity}:{ctx.room}",
+            ),
+        )
+        return ActionResult(
+            success=False,
+            message="Reconheci um rosto cadastrado, mas ele nao pode abrir a sessao do owner.",
+            data={
+                "auth_state": _load_auth_state(ctx.participant_identity, ctx.room),
+                "matched_profile": unlock_result.name,
+                "face_score": unlock_result.confidence,
+            },
+            error="face_unlock_not_owner",
+        )
+
+    _set_authenticated(
+        ctx.participant_identity,
+        ctx.room,
+        auth_method="face_biometric",
+        profile_name=unlock_result.name,
+        confidence=unlock_result.confidence,
+        face_confidence=unlock_result.confidence,
+    )
+    recognized_identity = _persist_recognized_identity_context(
+        ctx,
+        _recognized_identity_payload(
+            name=unlock_result.name,
+            confidence=unlock_result.confidence,
+            source="face",
+        ),
+    )
+    return ActionResult(
+        success=True,
+        message=f"Sessao desbloqueada por rosto como {unlock_result.name}.",
+        data={
+            "auth_state": _load_auth_state(ctx.participant_identity, ctx.room),
+            "recognized_identity": recognized_identity,
+            "face_score": unlock_result.confidence,
+            "matched_profile": unlock_result.name,
+            "face_method": unlock_result.method,
+            "compared_profiles": unlock_result.compared_profiles,
+            "face_detected": unlock_result.face_detected,
+            "face_unlock_threshold": unlock_result.threshold_used,
+            "margin_to_second": unlock_result.margin_to_second,
+            "private_access_granted": True,
+        },
+    )
+
+
 async def _verify_voice_identity(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
-    return await domain_verify_voice_identity(
+    _set_unlock_in_progress(ctx.participant_identity, ctx.room, method="voice")
+    result = await domain_verify_voice_identity(
         params,
         ctx,
         voice_profile_store=VOICE_PROFILE_STORE,
@@ -7438,6 +7935,37 @@ async def _verify_voice_identity(params: JsonObject, ctx: ActionContext) -> Acti
         security_status_payload=_security_status_payload,
         voice_step_up_pending=VOICE_STEP_UP_PENDING,
     )
+    if result.success and isinstance(result.data, dict):
+        auth_state = _persist_auth_state(
+            ctx.participant_identity,
+            ctx.room,
+            {
+                **_load_auth_state(ctx.participant_identity, ctx.room),
+                "status": "unlocked_by_voice",
+                "method": "voice",
+                "profile_name": result.data.get("matched_profile"),
+                "confidence": result.data.get("voice_score"),
+                "voice_confidence": result.data.get("voice_score"),
+                "session_id": f"{ctx.participant_identity}:{ctx.room}",
+            },
+        )
+        result.data["auth_state"] = auth_state
+    if not result.success and not _is_authenticated(ctx.participant_identity, ctx.room):
+        reason = "confidence_dropped"
+        if result.error == "insufficient voice sample":
+            reason = "microphone_unavailable"
+        _persist_auth_state(
+            ctx.participant_identity,
+            ctx.room,
+            _auth_state_payload(
+                status="locked",
+                relock_reason=reason,
+                session_id=f"{ctx.participant_identity}:{ctx.room}",
+            ),
+        )
+        if isinstance(result.data, dict):
+            result.data["auth_state"] = _load_auth_state(ctx.participant_identity, ctx.room)
+    return result
 
 
 async def _identify_contextual_identity(params: JsonObject, ctx: ActionContext) -> ActionResult:
@@ -7488,6 +8016,7 @@ async def _identify_contextual_identity(params: JsonObject, ctx: ActionContext) 
             success=False,
             message="Nao consegui reconhecer a identidade atual com confianca suficiente.",
             data={
+                "auth_state": _load_auth_state(ctx.participant_identity, ctx.room),
                 "recognized_identity": persisted,
                 "voice_match": voice_match,
                 "face_match": face_match,
@@ -7499,6 +8028,7 @@ async def _identify_contextual_identity(params: JsonObject, ctx: ActionContext) 
         success=True,
         message=f"Identidade contextual reconhecida como {persisted['name']}. Isso nao autentica a sessao.",
         data={
+            "auth_state": _load_auth_state(ctx.participant_identity, ctx.room),
             "recognized_identity": persisted,
             "voice_match": voice_match,
             "face_match": face_match,
@@ -7519,6 +8049,38 @@ async def _register_identity(params: JsonObject, ctx: ActionContext) -> ActionRe
     confidence_level = str(params.get("confidence_level") or "medium").strip().lower() or "medium"
     if confidence_level not in {"low", "medium", "high"}:
         confidence_level = "medium"
+    voice_unlock_threshold_raw = params.get("voice_unlock_threshold")
+    voice_unlock_threshold: float | None = None
+    if voice_unlock_threshold_raw not in {None, ""}:
+        try:
+            voice_unlock_threshold = max(0.0, min(float(voice_unlock_threshold_raw), 1.0))
+        except (TypeError, ValueError):
+            return ActionResult(
+                success=False,
+                message="voice_unlock_threshold deve ficar entre 0.0 e 1.0.",
+                error="invalid voice unlock threshold",
+            )
+    face_unlock_threshold_raw = params.get("face_unlock_threshold")
+    face_unlock_threshold: float | None = None
+    if face_unlock_threshold_raw not in {None, ""}:
+        try:
+            face_unlock_threshold = max(0.0, min(float(face_unlock_threshold_raw), 1.0))
+        except (TypeError, ValueError):
+            return ActionResult(
+                success=False,
+                message="face_unlock_threshold deve ficar entre 0.0 e 1.0.",
+                error="invalid face unlock threshold",
+            )
+    target_voice_samples_raw = params.get("target_voice_samples", 5)
+    try:
+        target_voice_samples = max(1, min(int(target_voice_samples_raw), 10))
+    except (TypeError, ValueError):
+        target_voice_samples = 5
+    target_face_samples_raw = params.get("target_face_samples", 10)
+    try:
+        target_face_samples = max(1, min(int(target_face_samples_raw), 20))
+    except (TypeError, ValueError):
+        target_face_samples = 10
 
     capture_voice = bool(params.get("capture_voice", True))
     capture_face = bool(params.get("capture_face", True))
@@ -7573,6 +8135,14 @@ async def _register_identity(params: JsonObject, ctx: ActionContext) -> ActionRe
         voice_embeddings=voice_embeddings,
         face_embeddings=face_embeddings,
         registered_at=existing.registered_at if existing is not None else None,
+        last_calibrated_at=_now_iso() if captured_modalities else (existing.last_calibrated_at if existing is not None else None),
+        preferred_unlock_modes=(
+            ["voice", "face"]
+            if capture_voice and capture_face
+            else (["voice"] if capture_voice else (["face"] if capture_face else None))
+        ),
+        voice_unlock_threshold=voice_unlock_threshold,
+        face_unlock_threshold=face_unlock_threshold,
     )
     source = "voice+face" if len(captured_modalities) == 2 else captured_modalities[0]
     recognized_identity = _persist_recognized_identity_context(
@@ -7583,9 +8153,14 @@ async def _register_identity(params: JsonObject, ctx: ActionContext) -> ActionRe
         success=True,
         message=f"Identidade '{profile.name}' registrada localmente. Isso serve so para contexto e nao libera acoes sensiveis.",
         data={
+            "auth_state": _load_auth_state(ctx.participant_identity, ctx.room),
             "profile": profile.to_payload(),
             "recognized_identity": recognized_identity,
             "captured_modalities": captured_modalities,
+            "voice_samples_collected": len(profile.voice_embeddings),
+            "recommended_voice_samples_remaining": max(0, target_voice_samples - len(profile.voice_embeddings)),
+            "face_samples_collected": len(profile.face_embeddings),
+            "recommended_face_samples_remaining": max(0, target_face_samples - len(profile.face_embeddings)),
             "issues": issues,
             "authentication_bypass": False,
         },
@@ -8188,7 +8763,7 @@ async def _whatsapp_send_text(params: JsonObject, ctx: ActionContext) -> ActionR
     return result
 
 
-async def _whatsapp_send_audio_tts(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
+async def _whatsapp_send_audio_tts(params: JsonObject, ctx: ActionContext) -> ActionResult:
     # Normaliza alias: o modelo pode enviar 'contact' ou 'to', 'message' ou 'text'
     if "to" not in params and "contact" in params:
         params["to"] = params["contact"]
@@ -8203,33 +8778,19 @@ async def _whatsapp_send_audio_tts(params: JsonObject, ctx: ActionContext) -> Ac
         return tts_error
     if audio_file is None:
         return ActionResult(success=False, message="Falha ao gerar audio do Jarvez.", error="tts generation failed")
-    media_id_str, media_error = _upload_whatsapp_media(audio_file, "audio/mpeg")
     try:
-        audio_file.unlink(missing_ok=True)
-    except Exception:  # noqa: BLE001
-        pass
-    if media_error is not None:
-        return media_error
-    if not media_id_str:
-        return ActionResult(success=False, message="Nao consegui enviar audio ao WhatsApp.", error="missing media id")
-    audio_payload: JsonObject = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": to,
-        "type": "audio",
-        "audio": {"id": media_id_str},
-    }
-    result = _whatsapp_send_message(audio_payload)
+        result = await _whatsapp_route_via_mcp(
+            "send_audio_message",
+            {"recipient": to, "media_path": str(audio_file.resolve())},
+        )
+    finally:
+        try:
+            audio_file.unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
     if result.success:
         result.message = f"Audio do Jarvez enviado para {to}."
-        if result.data is None:
-            result.data = {}
-        result.data["media_id"] = media_id_str
-    if result.success:
-        to = _normalize_whatsapp_to(str(params.get("to", "")).strip())
         text = str(params.get("text", "")).strip() or None
-        response_payload = result.data.get("whatsapp_response") if isinstance(result.data, dict) else None
-        media_id = str(result.data.get("media_id") or "").strip() if isinstance(result.data, dict) else ""
         _store_whatsapp_channel_message(
             direction="outbound",
             participant_identity=ctx.participant_identity,
@@ -8241,10 +8802,8 @@ async def _whatsapp_send_audio_tts(params: JsonObject, ctx: ActionContext) -> Ac
                 "text": text,
                 "direction": "outbound",
                 "type": "audio_tts",
-                "media_id": media_id or None,
-                "response": response_payload if isinstance(response_payload, dict) else None,
             },
-            external_message_id=_extract_whatsapp_response_message_id(response_payload),
+            external_message_id=None,
             created_at=_now_iso(),
         )
     return result
@@ -9549,7 +10108,7 @@ def register_default_actions() -> None:
         ActionSpec(
             name="authenticate_identity",
             description=(
-                "Autentica o usuario atual usando PIN e, opcionalmente, frase de seguranca para liberar modo privado."
+                "Ativa recovery local por PIN ou frase de seguranca quando a biometria nao estiver disponivel."
             ),
             params_schema={
                 "type": "object",
@@ -10968,6 +11527,10 @@ def register_default_actions() -> None:
                     "name": {"type": "string", "minLength": 1},
                     "role": {"type": "string", "enum": ["owner", "guest"]},
                     "confidence_level": {"type": "string", "enum": ["low", "medium", "high"]},
+                    "voice_unlock_threshold": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "face_unlock_threshold": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "target_voice_samples": {"type": "integer", "minimum": 1, "maximum": 10},
+                    "target_face_samples": {"type": "integer", "minimum": 1, "maximum": 20},
                     "capture_voice": {"type": "boolean"},
                     "capture_face": {"type": "boolean"},
                     "camera_index": {"type": "integer", "minimum": 0},
@@ -10994,6 +11557,38 @@ def register_default_actions() -> None:
             },
             requires_confirmation=False,
             handler=_enroll_voice_profile,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="unlock_with_voice",
+            description="Desbloqueia a sessao por biometria de voz, sem exigir senha no fluxo normal.",
+            params_schema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_unlock_with_voice,
+        )
+    )
+
+    register_action(
+        ActionSpec(
+            name="unlock_with_face",
+            description="Desbloqueia a sessao por biometria facial local, sem exigir senha no fluxo normal.",
+            params_schema={
+                "type": "object",
+                "properties": {
+                    "camera_index": {"type": "integer", "minimum": 0},
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+            requires_confirmation=False,
+            handler=_unlock_with_face,
         )
     )
 

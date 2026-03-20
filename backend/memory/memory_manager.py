@@ -36,6 +36,7 @@ DEFAULT_RECENT_TURNS = max(3, int(os.getenv("JARVEZ_MEMORY_RECENT_TURNS", "8")))
 DEFAULT_SUMMARY_AFTER_DAYS = max(1, int(os.getenv("JARVEZ_MEMORY_SUMMARY_AFTER_DAYS", "7")))
 DEFAULT_TURN_MAX_CHARS = max(120, int(os.getenv("JARVEZ_MEMORY_TURN_MAX_CHARS", "280")))
 IDENTITY_CONTEXT_NAMESPACE = "recognized_identity"
+AUTH_STATE_NAMESPACE = "auth_state"
 
 
 @dataclass(slots=True)
@@ -95,6 +96,7 @@ class MemoryManager:
             scope=PUBLIC_SCOPE,
         )
         recognized_identity = self.get_identity_context(participant_identity=participant_identity, room=room)
+        auth_state = self.get_auth_state(participant_identity=participant_identity, room=room)
         private_bundle = (
             await self.load_scope_memories(participant_identity=participant_identity, scope=PRIVATE_SCOPE)
             if authenticated
@@ -106,6 +108,8 @@ class MemoryManager:
         structured_payload: dict[str, Any] = {"user_name": user_name}
         if preferences:
             structured_payload["preferences"] = preferences
+        if auth_state:
+            structured_payload["auth_state"] = auth_state
         if recognized_identity:
             structured_payload["recognized_identity"] = recognized_identity
         if latest_summary and latest_summary.get("summary"):
@@ -265,6 +269,22 @@ class MemoryManager:
             participant_identity=participant_identity,
             room=room,
             namespace=IDENTITY_CONTEXT_NAMESPACE,
+        )
+        return current if isinstance(current, dict) else None
+
+    def set_auth_state(self, *, participant_identity: str, room: str, payload: dict[str, Any]) -> None:
+        self.state_store.upsert_session_state(
+            participant_identity=participant_identity,
+            room=room,
+            namespace=AUTH_STATE_NAMESPACE,
+            payload=payload,
+        )
+
+    def get_auth_state(self, *, participant_identity: str, room: str) -> dict[str, Any] | None:
+        current = self.state_store.get_session_state(
+            participant_identity=participant_identity,
+            room=room,
+            namespace=AUTH_STATE_NAMESPACE,
         )
         return current if isinstance(current, dict) else None
 

@@ -313,6 +313,8 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
             getenv.side_effect = _fake_getenv
             result = await dispatch_action("authenticate_identity", {"security_phrase": "tony"}, ctx)
         self.assertTrue(result.success)
+        self.assertEqual(result.data.get("auth_state", {}).get("status"), "recovery_mode")
+        self.assertEqual(result.data.get("auth_state", {}).get("method"), "recovery")
 
     async def test_verify_voice_identity_high_confidence_authenticates(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
@@ -322,6 +324,8 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
             result = await dispatch_action("verify_voice_identity", {}, ctx)
         self.assertTrue(result.success)
         self.assertEqual(result.data.get("auth_method"), "voice")
+        self.assertEqual(result.data.get("auth_state", {}).get("status"), "unlocked_by_voice")
+        self.assertEqual(result.data.get("auth_state", {}).get("method"), "voice")
 
     async def test_verify_voice_identity_medium_confidence_requires_stepup(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
@@ -331,6 +335,7 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
             result = await dispatch_action("verify_voice_identity", {}, ctx)
         self.assertFalse(result.success)
         self.assertTrue(result.data.get("step_up_required"))
+        self.assertEqual(result.data.get("auth_state", {}).get("status"), "locked")
 
     async def test_verify_voice_identity_requires_recent_audio(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
@@ -340,6 +345,7 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
             result = await dispatch_action("verify_voice_identity", {}, ctx)
         self.assertFalse(result.success)
         self.assertEqual(result.error, "insufficient voice sample")
+        self.assertEqual(result.data.get("auth_state", {}).get("status"), "locked")
 
     async def test_enroll_voice_profile_requires_recent_audio(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
@@ -370,9 +376,32 @@ class ActionsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_auth_gate_blocks_sensitive_action_without_auth(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
-        result = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, ctx)
+        with patch("actions.IDENTITY_STORE.list_profiles") as list_profiles, patch("actions.os.getenv") as getenv:
+            list_profiles.return_value = [
+                type(
+                    "Profile",
+                    (),
+                    {
+                        "role": "owner",
+                        "preferred_unlock_modes": ["voice", "face"],
+                        "voice_embeddings": [[0.1, 0.2]],
+                        "face_embeddings": [[0.1, 0.2]],
+                    },
+                )()
+            ]
+            getenv.side_effect = lambda key, default="": "1234" if key == "JARVEZ_SECURITY_PIN" else default
+            result = await dispatch_action("whatsapp_send_text", {"to": "5511999999999", "text": "oi"}, ctx)
         self.assertFalse(result.success)
         self.assertTrue(result.data and result.data.get("authentication_required"))
+        self.assertEqual(result.data.get("recommended_unlock_actions"), ["unlock_with_voice", "unlock_with_face"])
+        self.assertTrue(bool(result.data.get("recovery_available")))
+
+    async def test_environment_action_does_not_require_owner_unlock(self):
+        ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")
+        result = await dispatch_action("turn_light_on", {"entity_id": "light.sala"}, ctx)
+        self.assertFalse(result.success)
+        self.assertTrue(result.data and result.data.get("confirmation_required"))
+        self.assertFalse(bool(result.data and result.data.get("authentication_required")))
 
     async def test_rpg_create_character_sheet_bridge_pipeline(self):
         ctx = ActionContext(job_id="j1", room="room-a", participant_identity="user-a")

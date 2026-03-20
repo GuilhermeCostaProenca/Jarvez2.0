@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from identity.face_id import identify_face
+from identity.face_id import identify_face, unlock_with_face
 from identity.identity_store import IdentityStore
 
 
@@ -58,6 +58,52 @@ class FaceIdentificationTests(unittest.TestCase):
         self.assertFalse(result.matched)
         self.assertEqual(result.name, "unknown")
         self.assertFalse(result.face_detected)
+
+    def test_unlock_with_face_uses_owner_threshold(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = IdentityStore(Path(tmp) / "profiles.json")
+            store.upsert_profile(
+                name="Guilherme",
+                role="owner",
+                confidence_level="high",
+                face_embeddings=[[1.0, 0.0, 0.0]],
+                face_unlock_threshold=0.9,
+            )
+            result = unlock_with_face(
+                store,
+                frame=np.zeros((16, 16, 3), dtype=np.uint8),
+                engine=_FakeFaceEngine([[1.0, 0.0, 0.0]]),
+            )
+
+        self.assertTrue(result.matched)
+        self.assertEqual(result.name, "Guilherme")
+        self.assertEqual(result.threshold_used, 0.9)
+
+    def test_unlock_with_face_rejects_ambiguous_owner_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = IdentityStore(Path(tmp) / "profiles.json")
+            store.upsert_profile(
+                name="Owner A",
+                role="owner",
+                confidence_level="high",
+                face_embeddings=[[1.0, 0.0, 0.0]],
+                face_unlock_threshold=0.8,
+            )
+            store.upsert_profile(
+                name="Owner B",
+                role="owner",
+                confidence_level="high",
+                face_embeddings=[[0.98, 0.02, 0.0]],
+                face_unlock_threshold=0.8,
+            )
+            result = unlock_with_face(
+                store,
+                frame=np.zeros((16, 16, 3), dtype=np.uint8),
+                engine=_FakeFaceEngine([[0.99, 0.01, 0.0]]),
+            )
+
+        self.assertFalse(result.matched)
+        self.assertEqual(result.failure_reason, "ambiguous_match")
 
 
 if __name__ == "__main__":

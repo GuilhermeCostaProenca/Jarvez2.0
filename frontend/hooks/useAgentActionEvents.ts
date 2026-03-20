@@ -998,6 +998,9 @@ export function useAgentActionEvents() {
     (snapshot: SessionSnapshot) => {
       const securityPayload = snapshot.security_session;
       const securityStatus = securityPayload?.security_status;
+      const authState = securityPayload?.auth_state ?? snapshot.auth_state ?? null;
+      const recognizedIdentity = snapshot.recognized_identity ?? null;
+      const unlockOptions = securityPayload?.unlock_options ?? null;
       const personaProfile = securityPayload?.persona_profile;
       const activeCharacter = securityPayload?.active_character;
       const activeProject = securityPayload?.active_project;
@@ -1009,8 +1012,15 @@ export function useAgentActionEvents() {
           identityBound: Boolean(securityStatus?.identity_bound),
           expiresIn: Number(securityStatus?.expires_in ?? 0),
           authMethod:
-            typeof securityStatus?.auth_method === 'string' ? securityStatus.auth_method : undefined,
+            typeof securityStatus?.auth_method === 'string'
+              ? securityStatus.auth_method
+              : typeof authState?.method === 'string'
+                ? authState.method
+                : current.authMethod,
           stepUpRequired: Boolean(securityStatus?.step_up_required),
+          authState,
+          recognizedIdentity,
+          unlockOptions,
           personaMode:
             typeof securityPayload?.persona_mode === 'string'
               ? securityPayload.persona_mode
@@ -1340,6 +1350,9 @@ export function useAgentActionEvents() {
         const workflowStatePayload = actionResult.data?.workflow_state;
         const automationStatePayload = actionResult.data?.automation_state;
         const whatsappChannelPayload = actionResult.data?.whatsapp_channel;
+        const authState = actionResult.data?.auth_state ?? null;
+        const recognizedIdentity = actionResult.data?.recognized_identity ?? null;
+        const unlockOptions = actionResult.data?.unlock_options ?? null;
         const evidence = actionResult.evidence as ActionEvidence | undefined;
         const codexTask = normalizeCodexTask(actionResult.data?.codex_task);
         const codexHistoryItems = normalizeCodexHistory(actionResult.data?.codex_history);
@@ -1563,6 +1576,9 @@ export function useAgentActionEvents() {
               typeof actionResult.data?.voice_score === 'number'
                 ? actionResult.data.voice_score
                 : undefined,
+            authState,
+            recognizedIdentity,
+            unlockOptions,
             personaMode,
             personaColorHex:
               typeof personaProfile?.color_hex === 'string' ? personaProfile.color_hex : undefined,
@@ -1592,10 +1608,16 @@ export function useAgentActionEvents() {
           activeCharacter ||
           activeCharacterCleared ||
           activeProject ||
-          codingMode
+          codingMode ||
+          authState ||
+          recognizedIdentity ||
+          unlockOptions
         ) {
           setSecuritySession((current) => ({
             ...current,
+            authState: authState ?? current.authState,
+            recognizedIdentity: recognizedIdentity ?? current.recognizedIdentity,
+            unlockOptions: unlockOptions ?? current.unlockOptions,
             personaMode: personaMode ?? current.personaMode,
             personaColorHex:
               typeof personaProfile?.color_hex === 'string'
@@ -1641,10 +1663,36 @@ export function useAgentActionEvents() {
         }
 
         if (actionResult.data?.authentication_required) {
+          const recommendedActions = Array.isArray(actionResult.data.recommended_unlock_actions)
+            ? actionResult.data.recommended_unlock_actions
+            : Array.isArray(actionResult.data.unlock_options?.recommended_unlock_actions)
+              ? actionResult.data.unlock_options.recommended_unlock_actions
+              : [];
+          const recoveryAvailable =
+            typeof actionResult.data.recovery_available === 'boolean'
+              ? actionResult.data.recovery_available
+              : actionResult.data.unlock_options?.recovery_available === true;
+          const canUnlockWithVoice = recommendedActions.includes('unlock_with_voice');
+          const canUnlockWithFace = recommendedActions.includes('unlock_with_face');
           if (actionResult.data.step_up_required) {
-            toast.warning('Validacao por voz parcial. Confirme com PIN/frase para liberar sessao.');
+            toast.warning(
+              recoveryAvailable
+                ? 'Validacao de voz parcial. Tente destravar por voz novamente ou use recovery local.'
+                : 'Validacao de voz parcial. Tente destravar por voz novamente.',
+            );
           } else {
-            toast.warning('Sessao privada bloqueada. Diga seu PIN/frase para autenticar.');
+            let message = 'Sessao do owner bloqueada.';
+            if (canUnlockWithVoice && canUnlockWithFace) {
+              message += ' Destrave por voz ou rosto.';
+            } else if (canUnlockWithVoice) {
+              message += ' Destrave por voz.';
+            } else if (canUnlockWithFace) {
+              message += ' Destrave por rosto.';
+            }
+            if (recoveryAvailable) {
+              message += ' Use recovery local se a biometria falhar.';
+            }
+            toast.warning(message);
           }
         }
 

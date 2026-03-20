@@ -42,6 +42,22 @@ def _speaker_threshold() -> float:
         return 0.82
 
 
+def _voice_unlock_threshold() -> float:
+    raw = os.getenv("JARVEZ_VOICE_UNLOCK_THRESHOLD", "0.92").strip()
+    try:
+        return max(0.0, min(float(raw), 1.0))
+    except ValueError:
+        return 0.92
+
+
+def _voice_unlock_margin() -> float:
+    raw = os.getenv("JARVEZ_VOICE_UNLOCK_MARGIN", "0.08").strip()
+    try:
+        return max(0.0, min(float(raw), 1.0))
+    except ValueError:
+        return 0.08
+
+
 def _load_voice_encoder() -> Any | None:
     global _VOICE_ENCODER
     global _VOICE_ENCODER_FAILED
@@ -65,6 +81,9 @@ class SpeakerIdentificationResult:
     source: str = "voice"
     compared_profiles: int = 0
     method: str = "voice_context"
+    threshold_used: float | None = None
+    margin_to_second: float | None = None
+    failure_reason: str | None = None
 
 
 def extract_current_speaker_embedding(
@@ -141,4 +160,101 @@ def identify_speaker(
         matched=True,
         compared_profiles=compared_profiles,
         method=method,
+        threshold_used=resolved_threshold,
+    )
+
+
+def unlock_with_voice(
+    participant_identity: str,
+    store: IdentityStore,
+    *,
+    embedding: list[float] | None = None,
+    encoder: Any | None = None,
+    get_recent_voice_audio_fn: Callable[..., tuple[np.ndarray, int] | None] = get_recent_voice_audio,
+    get_recent_voice_embedding_fn: Callable[..., list[float] | None] = get_recent_voice_embedding,
+) -> SpeakerIdentificationResult:
+    probe = [float(value) for value in embedding] if embedding is not None else None
+    method = "provided_embedding" if probe is not None else "voice_context"
+    if probe is None:
+        probe, method = extract_current_speaker_embedding(
+            participant_identity,
+            encoder=encoder,
+            get_recent_voice_audio_fn=get_recent_voice_audio_fn,
+            get_recent_voice_embedding_fn=get_recent_voice_embedding_fn,
+        )
+    if probe is None:
+        return SpeakerIdentificationResult(
+            name="unknown",
+            confidence=0.0,
+            matched=False,
+            method=method,
+            threshold_used=_voice_unlock_threshold(),
+            failure_reason="insufficient_sample",
+        )
+
+    owner_scores: list[tuple[str, float, float]] = []
+    compared_profiles = 0
+    for profile in store.list_profiles():
+        if profile.role != "owner" or not profile.voice_embeddings:
+            continue
+        best_score = 0.0
+        for candidate in profile.voice_embeddings:
+            compared_profiles += 1
+            score = _cosine_similarity(probe, candidate)
+            if score > best_score:
+                best_score = score
+        resolved_threshold = (
+            max(0.0, min(float(profile.voice_unlock_threshold), 1.0))
+            if profile.voice_unlock_threshold is not None
+            else _voice_unlock_threshold()
+        )
+        owner_scores.append((profile.name, best_score, resolved_threshold))
+
+    if not owner_scores:
+        return SpeakerIdentificationResult(
+            name="unknown",
+            confidence=0.0,
+            matched=False,
+            method=method,
+            compared_profiles=compared_profiles,
+            threshold_used=_voice_unlock_threshold(),
+            failure_reason="owner_profile_missing",
+        )
+
+    owner_scores.sort(key=lambda item: item[1], reverse=True)
+    best_name, best_score, threshold_used = owner_scores[0]
+    second_score = owner_scores[1][1] if len(owner_scores) > 1 else 0.0
+    margin_to_second = max(0.0, best_score - second_score)
+    if best_score < threshold_used:
+        return SpeakerIdentificationResult(
+            name="unknown",
+            confidence=best_score,
+            matched=False,
+            compared_profiles=compared_profiles,
+            method=method,
+            threshold_used=threshold_used,
+            margin_to_second=margin_to_second,
+            failure_reason="threshold_low",
+        )
+
+    if margin_to_second < _voice_unlock_margin():
+        return SpeakerIdentificationResult(
+            name="unknown",
+            confidence=best_score,
+            matched=False,
+            compared_profiles=compared_profiles,
+            method=method,
+            threshold_used=threshold_used,
+            margin_to_second=margin_to_second,
+            failure_reason="ambiguous_match",
+        )
+
+    return SpeakerIdentificationResult(
+        name=best_name,
+        confidence=best_score,
+        matched=True,
+        compared_profiles=compared_profiles,
+        method=method,
+        threshold_used=threshold_used,
+        margin_to_second=margin_to_second,
     )

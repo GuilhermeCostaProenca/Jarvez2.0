@@ -37,6 +37,22 @@ def _face_threshold() -> float:
         return 0.55
 
 
+def _face_unlock_threshold() -> float:
+    raw = os.getenv("JARVEZ_FACE_UNLOCK_THRESHOLD", "0.90").strip()
+    try:
+        return max(0.0, min(float(raw), 1.0))
+    except ValueError:
+        return 0.90
+
+
+def _face_unlock_margin() -> float:
+    raw = os.getenv("JARVEZ_FACE_UNLOCK_MARGIN", "0.08").strip()
+    try:
+        return max(0.0, min(float(raw), 1.0))
+    except ValueError:
+        return 0.08
+
+
 def _identity_model_root() -> Path:
     raw = os.getenv("JARVEZ_FACE_ID_MODEL_ROOT", "data/identity").strip()
     path = Path(raw)
@@ -113,6 +129,9 @@ class FaceIdentificationResult:
     source: str = "face"
     compared_profiles: int = 0
     method: str = "face_context"
+    threshold_used: float | None = None
+    margin_to_second: float | None = None
+    failure_reason: str | None = None
 
 
 def capture_webcam_frame(camera_index: int = 0, *, cv2_module: Any = cv2) -> Any:
@@ -228,4 +247,113 @@ def identify_face(
         face_detected=True,
         compared_profiles=compared_profiles,
         method=method,
+        threshold_used=resolved_threshold,
+    )
+
+
+def unlock_with_face(
+    store: IdentityStore,
+    *,
+    frame: Any | None = None,
+    embedding: list[float] | None = None,
+    camera_index: int = 0,
+    frame_provider: Callable[..., Any] = capture_webcam_frame,
+    engine: Any | None = None,
+) -> FaceIdentificationResult:
+    probe = [float(value) for value in embedding] if embedding is not None else None
+    method = "provided_embedding" if probe is not None else "face_context"
+    if probe is None:
+        try:
+            resolved_frame = frame if frame is not None else frame_provider(camera_index)
+        except Exception:
+            return FaceIdentificationResult(
+                name="unknown",
+                confidence=0.0,
+                matched=False,
+                face_detected=False,
+                method=method,
+                threshold_used=_face_unlock_threshold(),
+                failure_reason="camera_unavailable",
+            )
+        probe = extract_face_embedding(resolved_frame, engine=engine)
+    if probe is None:
+        return FaceIdentificationResult(
+            name="unknown",
+            confidence=0.0,
+            matched=False,
+            face_detected=False,
+            method=method,
+            threshold_used=_face_unlock_threshold(),
+            failure_reason="face_not_detected",
+        )
+
+    owner_scores: list[tuple[str, float, float]] = []
+    compared_profiles = 0
+    for profile in store.list_profiles():
+        if profile.role != "owner" or not profile.face_embeddings:
+            continue
+        best_score = 0.0
+        for candidate in profile.face_embeddings:
+            compared_profiles += 1
+            score = _cosine_similarity(probe, candidate)
+            if score > best_score:
+                best_score = score
+        resolved_threshold = (
+            max(0.0, min(float(profile.face_unlock_threshold), 1.0))
+            if profile.face_unlock_threshold is not None
+            else _face_unlock_threshold()
+        )
+        owner_scores.append((profile.name, best_score, resolved_threshold))
+
+    if not owner_scores:
+        return FaceIdentificationResult(
+            name="unknown",
+            confidence=0.0,
+            matched=False,
+            face_detected=True,
+            compared_profiles=compared_profiles,
+            method=method,
+            threshold_used=_face_unlock_threshold(),
+            failure_reason="owner_profile_missing",
+        )
+
+    owner_scores.sort(key=lambda item: item[1], reverse=True)
+    best_name, best_score, threshold_used = owner_scores[0]
+    second_score = owner_scores[1][1] if len(owner_scores) > 1 else 0.0
+    margin_to_second = max(0.0, best_score - second_score)
+    if best_score < threshold_used:
+        return FaceIdentificationResult(
+            name="unknown",
+            confidence=best_score,
+            matched=False,
+            face_detected=True,
+            compared_profiles=compared_profiles,
+            method=method,
+            threshold_used=threshold_used,
+            margin_to_second=margin_to_second,
+            failure_reason="threshold_low",
+        )
+
+    if margin_to_second < _face_unlock_margin():
+        return FaceIdentificationResult(
+            name="unknown",
+            confidence=best_score,
+            matched=False,
+            face_detected=True,
+            compared_profiles=compared_profiles,
+            method=method,
+            threshold_used=threshold_used,
+            margin_to_second=margin_to_second,
+            failure_reason="ambiguous_match",
+        )
+
+    return FaceIdentificationResult(
+        name=best_name,
+        confidence=best_score,
+        matched=True,
+        face_detected=True,
+        compared_profiles=compared_profiles,
+        method=method,
+        threshold_used=threshold_used,
+        margin_to_second=margin_to_second,
     )

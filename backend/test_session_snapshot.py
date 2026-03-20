@@ -29,9 +29,16 @@ class SessionSnapshotTests(unittest.IsolatedAsyncioTestCase):
                     "authenticated": True,
                     "identity_bound": bool(participant_identity),
                 },
+                "auth_state": {"status": "unlocked_by_voice", "method": "voice"},
                 "room": room,
             },
             _load_event_namespace=_load_event_namespace,
+            _load_auth_state=lambda participant_identity, room: {
+                "status": "unlocked_by_voice",
+                "method": "voice",
+                "participant_identity": participant_identity,
+                "room": room,
+            },
             _load_session_namespace=lambda participant_identity, room, namespace: {
                 "namespace": namespace,
                 "participant_identity": participant_identity,
@@ -75,6 +82,7 @@ class SessionSnapshotTests(unittest.IsolatedAsyncioTestCase):
             "workflow_state",
             "automation_state",
             "proactivity_state",
+            "auth_state",
             "recognized_identity",
             "whatsapp_channel",
         ):

@@ -73,6 +73,54 @@ class SpeakerIdentificationTests(unittest.TestCase):
         self.assertTrue(result.matched)
         forbidden.assert_not_called()
 
+    def test_unlock_with_voice_uses_owner_threshold(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = IdentityStore(Path(tmp) / "profiles.json")
+            store.upsert_profile(
+                name="Guilherme",
+                role="owner",
+                confidence_level="high",
+                voice_embeddings=[[0.95, 0.05]],
+                voice_unlock_threshold=0.9,
+            )
+
+            result = speaker_id.unlock_with_voice(
+                "user-a",
+                store,
+                embedding=[0.95, 0.05],
+            )
+
+        self.assertTrue(result.matched)
+        self.assertEqual(result.name, "Guilherme")
+        self.assertEqual(result.threshold_used, 0.9)
+
+    def test_unlock_with_voice_rejects_ambiguous_owner_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = IdentityStore(Path(tmp) / "profiles.json")
+            store.upsert_profile(
+                name="Guilherme",
+                role="owner",
+                confidence_level="high",
+                voice_embeddings=[[0.95, 0.05]],
+                voice_unlock_threshold=0.8,
+            )
+            store.upsert_profile(
+                name="Outro Owner",
+                role="owner",
+                confidence_level="high",
+                voice_embeddings=[[0.93, 0.07]],
+                voice_unlock_threshold=0.8,
+            )
+
+            result = speaker_id.unlock_with_voice(
+                "user-a",
+                store,
+                embedding=[0.94, 0.06],
+            )
+
+        self.assertFalse(result.matched)
+        self.assertEqual(result.failure_reason, "ambiguous_match")
+
 
 if __name__ == "__main__":
     unittest.main()

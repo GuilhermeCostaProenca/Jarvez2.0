@@ -13,6 +13,7 @@ import {
   TerminalSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getSecurityAccessChip } from '@/lib/auth-state-ui';
 import { cn } from '@/lib/shadcn/utils';
 import type { CodexTaskEvent, CodexTaskHistoryEntry, CodexTaskState, SecuritySessionState } from '@/lib/types/realtime';
 
@@ -58,6 +59,7 @@ export function CodingWorkspace({
 }: CodingWorkspaceProps) {
   const [prompt, setPrompt] = useState('');
   const [isSendingPrompt, setIsSendingPrompt] = useState(false);
+  const accessChip = getSecurityAccessChip(securitySession);
 
   const workspaceHeadline = useMemo(() => {
     if (activeCodexTask?.status === 'running') {
@@ -149,14 +151,9 @@ export function CodingWorkspace({
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <span
-              className={cn(
-                'rounded-full border px-3 py-1 text-xs',
-                securitySession.authenticated
-                  ? 'border-emerald-300/20 bg-emerald-500/10 text-emerald-100'
-                  : 'border-amber-300/20 bg-amber-500/10 text-amber-100'
-              )}
+              className={cn('rounded-full border px-3 py-1 text-xs', accessChip.className)}
             >
-              {securitySession.authenticated ? 'Sessao privada ativa' : 'Sessao publica'}
+              {accessChip.label}
             </span>
             <Button type="button" size="sm" variant="secondary" onClick={onToggleSilentMode}>
               {silentMode ? 'Ativar proativo' : 'Modo silencioso'}

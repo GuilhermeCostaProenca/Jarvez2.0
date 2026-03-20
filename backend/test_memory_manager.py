@@ -103,6 +103,11 @@ class MemoryManagerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bootstrap_includes_recognized_identity_context(self) -> None:
         manager = MemoryManager(mem0=self.mem0, state_store=self.store)
+        manager.set_auth_state(
+            participant_identity="user-a",
+            room="room-1",
+            payload={"status": "unlocked_by_voice", "method": "voice", "confidence": 0.97},
+        )
         manager.set_identity_context(
             participant_identity="user-a",
             room="room-1",
@@ -116,7 +121,22 @@ class MemoryManagerTests(unittest.IsolatedAsyncioTestCase):
             authenticated=False,
         )
 
+        self.assertTrue(any("auth_state" in message for message in bootstrap.prompt_messages))
         self.assertTrue(any("recognized_identity" in message for message in bootstrap.prompt_messages))
+
+    async def test_auth_state_persists_between_instances(self) -> None:
+        manager = MemoryManager(mem0=self.mem0, state_store=self.store)
+        manager.set_auth_state(
+            participant_identity="user-a",
+            room="room-1",
+            payload={"status": "unlocked_by_voice", "method": "voice", "confidence": 0.95},
+        )
+
+        reloaded_store = JarvezStateStore(self.db_path)
+        reloaded_manager = MemoryManager(mem0=self.mem0, state_store=reloaded_store)
+        auth_state = reloaded_manager.get_auth_state(participant_identity="user-a", room="room-1")
+
+        self.assertEqual(auth_state, {"status": "unlocked_by_voice", "method": "voice", "confidence": 0.95})
 
     async def test_old_turns_become_summary_instead_of_disappearing(self) -> None:
         manager = MemoryManager(mem0=self.mem0, state_store=self.store, summary_after_days=1)

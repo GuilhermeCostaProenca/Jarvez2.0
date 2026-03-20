@@ -39,6 +39,11 @@ import {
   readStoredResearchSchedules,
   writeStoredResearchSchedules,
 } from '@/lib/research-dashboard-storage';
+import {
+  getRecognizedIdentityChip,
+  getSecurityAccessChip,
+  getUnlockActionAvailability,
+} from '@/lib/auth-state-ui';
 import { cn } from '@/lib/shadcn/utils';
 import type { ParticipantIdentity, ReconnectState, ResearchSchedule } from '@/lib/types/realtime';
 import { Shimmer } from '../ai-elements/shimmer';
@@ -668,6 +673,16 @@ export const SessionView = ({
     cancelPendingAction();
     void send('Cancelar acao pendente.');
   };
+  const accessChip = getSecurityAccessChip(securitySession);
+  const identityChip = getRecognizedIdentityChip(securitySession);
+  const { canUnlockWithVoice, canUnlockWithFace, recoveryAvailable, needsEnrollment } =
+    getUnlockActionAvailability(securitySession);
+  const authStatus = securitySession.authState?.status ?? 'locked';
+  const isSessionUnlocked =
+    authStatus === 'unlocked_by_voice' ||
+    authStatus === 'unlocked_by_face' ||
+    authStatus === 'unlocked_combined' ||
+    authStatus === 'recovery_mode';
   const hasCodingContext =
     securitySession.codingMode === 'coding' ||
     !!securitySession.activeProjectName ||
@@ -888,19 +903,15 @@ export const SessionView = ({
             >
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/90">
                 <span
-                  className={cn(
-                    'rounded-full border px-2 py-1',
-                    securitySession.authenticated
-                      ? 'border-emerald-300/30 bg-emerald-500/10 text-emerald-200'
-                      : 'border-white/10 bg-white/5 text-white/70'
-                  )}
+                  className={cn('rounded-full border px-2 py-1', accessChip.className)}
                 >
-                  {securitySession.authenticated
-                    ? `Privado: ${securitySession.authMethod ?? 'ok'}`
-                    : securitySession.stepUpRequired
-                      ? 'Privado: step-up'
-                      : 'Privado: bloqueado'}
+                  {accessChip.label}
                 </span>
+                {identityChip && (
+                  <span className={cn('rounded-full border px-2 py-1', identityChip.className)}>
+                    {identityChip.label}
+                  </span>
+                )}
                 <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">
                   {securitySession.personaLabel ?? securitySession.personaMode ?? 'Jarvez Classico'}
                 </span>
@@ -1007,6 +1018,88 @@ export const SessionView = ({
                   </Button>
                 </div>
               </div>
+              {authStatus !== 'unlock_in_progress' && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/8 pt-2">
+                  {!isSessionUnlocked && canUnlockWithVoice && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void send('action_name=unlock_with_voice\nparams={}')}
+                    >
+                      Destravar voz
+                    </Button>
+                  )}
+                  {!isSessionUnlocked && canUnlockWithFace && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void send('action_name=unlock_with_face\nparams={}')}
+                    >
+                      Destravar rosto
+                    </Button>
+                  )}
+                  {!isSessionUnlocked && needsEnrollment && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() =>
+                        void send('Quero cadastrar minha voz como owner para desbloqueio biometrico.')
+                      }
+                    >
+                      Cadastrar voz
+                    </Button>
+                  )}
+                  {!isSessionUnlocked && needsEnrollment && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() =>
+                        void send('Quero cadastrar meu rosto como owner para desbloqueio biometrico.')
+                      }
+                    >
+                      Cadastrar rosto
+                    </Button>
+                  )}
+                  {isSessionUnlocked && canUnlockWithVoice && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() =>
+                        void send('Quero recalibrar minha voz para desbloqueio biometrico.')
+                      }
+                    >
+                      Recalibrar voz
+                    </Button>
+                  )}
+                  {isSessionUnlocked && canUnlockWithFace && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() =>
+                        void send('Quero recalibrar meu rosto para desbloqueio biometrico.')
+                      }
+                    >
+                      Recalibrar rosto
+                    </Button>
+                  )}
+                  {!isSessionUnlocked && recoveryAvailable && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void send('Quero usar recovery local para destravar a sessao.')}
+                    >
+                      Recovery local
+                    </Button>
+                  )}
+                </div>
+              )}
               <AnimatePresence initial={false}>
                 {hasCompactFeedbackRow && (
                   <motion.div
