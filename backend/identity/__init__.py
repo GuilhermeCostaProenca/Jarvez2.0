@@ -1,3 +1,4 @@
+from .biometric_telemetry import BiometricTelemetryStore
 from .face_id import (
     FaceIdentificationResult,
     capture_face_embedding,
@@ -14,6 +15,7 @@ from .speaker_id import (
 )
 
 __all__ = [
+    "BiometricTelemetryStore",
     "FaceIdentificationResult",
     "IdentityProfile",
     "IdentityStore",

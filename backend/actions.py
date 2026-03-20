@@ -169,6 +169,7 @@ from actions_domains import (
 )
 from voice_biometrics import VoiceProfileStore, get_recent_voice_embedding
 from identity import (
+    BiometricTelemetryStore,
     IdentityStore,
     capture_face_embedding,
     extract_current_speaker_embedding,
@@ -332,6 +333,7 @@ BOOL_FALSE_VALUES = {"0", "false", "off", "no", "nao", "nÃ£o"}
 
 VOICE_PROFILE_STORE = VoiceProfileStore.from_env()
 IDENTITY_STORE = IdentityStore.from_env()
+BIOMETRIC_TELEMETRY_STORE = BiometricTelemetryStore.from_env()
 AUTH_STATE_NAMESPACE = "auth_state"
 ENVIRONMENT_ACTIONS = {
     "turn_light_on",
@@ -1633,6 +1635,57 @@ def _unlock_options_payload() -> JsonObject:
     }
 
 
+def _record_biometric_event(
+    *,
+    event_type: str,
+    participant_identity: str,
+    room: str,
+    method: str | None = None,
+    profile_name: str | None = None,
+    success: bool | None = None,
+    confidence: float | None = None,
+    threshold_used: float | None = None,
+    margin_to_second: float | None = None,
+    failure_reason: str | None = None,
+    relock_reason: str | None = None,
+    auth_state_status: str | None = None,
+    source_action: str | None = None,
+) -> JsonObject | None:
+    try:
+        return BIOMETRIC_TELEMETRY_STORE.append_event(
+            {
+                "event_type": event_type,
+                "participant_identity": participant_identity,
+                "room": room,
+                "method": method,
+                "profile_name": profile_name,
+                "success": success,
+                "confidence": confidence,
+                "threshold_used": threshold_used,
+                "margin_to_second": margin_to_second,
+                "failure_reason": failure_reason,
+                "relock_reason": relock_reason,
+                "auth_state_status": auth_state_status,
+                "source_action": source_action,
+            }
+        )
+    except Exception:
+        logger.debug("failed to persist biometric telemetry", exc_info=True)
+        return None
+
+
+def _recent_biometric_failure_reasons(participant_identity: str, room: str, limit: int = 5) -> list[JsonObject]:
+    try:
+        return BIOMETRIC_TELEMETRY_STORE.recent_failure_reasons(
+            participant_identity=participant_identity,
+            room=room,
+            limit=limit,
+        )
+    except Exception:
+        logger.debug("failed to read biometric telemetry", exc_info=True)
+        return []
+
+
 def _set_unlock_in_progress(
     identity: str,
     room: str,
@@ -1655,6 +1708,7 @@ def _set_unlock_in_progress(
 def _clear_authentication(identity: str, *, room: str | None = None, reason: str = "manual_lock") -> None:
     session = AUTHENTICATED_SESSIONS.pop(identity, None)
     target_room = session.room if session is not None else room
+    previous_auth_state = _load_auth_state(identity, target_room) if target_room else None
     if session is not None:
         try:
             STATE_STORE.delete_authenticated_session(
@@ -1665,7 +1719,7 @@ def _clear_authentication(identity: str, *, room: str | None = None, reason: str
             logger.warning("failed to delete authenticated session", exc_info=True)
     VOICE_STEP_UP_PENDING.pop(identity, None)
     if target_room:
-        _persist_auth_state(
+        locked_state = _persist_auth_state(
             identity,
             target_room,
             _auth_state_payload(
@@ -1674,6 +1728,25 @@ def _clear_authentication(identity: str, *, room: str | None = None, reason: str
                 relock_reason=reason,
                 session_id=f"{identity}:{target_room}",
             ),
+        )
+        _record_biometric_event(
+            event_type="relock",
+            participant_identity=identity,
+            room=target_room,
+            method=(str(previous_auth_state.get("method") or "") if isinstance(previous_auth_state, dict) else None),
+            profile_name=(
+                str(previous_auth_state.get("profile_name") or "")
+                if isinstance(previous_auth_state, dict)
+                else None
+            ),
+            confidence=(
+                float(previous_auth_state.get("confidence"))
+                if isinstance(previous_auth_state, dict) and previous_auth_state.get("confidence") is not None
+                else None
+            ),
+            relock_reason=reason,
+            auth_state_status=str(locked_state.get("status") or "locked"),
+            source_action="lock_private_mode" if reason == "manual_lock" else None,
         )
 
 
@@ -7148,7 +7221,7 @@ async def _automation_run_now(params: JsonObject, ctx: ActionContext) -> ActionR
 
 
 async def _authenticate_identity(params: JsonObject, ctx: ActionContext) -> ActionResult:
-    return await domain_authenticate_identity(
+    result = await domain_authenticate_identity(
         params,
         ctx,
         security_pin=_security_pin,
@@ -7158,6 +7231,22 @@ async def _authenticate_identity(params: JsonObject, ctx: ActionContext) -> Acti
         set_authenticated=_set_authenticated,
         voice_step_up_pending=VOICE_STEP_UP_PENDING,
     )
+    if isinstance(result.data, dict):
+        result.data.setdefault(
+            "recent_biometric_failures",
+            _recent_biometric_failure_reasons(ctx.participant_identity, ctx.room),
+        )
+    _record_biometric_event(
+        event_type="recovery_success" if result.success else "recovery_failure",
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        method="recovery",
+        success=result.success,
+        failure_reason=None if result.success else (result.error or "recovery_failed"),
+        auth_state_status=str(_load_auth_state(ctx.participant_identity, ctx.room).get("status") or "locked"),
+        source_action="authenticate_identity",
+    )
+    return result
 
 
 async def _lock_private_mode(params: JsonObject, ctx: ActionContext) -> ActionResult:  # noqa: ARG001
@@ -7740,6 +7829,14 @@ async def _delete_voice_profile(params: JsonObject, ctx: ActionContext) -> Actio
 async def _unlock_with_voice(params: JsonObject, ctx: ActionContext) -> ActionResult:
     _ = params
     _set_unlock_in_progress(ctx.participant_identity, ctx.room, method="voice")
+    _record_biometric_event(
+        event_type="unlock_attempt",
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        method="voice",
+        auth_state_status="unlock_in_progress",
+        source_action="unlock_with_voice",
+    )
     unlock_result = unlock_with_voice(ctx.participant_identity, IDENTITY_STORE)
     if not unlock_result.matched:
         reason = "confidence_dropped"
@@ -7754,6 +7851,19 @@ async def _unlock_with_voice(params: JsonObject, ctx: ActionContext) -> ActionRe
                 session_id=f"{ctx.participant_identity}:{ctx.room}",
             ),
         )
+        _record_biometric_event(
+            event_type="unlock_failure",
+            participant_identity=ctx.participant_identity,
+            room=ctx.room,
+            method="voice",
+            success=False,
+            confidence=unlock_result.confidence,
+            threshold_used=unlock_result.threshold_used,
+            margin_to_second=unlock_result.margin_to_second,
+            failure_reason=unlock_result.failure_reason or reason,
+            auth_state_status="locked",
+            source_action="unlock_with_voice",
+        )
         return ActionResult(
             success=False,
             message="Nao consegui desbloquear sua sessao por voz com confianca suficiente.",
@@ -7766,6 +7876,10 @@ async def _unlock_with_voice(params: JsonObject, ctx: ActionContext) -> ActionRe
                 "voice_unlock_threshold": unlock_result.threshold_used,
                 "margin_to_second": unlock_result.margin_to_second,
                 "failure_reason": unlock_result.failure_reason,
+                "recent_biometric_failures": _recent_biometric_failure_reasons(
+                    ctx.participant_identity,
+                    ctx.room,
+                ),
             },
             error="voice_unlock_failed",
         )
@@ -7781,6 +7895,18 @@ async def _unlock_with_voice(params: JsonObject, ctx: ActionContext) -> ActionRe
                 session_id=f"{ctx.participant_identity}:{ctx.room}",
             ),
         )
+        _record_biometric_event(
+            event_type="unlock_failure",
+            participant_identity=ctx.participant_identity,
+            room=ctx.room,
+            method="voice",
+            profile_name=unlock_result.name,
+            success=False,
+            confidence=unlock_result.confidence,
+            failure_reason="not_owner",
+            auth_state_status="locked",
+            source_action="unlock_with_voice",
+        )
         return ActionResult(
             success=False,
             message="Reconheci uma voz cadastrada, mas ela nao pode abrir a sessao do owner.",
@@ -7788,6 +7914,10 @@ async def _unlock_with_voice(params: JsonObject, ctx: ActionContext) -> ActionRe
                 "auth_state": _load_auth_state(ctx.participant_identity, ctx.room),
                 "matched_profile": unlock_result.name,
                 "voice_score": unlock_result.confidence,
+                "recent_biometric_failures": _recent_biometric_failure_reasons(
+                    ctx.participant_identity,
+                    ctx.room,
+                ),
             },
             error="voice_unlock_not_owner",
         )
@@ -7807,6 +7937,19 @@ async def _unlock_with_voice(params: JsonObject, ctx: ActionContext) -> ActionRe
             confidence=unlock_result.confidence,
             source="voice",
         ),
+    )
+    _record_biometric_event(
+        event_type="unlock_success",
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        method="voice",
+        profile_name=unlock_result.name,
+        success=True,
+        confidence=unlock_result.confidence,
+        threshold_used=unlock_result.threshold_used,
+        margin_to_second=unlock_result.margin_to_second,
+        auth_state_status=str(_load_auth_state(ctx.participant_identity, ctx.room).get("status") or "locked"),
+        source_action="unlock_with_voice",
     )
     return ActionResult(
         success=True,
@@ -7832,6 +7975,14 @@ async def _unlock_with_face(params: JsonObject, ctx: ActionContext) -> ActionRes
     except (TypeError, ValueError):
         camera_index = 0
     _set_unlock_in_progress(ctx.participant_identity, ctx.room, method="face")
+    _record_biometric_event(
+        event_type="unlock_attempt",
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        method="face",
+        auth_state_status="unlock_in_progress",
+        source_action="unlock_with_face",
+    )
     unlock_result = unlock_with_face(IDENTITY_STORE, camera_index=camera_index)
     if not unlock_result.matched:
         reason = "confidence_dropped"
@@ -7848,6 +7999,19 @@ async def _unlock_with_face(params: JsonObject, ctx: ActionContext) -> ActionRes
                 session_id=f"{ctx.participant_identity}:{ctx.room}",
             ),
         )
+        _record_biometric_event(
+            event_type="unlock_failure",
+            participant_identity=ctx.participant_identity,
+            room=ctx.room,
+            method="face",
+            success=False,
+            confidence=unlock_result.confidence,
+            threshold_used=unlock_result.threshold_used,
+            margin_to_second=unlock_result.margin_to_second,
+            failure_reason=unlock_result.failure_reason or reason,
+            auth_state_status="locked",
+            source_action="unlock_with_face",
+        )
         return ActionResult(
             success=False,
             message="Nao consegui desbloquear sua sessao por rosto com confianca suficiente.",
@@ -7861,6 +8025,10 @@ async def _unlock_with_face(params: JsonObject, ctx: ActionContext) -> ActionRes
                 "face_unlock_threshold": unlock_result.threshold_used,
                 "margin_to_second": unlock_result.margin_to_second,
                 "failure_reason": unlock_result.failure_reason,
+                "recent_biometric_failures": _recent_biometric_failure_reasons(
+                    ctx.participant_identity,
+                    ctx.room,
+                ),
             },
             error="face_unlock_failed",
         )
@@ -7876,6 +8044,18 @@ async def _unlock_with_face(params: JsonObject, ctx: ActionContext) -> ActionRes
                 session_id=f"{ctx.participant_identity}:{ctx.room}",
             ),
         )
+        _record_biometric_event(
+            event_type="unlock_failure",
+            participant_identity=ctx.participant_identity,
+            room=ctx.room,
+            method="face",
+            profile_name=unlock_result.name,
+            success=False,
+            confidence=unlock_result.confidence,
+            failure_reason="not_owner",
+            auth_state_status="locked",
+            source_action="unlock_with_face",
+        )
         return ActionResult(
             success=False,
             message="Reconheci um rosto cadastrado, mas ele nao pode abrir a sessao do owner.",
@@ -7883,6 +8063,10 @@ async def _unlock_with_face(params: JsonObject, ctx: ActionContext) -> ActionRes
                 "auth_state": _load_auth_state(ctx.participant_identity, ctx.room),
                 "matched_profile": unlock_result.name,
                 "face_score": unlock_result.confidence,
+                "recent_biometric_failures": _recent_biometric_failure_reasons(
+                    ctx.participant_identity,
+                    ctx.room,
+                ),
             },
             error="face_unlock_not_owner",
         )
@@ -7902,6 +8086,19 @@ async def _unlock_with_face(params: JsonObject, ctx: ActionContext) -> ActionRes
             confidence=unlock_result.confidence,
             source="face",
         ),
+    )
+    _record_biometric_event(
+        event_type="unlock_success",
+        participant_identity=ctx.participant_identity,
+        room=ctx.room,
+        method="face",
+        profile_name=unlock_result.name,
+        success=True,
+        confidence=unlock_result.confidence,
+        threshold_used=unlock_result.threshold_used,
+        margin_to_second=unlock_result.margin_to_second,
+        auth_state_status=str(_load_auth_state(ctx.participant_identity, ctx.room).get("status") or "locked"),
+        source_action="unlock_with_face",
     )
     return ActionResult(
         success=True,
